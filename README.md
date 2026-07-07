@@ -25,6 +25,13 @@ allow_file_download=1
 
 then start Everything again. Auth must be off because browsers can't answer a password challenge during a CORS request — binding to `127.0.0.1` keeps the server local-only, and the `header=` origin scope means only your own site can read results.
 
+**Hosted + browser extension (recommended, no CORS/permission fuss):** the `extension/` folder is a tiny MV3 extension that relays search/download requests from the hosted page to `127.0.0.1:8666`. The page auto-detects it and shows "Everything bridge extension connected".
+
+- Chrome/Edge: `chrome://extensions` → enable Developer mode → **Load unpacked** → pick the `extension/` folder.
+- Firefox: `about:debugging` → This Firefox → **Load Temporary Add-on** → pick `extension/manifest.json` (temporary loads reset on restart; zip + sign for permanent).
+
+Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `header=`), only performs GETs, and only to loopback — nothing can leave the machine.
+
 ## Features
 
 - 8-track pattern editor, hex FX column (`Rxx` retrig, `Sxx` sample offset, `U/Dxx` slide, `Gxx` glide, `Cxx` cutoff)

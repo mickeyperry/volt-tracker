@@ -131,6 +131,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <div class="grp">
     <label class="fld">Pattern <select id="patSel"></select></label>
     <label class="fld">Len <input type="number" id="patLen" min="8" max="128" value="64"></label>
+    <label class="fld">Trk <input type="number" id="trkN" min="2" max="16" value="8" style="width:44px" title="Number of tracks"></label>
     <button id="patNew" title="New empty pattern">+</button>
     <button id="patDup" title="Duplicate pattern">Dup</button>
   </div>
@@ -206,7 +207,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <span><kbd>Del</kbd> clear</span>
   <span><kbd>Space</kbd> play</span>
   <span><kbd>[</kbd><kbd>]</kbd> octave</span>
-  <span><kbd>Shift</kbd>+arrows select &#183; <kbd>Ctrl</kbd><kbd>A</kbd> column&#8594;track&#8594;all &#183; <kbd>Ctrl</kbd><kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copy/cut/paste</span>
+  <span><kbd>Shift</kbd>+arrows select &#183; <kbd>Ctrl</kbd><kbd>A</kbd> column&#8594;track&#8594;all &#183; <kbd>Ctrl</kbd><kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copy/cut/paste &#183; <kbd>Ctrl</kbd><kbd>Z</kbd>/<kbd>Y</kbd> undo/redo</span>
   <span>FX: <b>R</b>xx retrig &#183; <b>S</b>xx smp offset &#183; <b>U/D</b>xx slide &#183; <b>G</b>xx glide &#183; <b>C</b>xx cutoff</span>
   <span id="status"></span>
 </div>
@@ -214,7 +215,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 <script>
 'use strict';
 /* ================= constants ================= */
-const TRACKS=8, OFF=-1;
+let TRACKS=8;
+const MAXTRACKS=16, OFF=-1;
 const NOTENAMES=['C-','C#','D-','D#','E-','F-','F#','G-','G#','A-','A#','B-'];
 const hex2=n=>n.toString(16).toUpperCase().padStart(2,'0');
 const noteName=n=>n===OFF?'OFF':NOTENAMES[n%12]+Math.floor(n/12);
@@ -243,7 +245,7 @@ let octave=4, editStep=1;
 function mkPattern(rows){const d=[];for(let t=0;t<TRACKS;t++){d.push(new Array(rows).fill(null))}return{rows,data:d}}
 function mkInst(type,name,over){const i={name,type,params:defParams(type)};if(over)Object.assign(i.params,over);return i}
 function mkTrackset(){const a=[];for(let t=0;t<TRACKS;t++)a.push({vol:.85,dly:0,rvb:0,duck:0,mute:false,solo:false});return a}
-function blankSong(){return{name:'untitled',bpm:170,lpb:4,instruments:[mkInst('kick','Kick'),mkInst('snare','Snare'),mkInst('hat','Hat'),mkInst('reese','Reese')],patterns:[mkPattern(64)],order:[0],trackset:mkTrackset()}}
+function blankSong(){TRACKS=8;return{name:'untitled',bpm:170,lpb:4,instruments:[mkInst('kick','Kick'),mkInst('snare','Snare'),mkInst('hat','Hat'),mkInst('reese','Reese')],patterns:[mkPattern(64)],order:[0],trackset:mkTrackset()}}
 function cellAt(t,r){return song.patterns[curPat].data[t][r]}
 function ensureCell(t,r){const d=song.patterns[curPat].data;if(!d[t][r])d[t][r]={n:null,i:null,v:null,c:null,x:0};return d[t][r]}
 function pruneCell(t,r){const c=cellAt(t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null)song.patterns[curPat].data[t][r]=null}
@@ -283,16 +285,20 @@ function audio(){
   const rout=AC.createGain();rout.gain.value=.7;
   rvbIn.connect(rhp);rhp.connect(cv);cv.connect(rout);rout.connect(master);
   /* channels */
-  for(let t=0;t<TRACKS;t++){
+  ensureChans(TRACKS);
+  applyMix();setDelayTime();
+  return AC;
+}
+function ensureChans(n){
+  if(!AC)return;
+  while(chans.length<n){
     const g=AC.createGain(), duckG=AC.createGain(), ds=AC.createGain(), rs=AC.createGain();
     g.connect(duckG);duckG.connect(master);duckG.connect(ds);duckG.connect(rs);
     ds.connect(dlyIn);rs.connect(rvbIn);
     chans.push({in:g,duckG,ds,rs,voice:null,lastI:null});
   }
-  applyMix();setDelayTime();
-  return AC;
 }
-function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{chans[t].in.gain.value=ts.vol;chans[t].ds.gain.value=ts.dly;chans[t].rs.gain.value=ts.rvb})}
+function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{if(!chans[t])return;chans[t].in.gain.value=ts.vol;chans[t].ds.gain.value=ts.dly;chans[t].rs.gain.value=ts.rvb})}
 function setDelayTime(){if(!AC)return;const d=60/song.bpm*.75;dlyL.delayTime.value=d;dlyR.delayTime.value=d}
 function mkNoise(t,dur){const s=AC.createBufferSource();s.buffer=noiseBuf;s.loop=true;s.start(t);s.stop(t+dur);return s}
 function mkShaper(amt){const ws=AC.createWaveShaper();const n=512,c=new Float32Array(n);const k=1+amt*24;
@@ -523,6 +529,18 @@ function raf(){
 const gridwrap=document.getElementById('gridwrap'),
       ghead=document.getElementById('ghead'),
       grows=document.getElementById('grows');
+
+/* current-track highlight: rules per track index, switched via data-ct on #gridwrap */
+const ctStyle=document.createElement('style');document.head.appendChild(ctStyle);
+function genCtCSS(){
+  let s='';
+  for(let t=0;t<TRACKS;t++){
+    s+='#gridwrap[data-ct="'+t+'"] .prow .tcell[data-t="'+t+'"]{background:rgba(63,224,180,.05);border-left-color:#1e4a3d}';
+    s+='#gridwrap[data-ct="'+t+'"] #ghead .tcell[data-t="'+t+'"]{background:var(--raised);box-shadow:inset 0 -2px 0 var(--teal)}';
+    s+='#gridwrap[data-ct="'+t+'"] #ghead .tcell[data-t="'+t+'"] .tno{color:var(--teal)}';
+  }
+  ctStyle.textContent=s;
+}
 
 function cellHTML(t,r){
   const c=cellAt(t,r)||{};
@@ -756,6 +774,7 @@ document.getElementById('params').addEventListener('input',e=>{
 });
 function trackPanel(){
   const t=cursor.t,ts=song.trackset[t];
+  gridwrap.dataset.ct=t;
   document.getElementById('trkTitle').textContent='Track '+(t+1);
   const el=document.getElementById('trackMix');
   const rows=[['vol','Volume'],['dly','Delay'],['rvb','Reverb'],['duck','Duck']];
@@ -834,6 +853,29 @@ document.getElementById('patLen').addEventListener('change',e=>{
   });
   pat.rows=n;renderGrid();saveSoon();
 });
+document.getElementById('trkN').addEventListener('change',e=>{setTracks(clamp(+e.target.value||TRACKS,2,MAXTRACKS))});
+function setTracks(n){
+  if(n===TRACKS){document.getElementById('trkN').value=TRACKS;return}
+  if(n<TRACKS){
+    const hasData=song.patterns.some(p=>p.data.slice(n).some(tr=>tr.some(c=>c&&(c.n!=null||c.i!=null||c.v!=null||c.c))));
+    if(hasData&&!confirm('Removing tracks '+(n+1)+'–'+TRACKS+' deletes their notes. Continue?')){
+      document.getElementById('trkN').value=TRACKS;return;
+    }
+    if(AC)for(let t=n;t<chans.length;t++){if(chans[t].voice){chans[t].voice.cut(AC.currentTime);chans[t].voice=null}}
+    song.patterns.forEach(p=>{p.data.length=n});
+    song.trackset.length=n;
+  }else{
+    song.patterns.forEach(p=>{while(p.data.length<n)p.data.push(new Array(p.rows).fill(null))});
+    while(song.trackset.length<n)song.trackset.push({vol:.85,dly:0,rvb:0,duck:0,mute:false,solo:false});
+  }
+  TRACKS=n;
+  cursor.t=Math.min(cursor.t,TRACKS-1);
+  sel=null;
+  document.getElementById('trkN').value=TRACKS;
+  genCtCSS();
+  if(AC){ensureChans(TRACKS);applyMix()}
+  renderGrid();trackPanel();saveSoon();
+}
 document.getElementById('patNew').onclick=()=>{
   song.patterns.push(mkPattern(song.patterns[curPat].rows));
   curPatSet(song.patterns.length-1);saveSoon();
@@ -872,8 +914,57 @@ function serialize(withSamples){
     return v;
   });
 }
+/* ---- undo / redo (covers pattern data, order, track count, mixer) ---- */
+let undoStack=[],redoStack=[],undoT=null,restoring=false;
+const snapState=()=>JSON.stringify({p:song.patterns,o:song.order,ts:song.trackset});
+function pushUndoSoon(){
+  if(restoring||!song)return;
+  clearTimeout(undoT);
+  undoT=setTimeout(()=>{
+    const s=snapState();
+    if(undoStack[undoStack.length-1]!==s){
+      undoStack.push(s);
+      if(undoStack.length>100)undoStack.shift();
+      redoStack.length=0;
+    }
+  },250);
+}
+function applyState(s){
+  restoring=true;
+  const st=JSON.parse(s);
+  song.patterns=st.p;song.order=st.o;song.trackset=st.ts;
+  TRACKS=song.patterns[0].data.length;
+  curPat=clamp(curPat,0,song.patterns.length-1);
+  cursor.t=Math.min(cursor.t,TRACKS-1);
+  sel=null;
+  document.getElementById('trkN').value=TRACKS;
+  genCtCSS();
+  if(AC){ensureChans(TRACKS);applyMix()}
+  renderGrid();trackPanel();
+  saveSoon();
+  restoring=false;
+}
+function undo(){
+  if(!song)return;
+  clearTimeout(undoT);
+  const cur=snapState();
+  if(undoStack[undoStack.length-1]!==cur)undoStack.push(cur);
+  if(undoStack.length<2){status('nothing to undo');return}
+  redoStack.push(undoStack.pop());
+  applyState(undoStack[undoStack.length-1]);
+  status('undo');
+}
+function redo(){
+  if(!redoStack.length){status('nothing to redo');return}
+  const s=redoStack.pop();
+  undoStack.push(s);
+  applyState(s);
+  status('redo');
+}
+
 let saveT=null;
 function saveSoon(){
+  pushUndoSoon();
   clearTimeout(saveT);
   saveT=setTimeout(()=>{
     try{localStorage.setItem('volt.song',serialize(true))}
@@ -883,8 +974,14 @@ function saveSoon(){
 async function loadSong(s){
   stop();
   song=s;
+  TRACKS=clamp((song.patterns&&song.patterns[0]&&song.patterns[0].data.length)||8,2,MAXTRACKS);
   song.trackset=song.trackset||mkTrackset();
   while(song.trackset.length<TRACKS)song.trackset.push({vol:.85,dly:0,rvb:0,duck:0,mute:false,solo:false});
+  song.trackset.length=TRACKS;
+  document.getElementById('trkN').value=TRACKS;
+  genCtCSS();
+  if(AC)ensureChans(TRACKS);
+  sel=null;
   curPat=0;curInst=0;cursor.t=0;cursor.r=0;cursor.c=0;
   document.getElementById('bpm').value=song.bpm;
   if(AC){applyMix();setDelayTime()}
@@ -893,6 +990,7 @@ async function loadSong(s){
       try{audio();ins.buffer=await AC.decodeAudioData(b64ToAb(ins.sampleB64))}catch(e){}
     }
   }
+  undoStack.length=0;redoStack.length=0;undoStack.push(snapState());
   renderGrid();renderInstList();renderParams();trackPanel();
   status(song.name);
 }
@@ -1097,6 +1195,14 @@ document.addEventListener('keydown',e=>{
     }
     return;
   }
+  if((e.ctrlKey||e.metaKey)&&low==='z'){
+    e.preventDefault();e.stopImmediatePropagation();
+    if(e.shiftKey)redo();else undo();
+    return;
+  }
+  if((e.ctrlKey||e.metaKey)&&low==='y'){
+    e.preventDefault();e.stopImmediatePropagation();redo();return;
+  }
   if((e.ctrlKey||e.metaKey)&&low==='a'){
     e.preventDefault();e.stopImmediatePropagation();
     const pat=song.patterns[curPat];
@@ -1184,7 +1290,7 @@ async function esSearch(){
     esMsg(j.totalResults>esRes.length?'showing '+esRes.length+' of '+j.totalResults:esRes.length+' result'+(esRes.length===1?'':'s'));
   }catch(err){
     if(location.protocol==='https:')
-      esMsg('Hosted (https) pages can’t read your local Everything server — sample search needs the local copy. Use the “VOLT Tracker” shortcut on your Desktop (opens via http://localhost:8667).',1);
+      esMsg('Can’t reach Everything from this hosted page. Check: Everything HTTP server running, and its header= setting allows this origin ('+location.origin+') — see the README. (claude.ai artifacts always block this.)',1);
     else if(location.protocol==='file:')
       esMsg('You opened volt.html directly, so the browser blocks Everything’s replies (file:// has no origin). Use the “VOLT Tracker” Desktop shortcut — it opens this same page through the Everything server at http://localhost:8667.',1);
     else

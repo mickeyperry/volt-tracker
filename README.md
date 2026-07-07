@@ -13,6 +13,18 @@ A single-file browser tracker (FastTracker-style) with a built-in synth engine, 
 
 Opening `volt.html` directly (`file://`) also works, but the browser then blocks the Everything integration (CORS) — pattern editing, synths, and manually-loaded samples still work fine.
 
+**Hosted (GitHub Pages) + Everything search:** the hosted page can use your local Everything server if Everything sends a CORS header for your origin. In Everything 1.5a the HTTP server is a plugin; close Everything, edit `%APPDATA%\Everything\Plugins-1.5a.ini` under `[http_server64.dll]`:
+
+```ini
+bindings=127.0.0.1
+username=
+password=
+header=Access-Control-Allow-Origin: https://YOURNAME.github.io
+allow_file_download=1
+```
+
+then start Everything again. Auth must be off because browsers can't answer a password challenge during a CORS request — binding to `127.0.0.1` keeps the server local-only, and the `header=` origin scope means only your own site can read results.
+
 ## Features
 
 - 8-track pattern editor, hex FX column (`Rxx` retrig, `Sxx` sample offset, `U/Dxx` slide, `Gxx` glide, `Cxx` cutoff)

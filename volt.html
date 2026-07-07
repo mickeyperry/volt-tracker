@@ -1259,6 +1259,13 @@ const ES=Object.assign({host:'localhost',port:8667,user:'',pass:'',exts:'wav;mp3
 const esSameOrigin=location.protocol==='http:'&&/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 const esBase=()=>esSameOrigin?location.origin:'http://'+ES.host+':'+ES.port;
 const esHdrs=()=>ES.user?{Authorization:'Basic '+btoa(ES.user+':'+ES.pass)}:{};
+/* from a hosted https page, Chrome requires tagging localhost fetches for its
+   Local Network Access permission prompt; unknown fetch options are ignored elsewhere */
+const esFetchOpts=()=>{
+  const o={headers:esHdrs()};
+  if(!esSameOrigin)o.targetAddressSpace='loopback';
+  return o;
+};
 function esMsg(s,err){const m=$id('esMsg');m.textContent=s||'';m.className=err?'err':''}
 function esLoadCfgUI(){$id('esHost').value=ES.host;$id('esPort').value=ES.port;$id('esUser').value=ES.user;$id('esPass').value=ES.pass;$id('esExts').value=ES.exts;$id('esCopy').checked=ES.copy}
 $id('esCfgBtn').onclick=()=>{const p=$id('esCfgPanel');p.hidden=!p.hidden;if(!p.hidden)esLoadCfgUI()};
@@ -1279,7 +1286,7 @@ async function esSearch(){
   const url=esBase()+'/?search='+encodeURIComponent(query)+'&json=1&path_column=1&count=40';
   esMsg('searching…');
   try{
-    const r=await fetch(url,{headers:esHdrs()});
+    const r=await fetch(url,esFetchOpts());
     if(r.status===401){esMsg('auth failed — set user/pass in ⚙ settings',1);return}
     if(!r.ok){esMsg('Everything server error '+r.status,1);return}
     const j=await r.json();
@@ -1290,7 +1297,7 @@ async function esSearch(){
     esMsg(j.totalResults>esRes.length?'showing '+esRes.length+' of '+j.totalResults:esRes.length+' result'+(esRes.length===1?'':'s'));
   }catch(err){
     if(location.protocol==='https:')
-      esMsg('Can’t reach Everything from this hosted page. Check: Everything HTTP server running, and its header= setting allows this origin ('+location.origin+') — see the README. (claude.ai artifacts always block this.)',1);
+      esMsg('Blocked reaching Everything. If Chrome asked to “access your local network”, click Allow and search again. Otherwise: click the icon left of the address bar → Site settings → allow Local network access, then reload. (claude.ai artifacts always block this.)',1);
     else if(location.protocol==='file:')
       esMsg('You opened volt.html directly, so the browser blocks Everything’s replies (file:// has no origin). Use the “VOLT Tracker” Desktop shortcut — it opens this same page through the Everything server at http://localhost:8667.',1);
     else
@@ -1302,7 +1309,7 @@ function esFileURL(x){
   return esBase()+'/'+full.split('\\').filter(s=>s!=='').map(encodeURIComponent).join('/');
 }
 async function esFetchFile(x){
-  const r=await fetch(esFileURL(x),{headers:esHdrs()});
+  const r=await fetch(esFileURL(x),esFetchOpts());
   if(!r.ok)throw new Error('HTTP '+r.status);
   return r.arrayBuffer();
 }

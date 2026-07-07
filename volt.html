@@ -1825,6 +1825,39 @@ const esFetchOpts=()=>{
   if(!esSameOrigin)o.targetAddressSpace='loopback';
   return o;
 };
+/* ---- optional browser-extension bridge (VOLT Everything Bridge) ----
+   the extension holds the localhost permission and relays requests, so the hosted
+   page needs no CORS setup on Everything and no local-network permission prompts */
+let esBridge=false,esBridgeId=0;const esBridgeQ={};
+window.addEventListener('message',e=>{
+  if(e.source!==window)return;
+  const d=e.data;
+  if(!d||d.src!=='volt-es-bridge')return;
+  if(d.type==='ready'){
+    if(!esBridge&&!esSameOrigin){esBridge=true;esMsg('Everything bridge extension connected')}
+    else esBridge=true;
+    return;
+  }
+  if(d.type==='res'&&esBridgeQ[d.id]){const cb=esBridgeQ[d.id];delete esBridgeQ[d.id];cb(d.res)}
+});
+window.postMessage({src:'volt-page',type:'ping'},location.origin);
+function bridgeFetch(path){
+  return new Promise((res,rej)=>{
+    const id=++esBridgeId;
+    esBridgeQ[id]=r=>{
+      if(!r||(!r.ok&&r.error))return rej(new Error((r&&r.error)||'bridge error'));
+      res({ok:r.ok,status:r.status,ab:b64ToAb(r.b64||'')});
+    };
+    window.postMessage({src:'volt-page',type:'req',id,path},location.origin);
+    setTimeout(()=>{if(esBridgeQ[id]){delete esBridgeQ[id];rej(new Error('bridge timeout'))}},30000);
+  });
+}
+/* unified GET: extension bridge when hosted, plain fetch otherwise */
+async function esGet(path){
+  if(esBridge&&!esSameOrigin)return bridgeFetch(path);
+  const r=await fetch(esBase()+path,esFetchOpts());
+  return {ok:r.ok,status:r.status,ab:await r.arrayBuffer()};
+}
 function esMsg(s,err){const m=$id('esMsg');m.textContent=s||'';m.className=err?'err':''}
 function esLoadCfgUI(){$id('esHost').value=ES.host;$id('esPort').value=ES.port;$id('esUser').value=ES.user;$id('esPass').value=ES.pass;$id('esExts').value=ES.exts;$id('esCopy').checked=ES.copy}
 $id('esCfgBtn').onclick=()=>{const p=$id('esCfgPanel');p.hidden=!p.hidden;if(!p.hidden)esLoadCfgUI()};
@@ -1842,13 +1875,13 @@ async function esSearch(){
   const q=$id('esQ').value.trim();
   if(!q){$id('esResults').innerHTML='';esMsg('');return}
   const query=q+(ES.exts?' ext:'+ES.exts:'')+' !.pek !.cfa !appdata !"media cache"';
-  const url=esBase()+'/?search='+encodeURIComponent(query)+'&json=1&path_column=1&count=40';
+  const path='/?search='+encodeURIComponent(query)+'&json=1&path_column=1&count=40';
   esMsg('searching…');
   try{
-    const r=await fetch(url,esFetchOpts());
+    const r=await esGet(path);
     if(r.status===401){esMsg('auth failed — set user/pass in ⚙ settings',1);return}
     if(!r.ok){esMsg('Everything server error '+r.status,1);return}
-    const j=await r.json();
+    const j=JSON.parse(new TextDecoder().decode(r.ab));
     esRes=(j.results||[]).filter(x=>x.type==='file');
     $id('esResults').innerHTML=esRes.map((x,i)=>
       '<div class="esrow"><div class="nm" title="'+esc(x.path+'\\'+x.name)+'"><b>'+esc(x.name)+'</b><span>'+esc(x.path)+'</span></div>'
@@ -1856,21 +1889,21 @@ async function esSearch(){
     esMsg(j.totalResults>esRes.length?'showing '+esRes.length+' of '+j.totalResults:esRes.length+' result'+(esRes.length===1?'':'s'));
   }catch(err){
     if(location.protocol==='https:')
-      esMsg('Blocked reaching Everything. If Chrome asked to “access your local network”, click Allow and search again. Otherwise: click the icon left of the address bar → Site settings → allow Local network access, then reload. (claude.ai artifacts always block this.)',1);
+      esMsg('Blocked reaching Everything. Easiest fix: install the “VOLT Everything Bridge” extension (extension/ folder in the repo) and reload. Or: allow the “access your local network” prompt / Site settings → Local network access, then search again.',1);
     else if(location.protocol==='file:')
       esMsg('You opened volt.html directly, so the browser blocks Everything’s replies (file:// has no origin). Use the “VOLT Tracker” Desktop shortcut — it opens this same page through the Everything server at http://localhost:8666.',1);
     else
       esMsg('Cannot reach Everything at '+esBase()+' — check Tools → Options → HTTP Server is enabled and the host/port in ⚙ match.',1);
   }
 }
-function esFileURL(x){
+function esFilePath(x){
   const full=x.path+'\\'+x.name;
-  return esBase()+'/'+full.split('\\').filter(s=>s!=='').map(encodeURIComponent).join('/');
+  return '/'+full.split('\\').filter(s=>s!=='').map(encodeURIComponent).join('/');
 }
 async function esFetchFile(x){
-  const r=await fetch(esFileURL(x),esFetchOpts());
+  const r=await esGet(esFilePath(x));
   if(!r.ok)throw new Error('HTTP '+r.status);
-  return r.arrayBuffer();
+  return r.ab;
 }
 let pvSrc=null,pvIdx=-1;
 async function esPreview(i){

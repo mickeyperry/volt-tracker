@@ -37,7 +37,7 @@ then start Everything again. Auth must be off because browsers can't answer a pa
 
 ## Keys
 
-`Z–M` / `Q–P` notes · `A` note-off · `Space` play/stop · `[` `]` octave · `Tab` next track · `Shift+arrows` select · `Ctrl+A` column/track/all · `Ctrl+C/X/V` copy/cut/paste
+`Z–M` / `Q–P` notes · `A` note-off · `Space` play/stop · `[` `]` octave · `Tab` next track · `Shift+arrows` select · `Ctrl+A` column/track/all · `Ctrl+C/X/V` copy/cut/paste · `Ctrl+Z/Y` undo/redo · `Alt+↑/↓` ±semitone, `Alt+Shift+↑/↓` ±octave
 
 ## Notes
 

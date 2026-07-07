@@ -1184,7 +1184,7 @@ async function esSearch(){
     esMsg(j.totalResults>esRes.length?'showing '+esRes.length+' of '+j.totalResults:esRes.length+' result'+(esRes.length===1?'':'s'));
   }catch(err){
     if(location.protocol==='https:')
-      esMsg('This hosted page can’t reach localhost (the claude.ai sandbox blocks it). Use the “VOLT Tracker” shortcut on your Desktop instead.',1);
+      esMsg('Hosted (https) pages can’t read your local Everything server — sample search needs the local copy. Use the “VOLT Tracker” shortcut on your Desktop (opens via http://localhost:8667).',1);
     else if(location.protocol==='file:')
       esMsg('You opened volt.html directly, so the browser blocks Everything’s replies (file:// has no origin). Use the “VOLT Tracker” Desktop shortcut — it opens this same page through the Everything server at http://localhost:8667.',1);
     else

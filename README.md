@@ -29,7 +29,15 @@ then start Everything again. Auth must be off because browsers can't answer a pa
 
 - 8-track pattern editor, hex FX column (`Rxx` retrig, `Sxx` sample offset, `U/Dxx` slide, `Gxx` glide, `Cxx` cutoff)
 - Synth engine: kick, snare, hat, clap, sub, reese, supersaw, pluck + sampler
-- Per-track volume / ping-pong delay / reverb / kick-ducking, mute & solo
+- Per-track volume / ping-pong delay / reverb / kick-ducking / 3-band EQ, mute & solo (hotkeys + dimmed columns), renameable tracks (double-click header or `F2`)
+- **Mixer panel** (`F9` or Mixer button): channel strips with fader, live meters, EQ, sends, mute/solo
+- Song strip: drag chips to reorder patterns; playing chip fills with loop progress, header shows a pattern-loop progress bar
+- Sample search `+` offers to replace the selected instrument in place (pattern notes keep their slot) or add as new
+- Resizable side panel (drag the divider), collapsible sections
+- **Render to WAV** (⬇ WAV button): offline-renders the whole song — works on the hosted version too, no server needed
+- **Preset browser**: categorized starting points (Drums / Bass / Lead & Pad) instead of raw synth types
+- Per-channel **compressor + drive** on top of EQ; master **peak meter** with clip indicator in the top bar
+- **Command palette** (`Ctrl+Space`): type to search any action (note-off, transpose, render, mute…) and run it
 - DnB and Trance starter templates, song order list, JSON export/import, localStorage autosave
 - **Everything sample search**: type a query in the sidebar, preview (▶) and add (+) results as sampler instruments. ⚙ settings: host/port/user/pass/extension filter
 - **Copy to project folder**: added samples are copied into a folder you pick (File System Access API, Chrome/Edge; the handle persists in IndexedDB)
@@ -37,7 +45,7 @@ then start Everything again. Auth must be off because browsers can't answer a pa
 
 ## Keys
 
-`Z–M` / `Q–P` notes · `A` note-off · `Space` play/stop · `[` `]` octave · `Tab` next track · `Shift+arrows` select · `Ctrl+A` column/track/all · `Ctrl+C/X/V` copy/cut/paste · `Ctrl+Z/Y` undo/redo · `Alt+↑/↓` ±semitone, `Alt+Shift+↑/↓` ±octave
+`Z–M` / `Q–P` notes · `A` note-off · `Space` play/stop · `[` `]` octave · `Tab` next track · `Shift+arrows` select · `Ctrl+A` column/track/all · `Ctrl+C/X/V` copy/cut/paste · `Ctrl+Z/Y` undo/redo · `Alt+↑/↓` ±semitone, `Alt+Shift+↑/↓` ±octave · `Alt+1–0` mute track, `Alt+Shift+1–0` solo · `Alt+M`/`Alt+S` mute/solo current track · `Alt+X` all audible · `F2` rename track · `F9` mixer · `Ctrl+Enter` new pattern, `Ctrl+D` duplicate
 
 ## Notes
 

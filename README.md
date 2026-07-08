@@ -29,7 +29,7 @@ then start Everything again. Auth must be off because browsers can't answer a pa
 
 **Hosted + browser extension (recommended, no CORS/permission fuss):** the `extension/` folder is a tiny MV3 extension that relays search/download requests from the hosted page to `127.0.0.1:8667`. The page auto-detects it and shows "Everything bridge extension connected".
 
-- Chrome/Edge: `chrome://extensions` → enable Developer mode → **Load unpacked** → pick the `extension/` folder.
+- Chrome/Edge: `chrome://extensions` → enable Developer mode → **Load unpacked** → pick the `extension/` folder. For a locally-opened `volt.html` (double-click, `file://`) also enable **Allow access to file URLs** on the extension card.
 - Firefox: `about:debugging` → This Firefox → **Load Temporary Add-on** → pick `extension/manifest.json` (temporary loads reset on restart; zip + sign for permanent).
 
 Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `header=`), only performs GETs, and only to loopback — nothing can leave the machine.
@@ -46,7 +46,7 @@ Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `h
 - **Preset browser**: categorized starting points (Drums / Bass / Lead & Pad) instead of raw synth types
 - Per-channel **compressor + drive** on top of EQ; master **peak meter** with clip indicator in the top bar
 - **Command palette** (`Ctrl+Space`): type to search any action (note-off, transpose, render, mute…) and run it
-- Genre starting kits (Kit dropdown): DnB 174, Trance 138, Full-on Psy 145, Goa 143 — song order list, JSON export/import, localStorage autosave
+- Genre starting kits (Kit dropdown): **Full-on (main)** — the baked-in default song — plus DnB 174, Trance 138, Full-on basic 145, Goa 143 — song order list, JSON export/import, localStorage autosave
 - **Everything sample search**: type a query in the sidebar, preview (▶), add as new (+, never overwrites) or replace the selected instrument (⇄, asks first). ⚙ settings: host/port/user/pass/extension filter
 - **Copy to project folder**: added samples are copied into a folder you pick (File System Access API, Chrome/Edge; the handle persists in IndexedDB)
 - **Selection & clipboard**: Shift+arrows or mouse drag; `Ctrl+A` cycles column → track → whole pattern; `Ctrl+C/X/V`, `Del` clears
@@ -59,5 +59,5 @@ Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `h
 
 ## Notes
 
-- Songs autosave per browser origin — use Export/Import to move songs between copies.
+- Songs autosave per browser origin — use Export/Import (or just **drag & drop** a `.json` onto the page — it opens as a new tab; dropped audio files become sampler instruments) to move songs between copies.
 - Samples are embedded base64 in the song JSON, so exported songs are fully portable.

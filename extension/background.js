@@ -1,7 +1,7 @@
 /* Relays GET requests from the VOLT page (via content.js) to the local Everything
    HTTP server. Hard-coded to loopback — this extension can never reach anything else. */
 'use strict';
-const BASE = 'http://127.0.0.1:8666';
+const BASE = 'http://127.0.0.1:8667';
 
 const api = typeof browser !== 'undefined' ? browser : chrome;
 

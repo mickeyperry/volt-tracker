@@ -2099,14 +2099,32 @@ function bridgeFetch(path){
 /* unified GET: extension bridge when hosted, plain fetch otherwise */
 async function esGet(path){
   if(esBridge&&!esSameOrigin)return bridgeFetch(path);
-  const r=await fetch(esBase()+path,esFetchOpts());
-  return {ok:r.ok,status:r.status,ab:await r.arrayBuffer()};
+  try{
+    const r=await fetch(esBase()+path,esFetchOpts());
+    return {ok:r.ok,status:r.status,ab:await r.arrayBuffer()};
+  }catch(err){
+    /* a saved Authorization header forces a CORS preflight the Everything server
+       can't answer — if the server actually needs no auth, retry bare and drop
+       the stored credentials so it never happens again */
+    if(ES.user&&!esSameOrigin){
+      const o={};if(!esSameOrigin)o.targetAddressSpace='loopback';
+      const r=await fetch(esBase()+path,o);
+      if(r.ok){
+        ES.user='';ES.pass='';
+        try{localStorage.setItem('volt.es',JSON.stringify(ES))}catch(e){}
+        status('Everything needs no login anymore — cleared saved user/pass');
+        return {ok:r.ok,status:r.status,ab:await r.arrayBuffer()};
+      }
+    }
+    throw err;
+  }
 }
 function esMsg(s,err){const m=$id('esMsg');m.textContent=s||'';m.className=err?'err':''}
 function esLoadCfgUI(){$id('esHost').value=ES.host;$id('esPort').value=ES.port;$id('esUser').value=ES.user;$id('esPass').value=ES.pass;$id('esExts').value=ES.exts;$id('esCopy').checked=ES.copy}
 $id('esCfgBtn').onclick=()=>{const p=$id('esCfgPanel');p.hidden=!p.hidden;if(!p.hidden)esLoadCfgUI()};
 $id('esSave').onclick=()=>{
-  ES.host=$id('esHost').value.trim()||'localhost';ES.port=+$id('esPort').value||8667;
+  ES.host=$id('esHost').value.trim()||'127.0.0.1';ES.port=+$id('esPort').value||8667;
+  if(ES.host==='localhost')ES.host='127.0.0.1';
   ES.user=$id('esUser').value;ES.pass=$id('esPass').value;
   ES.exts=$id('esExts').value.trim();ES.copy=$id('esCopy').checked;
   localStorage.setItem('volt.es',JSON.stringify(ES));

@@ -1484,14 +1484,33 @@ document.getElementById('step').addEventListener('change',e=>{editStep=clamp(+e.
 /* ================= save / load ================= */
 function serialize(withSamples){
   return JSON.stringify(song,(k,v)=>{
-    if(k==='buffer')return undefined;
+    if(k==='buffer'||k==='_sid')return undefined;
     if(k==='sampleB64'&&!withSamples)return undefined;
     return v;
   });
 }
-/* ---- undo / redo (covers pattern data, order, track count, mixer) ---- */
+/* ---- undo / redo (covers patterns, order, tracks/mixer, instruments, bpm) ---- */
 let undoStack=[],redoStack=[],undoT=null,restoring=false;
-const snapState=()=>JSON.stringify({p:song.patterns,o:song.order,ts:song.trackset});
+/* sample payloads are huge, so snapshots reference them by session id instead of copying */
+let sidSeq=0;const sampleStore={};
+function sidFor(ins){
+  if(!ins._sid)ins._sid='s'+(++sidSeq);
+  const sp=sampleStore[ins._sid]||(sampleStore[ins._sid]={});
+  if(ins.sampleB64)sp.b64=ins.sampleB64;
+  if(ins.buffer)sp.buffer=ins.buffer;
+  return ins._sid;
+}
+const snapState=()=>JSON.stringify({
+  p:song.patterns,o:song.order,ts:song.trackset,bpm:song.bpm,
+  i:song.instruments.map(ins=>{
+    const o={name:ins.name,type:ins.type,params:Object.assign({},ins.params)};
+    if(ins.type==='sampler'){
+      o.sid=sidFor(ins);o.sampleName=ins.sampleName;o.sourcePath=ins.sourcePath;
+      o.s0=ins.s0;o.s1=ins.s1;
+    }
+    return o;
+  })
+});
 function pushUndoSoon(){
   if(restoring||!song)return;
   clearTimeout(undoT);
@@ -1509,6 +1528,20 @@ function applyState(s){
   const st=JSON.parse(s);
   song.patterns=st.p;song.order=st.o;song.trackset=st.ts;
   song.trackset.forEach(ts=>{if(!ts.eq)ts.eq={l:0,m:0,h:0};if(ts.cmp==null)ts.cmp=0;if(ts.drv==null)ts.drv=0});
+  if(st.i){
+    song.instruments=st.i.map(x=>{
+      const ins={name:x.name,type:x.type,params:x.params};
+      if(x.sid){
+        const sp=sampleStore[x.sid]||{};
+        ins._sid=x.sid;ins.sampleB64=sp.b64;ins.buffer=sp.buffer;
+        ins.sampleName=x.sampleName;ins.sourcePath=x.sourcePath;
+        if(x.s0!=null)ins.s0=x.s0;if(x.s1!=null)ins.s1=x.s1;
+      }
+      return ins;
+    });
+    curInst=clamp(curInst,0,song.instruments.length-1);
+  }
+  if(st.bpm){song.bpm=st.bpm;document.getElementById('bpm').value=st.bpm;if(AC)setDelayTime()}
   TRACKS=song.patterns[0].data.length;
   curPat=clamp(curPat,0,song.patterns.length-1);
   cursor.t=Math.min(cursor.t,TRACKS-1);
@@ -1516,7 +1549,7 @@ function applyState(s){
   document.getElementById('trkN').value=TRACKS;
   genCtCSS();
   if(AC){ensureChans(TRACKS);applyMix()}
-  renderGrid();trackPanel();if(!mixer.hidden)renderMixer();
+  renderGrid();renderInstList();renderParams();trackPanel();if(!mixer.hidden)renderMixer();
   saveSoon();
   restoring=false;
 }

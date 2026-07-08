@@ -45,7 +45,7 @@ Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `h
 - **Render to WAV** (⬇ WAV button): offline-renders the whole song — works on the hosted version too, no server needed
 - **Preset browser**: categorized starting points (Drums / Bass / Lead & Pad) instead of raw synth types
 - Per-channel **compressor + drive** on top of EQ; master **peak meter** with clip indicator in the top bar
-- **Beat grid** (`F8` or Beat button): FL-style step sequencer — one lane per track, click/drag to paint steps, Shift+click for accents, scroll a lane’s note to retune; edits the pattern live while it plays
+- **Beat grid** (`F8` or Beat button): FL-style step sequencer — one lane per track, click/drag to paint steps, Shift+click for accents, scroll a step to change its note (Shift+scroll = octave, with audible preview), scroll a lane’s note to retune new steps; edits the pattern live while it plays
 - **Command palette** (`Ctrl+Space`): type to search any action (note-off, transpose, render, mute…) and run it
 - Genre starting kits (Kit dropdown): **Full-on (main)** — the baked-in default song — plus DnB 174, Trance 138, Full-on basic 145, Goa 143 — song order list, JSON export/import, localStorage autosave
 - **Everything sample search**: type a query in the sidebar, preview (▶), add as new (+, never overwrites) or replace the selected instrument (⇄, asks first). ⚙ settings: host/port/user/pass/extension filter

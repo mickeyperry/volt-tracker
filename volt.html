@@ -2383,7 +2383,7 @@ function renderBeat(){
       if(r%4===0)cls+=' b4';
       if(r%16===0&&r)cls+=' bar';
       if(on){cls+=' on';if((c.v==null?32:c.v)>=40)cls+=' acc'}
-      h+='<i class="'+cls+'" data-t="'+t+'" data-r="'+r+'"></i>';
+      h+='<i class="'+cls+'" data-t="'+t+'" data-r="'+r+'"'+(on?' title="'+noteName(c.n)+' — scroll: ±semitone, Shift+scroll: ±octave"':'')+'></i>';
     }
     h+='</div>';
   }
@@ -2429,12 +2429,34 @@ beatLanes.addEventListener('mouseover',e=>{
 });
 document.addEventListener('mouseup',()=>{BEAT.paint=null});
 beatLanes.addEventListener('wheel',e=>{
+  const s=e.target.closest('.bstep');
+  if(s){
+    const t=+s.dataset.t,r=+s.dataset.r;
+    const c=cellAt(t,r);
+    if(!c||c.n==null||c.n===OFF)return;
+    e.preventDefault();
+    c.n=clamp(c.n+(e.deltaY<0?1:-1)*(e.shiftKey?12:1),0,95);
+    s.title=noteName(c.n)+' — scroll: ±semitone, Shift+scroll: ±octave';
+    status(noteName(c.n));
+    renderRow(r);saveSoon();
+    if(!SEQ.playing)beatPreview(t,c.n,c.i!=null?c.i:laneDefaults(t).i);
+    return;
+  }
   const ns=e.target.closest('.bnote');if(!ns)return;
   e.preventDefault();
   const t=+ns.dataset.t;
   BEAT.note[t]=clamp(laneDefaults(t).n+(e.deltaY<0?1:-1),0,95);
   ns.textContent=noteName(BEAT.note[t]);
 },{passive:false});
+function beatPreview(t,n,i){
+  audio();if(AC.state==='suspended')AC.resume();
+  const inst=song.instruments[i];if(!inst)return;
+  const ch=chans[t];if(!ch)return;
+  const tt=AC.currentTime+.005;
+  if(ch.voice)ch.voice.cut(tt);
+  ch.voice=trig(inst,n,tt,t,.8,0);
+  setTimeout(()=>{if(ch.voice&&!SEQ.playing)ch.voice.release(AC.currentTime)},200);
+}
 function beatPlayhead(r){
   if(beatEl.hidden)return;
   beatLanes.querySelectorAll('.bstep.ph').forEach(x=>x.classList.remove('ph'));

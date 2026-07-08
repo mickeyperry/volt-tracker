@@ -190,6 +190,20 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 .tab u:hover{color:var(--mag)}
 #tabNew{padding:2px 9px;font-size:12px;margin-bottom:3px}
 
+/* ---- beat grid (FL-style step sequencer) ---- */
+#beat{background:var(--panel);border-top:1px solid var(--line);overflow-x:auto;padding:8px 12px}
+.blane{display:flex;align-items:center;gap:2px;margin-bottom:3px}
+.blane .bl{width:118px;flex:none;display:flex;gap:6px;align-items:center;font-size:10px;color:var(--dim)}
+.blane .bl b{color:var(--txt);font-weight:600;font-size:9px;letter-spacing:.06em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px}
+.blane .bnote{font-family:var(--mono);font-size:10px;color:var(--blue);cursor:ns-resize;user-select:none}
+.bstep{display:block;width:16px;height:22px;flex:none;border:1px solid var(--line);border-radius:2px;background:var(--bg);cursor:pointer}
+.bstep.b4{background:var(--raised)}
+.bstep.bar{margin-left:7px}
+.bstep:hover{border-color:var(--dim)}
+.bstep.on{background:var(--teal);border-color:var(--teal)}
+.bstep.on.acc{background:var(--mag);border-color:var(--mag)}
+.bstep.ph{box-shadow:inset 0 -3px 0 var(--amber)}
+
 /* ---- everything search panel ---- */
 #esQ{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:3px;color:var(--txt);font-family:var(--mono);font-size:12px;padding:4px 6px}
 #esResults{display:flex;flex-direction:column;gap:1px;margin-top:6px;max-height:230px;overflow-y:auto;font-size:11px}
@@ -238,6 +252,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <span class="sep"></span>
   <div class="grp">
     <button id="mixBtn" title="Mixer (F9)">Mixer</button>
+    <button id="beatBtn" title="Beat grid — FL-style step sequencer, edits the pattern live (F8)">Beat</button>
     <label class="fld">Theme <select id="themeSel" title="Color theme — pick for your room lighting"></select></label>
   </div>
   <span class="sep"></span>
@@ -314,6 +329,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 <div id="mixer" hidden><div id="mixch"></div></div>
 
+<div id="beat" hidden><div id="beatLanes"></div></div>
+
 <div id="palWrap" hidden><div id="pal">
   <input id="palQ" placeholder="Type a command&#8230; (&#8593;&#8595; select &#183; Enter run &#183; Esc close)" autocomplete="off" spellcheck="false">
   <div id="palList"></div>
@@ -331,7 +348,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <span><kbd>Space</kbd> play</span>
   <span><kbd>[</kbd><kbd>]</kbd> octave</span>
   <span><kbd>Shift</kbd>+arrows select &#183; <kbd>Ctrl</kbd><kbd>A</kbd> column&#8594;track&#8594;all &#183; <kbd>Ctrl</kbd><kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copy/cut/paste &#183; <kbd>Ctrl</kbd><kbd>Z</kbd>/<kbd>Y</kbd> undo/redo &#183; <kbd>Alt</kbd><kbd>&#8593;&#8595;</kbd> &#177;&#189;tone <kbd>+Shift</kbd> &#177;octave</span>
-  <span><kbd>Alt</kbd><kbd>1</kbd>&#8211;<kbd>0</kbd> mute &#183; <kbd>+Shift</kbd> solo &#183; <kbd>Alt</kbd><kbd>M</kbd>/<kbd>S</kbd> cur trk &#183; <kbd>Alt</kbd><kbd>X</kbd> clear &#183; <kbd>F2</kbd> rename trk &#183; <kbd>F9</kbd> mixer &#183; <kbd>Ctrl</kbd><kbd>&#9166;</kbd>/<kbd>Ctrl</kbd><kbd>D</kbd> new/dup pattern &#183; <kbd>Ctrl</kbd><kbd>Space</kbd> commands</span>
+  <span><kbd>Alt</kbd><kbd>1</kbd>&#8211;<kbd>0</kbd> mute &#183; <kbd>+Shift</kbd> solo &#183; <kbd>Alt</kbd><kbd>M</kbd>/<kbd>S</kbd> cur trk &#183; <kbd>Alt</kbd><kbd>X</kbd> clear &#183; <kbd>F2</kbd> rename trk &#183; <kbd>F8</kbd> beat grid &#183; <kbd>F9</kbd> mixer &#183; <kbd>Ctrl</kbd><kbd>&#9166;</kbd>/<kbd>Ctrl</kbd><kbd>D</kbd> new/dup pattern &#183; <kbd>Ctrl</kbd><kbd>Space</kbd> commands</span>
   <span>FX: <b>R</b>xx retrig &#183; <b>S</b>xx smp offset &#183; <b>U/D</b>xx slide &#183; <b>G</b>xx glide &#183; <b>C</b>xx cutoff</span>
   <span id="status"></span>
 </div>
@@ -700,6 +717,7 @@ function schedRow(pi,row,t){
 /* playhead */
 let playRowEl=null;
 function setPlayRow(r){
+  beatPlayhead(r);
   if(playRowEl){playRowEl.classList.remove('playrow');playRowEl=null}
   if(r<0)return;
   const el=grows.children[r];if(!el)return;
@@ -860,7 +878,7 @@ function renderGrid(){
   grows.innerHTML=h;playRowEl=null;
   renderHead();
   document.getElementById('patLen').value=pat.rows;
-  renderPatSel();renderOrder();
+  renderPatSel();renderOrder();renderBeatIfOpen();
 }
 let lastCurRow=0;
 function moveCursor(dt,dr,dc){
@@ -1523,6 +1541,7 @@ function redo(){
 let saveT=null;
 function saveSoon(){
   pushUndoSoon();
+  renderBeatIfOpen();
   clearTimeout(saveT);
   saveT=setTimeout(()=>{
     flushSave();
@@ -1961,6 +1980,7 @@ document.addEventListener('keydown',e=>{
   const k=e.key,low=k.toLowerCase();
   if(k==='Escape'&&!palWrap.hidden){e.stopImmediatePropagation();palClose();return}
   const ARROWS={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]};
+  if(k==='F8'){e.preventDefault();e.stopImmediatePropagation();beatToggle();return}
   if(e.altKey&&(k==='ArrowUp'||k==='ArrowDown')){
     e.preventDefault();e.stopImmediatePropagation();
     transposeSel((k==='ArrowUp'?1:-1)*(e.shiftKey?12:1));
@@ -2300,6 +2320,7 @@ const COMMANDS=[
   {n:'Render song to WAV',kw:'export audio bounce record file',f:renderWav},
   {n:'Export song JSON',kw:'save file download',f:()=>document.getElementById('expBtn').click()},
   {n:'Import song JSON',kw:'load open file',f:()=>document.getElementById('impBtn').click()},
+  {n:'Toggle beat grid',kw:'step sequencer fl drum machine beat f8',f:()=>beatToggle()},
   {n:'Load Full-on main kit',kw:'template default mickey fullon psytrance 145',f:()=>loadKit('mine')},
   {n:'Load DnB kit',kw:'template drum bass 174',f:()=>loadKit('dnb')},
   {n:'Load Trance kit',kw:'template 138',f:()=>loadKit('trance')},
@@ -2331,6 +2352,94 @@ palQ.addEventListener('keydown',e=>{
 });
 palList.addEventListener('click',e=>{const r=e.target.closest('.palrow');if(r&&r.dataset.i!=null){palSel=+r.dataset.i;palRun()}});
 palWrap.addEventListener('mousedown',e=>{if(e.target===palWrap)palClose()});
+
+/* ================= beat grid (FL-style step view of the current pattern) ================= */
+const beatEl=document.getElementById('beat'),beatLanes=document.getElementById('beatLanes');
+const BEAT={note:{},vel:30,accVel:44,paint:null};
+let beatT=null;
+function beatAuto(t){
+  const pat=song.patterns[curPat];
+  for(let r=0;r<pat.rows;r++){const c=pat.data[t][r];if(c&&c.n!=null&&c.n!==OFF)return{n:c.n,i:c.i}}
+  return null;
+}
+function laneDefaults(t){
+  const a=beatAuto(t);
+  return{n:BEAT.note[t]!=null?BEAT.note[t]:(a?a.n:48),i:a&&a.i!=null?a.i:curInst};
+}
+function renderBeat(){
+  if(beatEl.hidden||!song)return;
+  const pat=song.patterns[curPat];
+  let h='';
+  for(let t=0;t<TRACKS;t++){
+    const d=laneDefaults(t);
+    const ins=song.instruments[d.i];
+    const nm=song.trackset[t].name||(beatAuto(t)&&ins?ins.name:'Track '+(t+1));
+    h+='<div class="blane"><div class="bl"><b title="'+esc(nm)+'">'+esc(nm)+'</b>'
+      +'<span class="bnote" data-t="'+t+'" title="Scroll to change the note new steps use">'+noteName(d.n)+'</span></div>';
+    for(let r=0;r<pat.rows;r++){
+      const c=pat.data[t][r];
+      const on=!!(c&&c.n!=null&&c.n!==OFF);
+      let cls='bstep';
+      if(r%4===0)cls+=' b4';
+      if(r%16===0&&r)cls+=' bar';
+      if(on){cls+=' on';if((c.v==null?32:c.v)>=40)cls+=' acc'}
+      h+='<i class="'+cls+'" data-t="'+t+'" data-r="'+r+'"></i>';
+    }
+    h+='</div>';
+  }
+  beatLanes.innerHTML=h;
+}
+function renderBeatIfOpen(){
+  if(beatEl.hidden||BEAT.paint)return;
+  clearTimeout(beatT);beatT=setTimeout(renderBeat,250);
+}
+function beatToggle(){
+  beatEl.hidden=!beatEl.hidden;
+  document.getElementById('beatBtn').classList.toggle('on',!beatEl.hidden);
+  if(!beatEl.hidden)renderBeat();
+}
+document.getElementById('beatBtn').onclick=beatToggle;
+function beatSet(t,r,on,acc){
+  if(on){
+    const d=laneDefaults(t);
+    const cell=ensureCell(t,r);
+    cell.n=d.n;cell.i=d.i;cell.v=acc?BEAT.accVel:BEAT.vel;
+  }else{
+    const c=cellAt(t,r);if(!c)return;
+    c.n=null;c.i=null;c.v=null;pruneCell(t,r);
+  }
+  renderRow(r);
+}
+function beatCellUI(el,on,acc){el.classList.toggle('on',on);el.classList.toggle('acc',!!(on&&acc))}
+beatLanes.addEventListener('mousedown',e=>{
+  const s=e.target.closest('.bstep');if(!s)return;
+  e.preventDefault();
+  const t=+s.dataset.t,r=+s.dataset.r;
+  const c=cellAt(t,r);
+  const curOn=!!(c&&c.n!=null&&c.n!==OFF);
+  const on=e.shiftKey?true:!curOn;
+  BEAT.paint={on,acc:e.shiftKey};
+  beatSet(t,r,on,e.shiftKey);beatCellUI(s,on,e.shiftKey);saveSoon();
+});
+beatLanes.addEventListener('mouseover',e=>{
+  if(!BEAT.paint)return;
+  const s=e.target.closest('.bstep');if(!s)return;
+  beatSet(+s.dataset.t,+s.dataset.r,BEAT.paint.on,BEAT.paint.acc);
+  beatCellUI(s,BEAT.paint.on,BEAT.paint.acc);saveSoon();
+});
+document.addEventListener('mouseup',()=>{BEAT.paint=null});
+beatLanes.addEventListener('wheel',e=>{
+  const ns=e.target.closest('.bnote');if(!ns)return;
+  e.preventDefault();
+  const t=+ns.dataset.t;
+  BEAT.note[t]=clamp(laneDefaults(t).n+(e.deltaY<0?1:-1),0,95);
+  ns.textContent=noteName(BEAT.note[t]);
+},{passive:false});
+function beatPlayhead(r){
+  if(beatEl.hidden)return;
+  beatLanes.querySelectorAll('.bstep.ph').forEach(x=>x.classList.remove('ph'));
+  if(r>=0)beatLanes.querySelectorAll('.bstep[data-r="'+r+'"]').forEach(x=>x.classList.add('ph'));
+}
 
 /* ================= project tabs ================= */
 const PM={tabs:[],active:null};

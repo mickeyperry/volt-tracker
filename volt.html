@@ -2130,7 +2130,7 @@ async function esSearch(){
     esMsg(j.totalResults>esRes.length?'showing '+esRes.length+' of '+j.totalResults:esRes.length+' result'+(esRes.length===1?'':'s'));
   }catch(err){
     if(location.protocol==='https:')
-      esMsg('Blocked reaching Everything. Easiest fix: install the “VOLT Everything Bridge” extension (extension/ folder in the repo) and reload. Or: allow the “access your local network” prompt / Site settings → Local network access, then search again.',1);
+      esMsg('Blocked reaching Everything. Look for a “local network” permission prompt near the address bar and click Allow, then search again. No prompt? Click the lock/shield icon → permissions → allow Local Network. (Or install the VOLT Everything Bridge extension from the repo.)',1);
     else if(location.protocol==='file:')
       esMsg('You opened volt.html directly, so the browser blocks Everything’s replies (file:// has no origin). Use the “VOLT Tracker” Desktop shortcut — it opens this same page through the Everything server at http://localhost:8667.',1);
     else

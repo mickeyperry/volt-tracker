@@ -75,6 +75,14 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 .palrow{display:flex;justify-content:space-between;gap:10px;padding:6px 12px;font-size:12px;color:var(--txt);cursor:pointer}
 .palrow .pk{color:var(--faint);font-size:10px;font-family:var(--mono)}
 .palrow.sel{background:var(--teal-dim);color:var(--teal)}
+
+/* ---- dialog ---- */
+#dlgWrap{position:fixed;inset:0;background:rgba(4,6,10,.55);z-index:60;display:flex;align-items:center;justify-content:center}
+#dlgWrap[hidden]{display:none}
+#dlg{width:400px;max-width:92vw;background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,.6);padding:16px;display:flex;flex-direction:column;gap:14px}
+#dlgMsg{font-size:13px;color:var(--txt);white-space:pre-line;line-height:1.5}
+#dlgBtns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+#dlgBtns button.primary{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
 #instList{display:flex;flex-direction:column;gap:1px;font-family:var(--mono);font-size:12px;max-height:190px;overflow-y:auto}
 #instList .irow{display:flex;gap:8px;padding:3px 6px;border-radius:3px;cursor:pointer;color:var(--dim)}
 #instList .irow:hover{background:var(--raised)}
@@ -309,6 +317,11 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 <div id="palWrap" hidden><div id="pal">
   <input id="palQ" placeholder="Type a command&#8230; (&#8593;&#8595; select &#183; Enter run &#183; Esc close)" autocomplete="off" spellcheck="false">
   <div id="palList"></div>
+</div></div>
+
+<div id="dlgWrap" hidden><div id="dlg">
+  <div id="dlgMsg"></div>
+  <div id="dlgBtns"></div>
 </div></div>
 
 <div id="foot">
@@ -896,6 +909,7 @@ const FXKEYS='rsudcg';
 let previewKey=null;
 
 document.addEventListener('keydown',e=>{
+  if(dlgOpen())return;
   const tag=e.target.tagName;
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')return;
   const k=e.key;
@@ -1548,13 +1562,44 @@ async function loadSong(s){
   renderGrid();renderInstList();renderParams();trackPanel();if(!mixer.hidden)renderMixer();
   status(song.name);
 }
-document.getElementById('expBtn').onclick=()=>{
-  const blob=new Blob([serialize(true)],{type:'application/json'});
+function downloadSong(json,name){
+  const blob=new Blob([json],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download=(song.name||'volt-song')+'.json';
+  a.download=(name||'volt-song')+'.json';
   a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
-};
+}
+document.getElementById('expBtn').onclick=()=>downloadSong(serialize(true),song.name);
+
+/* ---- small in-app dialog (native confirm() can't offer 3 choices) ---- */
+let dlgRes=null;
+function dlgOpen(){return !document.getElementById('dlgWrap').hidden}
+function askDialog(msg,buttons){
+  return new Promise(res=>{
+    dlgRes=res;
+    document.getElementById('dlgMsg').textContent=msg;
+    const bx=document.getElementById('dlgBtns');
+    bx.innerHTML='';
+    buttons.forEach(b=>{
+      const el=document.createElement('button');
+      el.textContent=b.label;
+      if(b.cls)el.className=b.cls;
+      el.onclick=()=>dlgClose(b.value);
+      bx.appendChild(el);
+    });
+    document.getElementById('dlgWrap').hidden=false;
+    const first=bx.querySelector('button');if(first)first.focus();
+  });
+}
+function dlgClose(v){
+  document.getElementById('dlgWrap').hidden=true;
+  const r=dlgRes;dlgRes=null;if(r)r(v);
+}
+document.getElementById('dlgWrap').addEventListener('mousedown',e=>{if(e.target.id==='dlgWrap')dlgClose(null)});
+document.getElementById('dlgWrap').addEventListener('keydown',e=>{
+  e.stopPropagation();
+  if(e.key==='Escape')dlgClose(null);
+});
 /* ---- offline render → WAV: swaps the engine onto an OfflineAudioContext, schedules the
    whole song through the normal schedRow path (mutes/solo/EQ/FX all respected), restores after */
 let rendering=false;
@@ -1882,6 +1927,7 @@ function pasteClip(){
 }
 /* selection keys run in capture phase so the main edit handler never sees them */
 document.addEventListener('keydown',e=>{
+  if(dlgOpen())return;
   const tag=e.target.tagName;
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')return;
   const k=e.key,low=k.toLowerCase();
@@ -2280,16 +2326,32 @@ async function newTab(s){
   await loadSong(s||blankSong());
   flushSave();saveTabs();
 }
-function closeTab(id){
+async function closeTab(id){
   const i=PM.tabs.findIndex(t=>t.id===id);if(i<0)return;
   const tab=PM.tabs[i];
-  if(!confirm('Close project “'+(tab.name||'untitled')+'”?\nIt will be deleted from this browser — Export it first if you want a file backup.'))return;
+  if(id===PM.active)flushSave();
+  const choice=await askDialog('Close project “'+(tab.name||'untitled')+'”?\nClosing deletes it from this browser.',[
+    {label:'Export & close',value:'save',cls:'primary'},
+    {label:'Close without saving',value:'close',cls:'danger'},
+    {label:'Cancel',value:''}
+  ]);
+  if(!choice)return;
+  if(choice==='save'){
+    let json=null,nm=tab.name;
+    if(id===PM.active){json=serialize(true);nm=song.name}
+    else{
+      json=localStorage.getItem('volt.proj.'+id);
+      if(!json){const s=loadProj(id);if(s)json=JSON.stringify(s,(k,v)=>k==='buffer'?undefined:v)}
+    }
+    if(json)downloadSong(json,nm);
+  }
+  const j=PM.tabs.findIndex(t=>t.id===id);if(j<0)return;
   try{localStorage.removeItem('volt.proj.'+id)}catch(e){}
   delete projCache[id];
-  PM.tabs.splice(i,1);
+  PM.tabs.splice(j,1);
   if(PM.active===id){
     PM.active=null;
-    if(PM.tabs.length)switchTab(PM.tabs[Math.max(0,i-1)].id);
+    if(PM.tabs.length)switchTab(PM.tabs[Math.max(0,j-1)].id);
     else newTab(embeddedDefault()||tplDnb());
   }else{saveTabs();renderTabs()}
 }

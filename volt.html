@@ -2053,7 +2053,10 @@ document.addEventListener('mouseup',()=>{dragSel=null});
 /* ================= Everything (voidtools) sample search ================= */
 const $id=s=>document.getElementById(s);
 let esCfgStored={};try{esCfgStored=JSON.parse(localStorage.getItem('volt.es')||'{}')}catch(e){}
-const ES=Object.assign({host:'localhost',port:8667,user:'',pass:'',exts:'wav;mp3;aiff;aif;m4a;ogg;flac',copy:true},esCfgStored);
+/* default to 127.0.0.1, not "localhost": Everything binds IPv4-only and Firefox
+   may resolve localhost to ::1 and never fall back */
+const ES=Object.assign({host:'127.0.0.1',port:8667,user:'',pass:'',exts:'wav;mp3;aiff;aif;m4a;ogg;flac',copy:true},esCfgStored);
+if(ES.host==='localhost')ES.host='127.0.0.1';
 /* when the page itself is served by the Everything HTTP server, talk to it same-origin —
    avoids CORS entirely and any localhost vs 127.0.0.1 mismatch */
 const esSameOrigin=location.protocol==='http:'&&/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
@@ -2130,7 +2133,7 @@ async function esSearch(){
     esMsg(j.totalResults>esRes.length?'showing '+esRes.length+' of '+j.totalResults:esRes.length+' result'+(esRes.length===1?'':'s'));
   }catch(err){
     if(location.protocol==='https:')
-      esMsg('Blocked reaching Everything. Look for a “local network” permission prompt near the address bar and click Allow, then search again. No prompt? Click the lock/shield icon → permissions → allow Local Network. (Or install the VOLT Everything Bridge extension from the repo.)',1);
+      esMsg('Blocked reaching Everything ['+(err&&err.message||err)+']. If the browser shows a “local network” permission prompt, click Allow and retry. Otherwise: lock icon → permissions → allow Local Network, or install the VOLT Everything Bridge extension from the repo.',1);
     else if(location.protocol==='file:')
       esMsg('You opened volt.html directly, so the browser blocks Everything’s replies (file:// has no origin). Use the “VOLT Tracker” Desktop shortcut — it opens this same page through the Everything server at http://localhost:8667.',1);
     else

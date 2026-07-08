@@ -47,8 +47,8 @@ Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `h
 - **Preset browser**: categorized starting points (Drums / Bass / Lead & Pad) instead of raw synth types
 - Per-channel **compressor + drive** on top of EQ; master **peak meter** with clip indicator in the top bar
 - **Command palette** (`Ctrl+Space`): type to search any action (note-off, transpose, render, mute…) and run it
-- DnB and Trance starter templates, song order list, JSON export/import, localStorage autosave
-- **Everything sample search**: type a query in the sidebar, preview (▶) and add (+) results as sampler instruments. ⚙ settings: host/port/user/pass/extension filter
+- Genre starting kits (Kit dropdown): DnB 174, Trance 138, Full-on Psy 145, Goa 143 — song order list, JSON export/import, localStorage autosave
+- **Everything sample search**: type a query in the sidebar, preview (▶), add as new (+, never overwrites) or replace the selected instrument (⇄, asks first). ⚙ settings: host/port/user/pass/extension filter
 - **Copy to project folder**: added samples are copied into a folder you pick (File System Access API, Chrome/Edge; the handle persists in IndexedDB)
 - **Selection & clipboard**: Shift+arrows or mouse drag; `Ctrl+A` cycles column → track → whole pattern; `Ctrl+C/X/V`, `Del` clears
 - **Project tabs**: several songs open side by side; the clipboard works across tabs, so copy in one project and paste in another. `×` closes a tab (asks first — closing deletes it from the browser, so Export anything you want to keep). Double-click a tab to rename; Import opens the file in a new tab

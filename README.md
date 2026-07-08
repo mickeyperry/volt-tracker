@@ -41,7 +41,6 @@ Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `h
 - Per-track volume / ping-pong delay / reverb / kick-ducking / 3-band EQ, mute & solo (hotkeys + dimmed columns), renameable tracks (double-click header or `F2`)
 - **Mixer panel** (`F9` or Mixer button): channel strips with fader, live meters, EQ, sends, mute/solo
 - Song strip: drag chips to reorder patterns; playing chip fills with loop progress, header shows a pattern-loop progress bar
-- Sample search `+` offers to replace the selected instrument in place (pattern notes keep their slot) or add as new
 - Resizable side panel (drag the divider), collapsible sections
 - **Render to WAV** (⬇ WAV button): offline-renders the whole song — works on the hosted version too, no server needed
 - **Preset browser**: categorized starting points (Drums / Bass / Lead & Pad) instead of raw synth types

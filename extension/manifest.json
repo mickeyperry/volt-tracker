@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VOLT Everything Bridge",
-  "version": "1.0",
-  "description": "Lets the VOLT tracker (mickeyperry.github.io) search your local voidtools Everything index. Local-only: relays to 127.0.0.1:8667, nothing leaves your machine.",
+  "version": "1.1",
+  "description": "Lets the VOLT tracker (mickeyperry.github.io or a local volt.html) search your local voidtools Everything index. Local-only: relays to 127.0.0.1:8667, nothing leaves your machine.",
   "host_permissions": [
     "http://127.0.0.1:8667/*",
     "http://localhost:8667/*"
@@ -13,7 +13,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://mickeyperry.github.io/*"],
+      "matches": ["https://mickeyperry.github.io/*", "file:///*volt.html"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

@@ -262,7 +262,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       <div id="instList"></div>
       <div class="btnrow">
         <select id="newType" title="Preset browser — drums, bass and synth presets"></select>
-        <button id="instAdd">+ Add</button>
+        <button id="instAdd" title="Add the chosen preset as a NEW instrument">+ Add</button>
+        <button id="instRep" title="Replace the selected instrument with the chosen preset (pattern notes keep the slot)">&#8644;</button>
         <button id="instSmp">Sample&#8230;</button>
         <input type="file" id="smpFile" accept="audio/*" multiple hidden>
       </div>
@@ -349,6 +350,8 @@ const ITYPES={
   reese:   {label:'Reese',    p:{voices:[1,4,3,0],detune:[0,60,18,0],cutoff:[60,6000,380,1],res:[0,20,7,0],lfoRate:[.05,12,.4,1],lfoAmt:[0,1,.35,0],drive:[0,1,.55,0],sub:[0,1,.5,0],rel:[.02,.8,.08,0]}},
   supersaw:{label:'Supersaw', p:{detune:[0,80,28,0],spread:[0,1,.85,0],hp:[40,900,160,1],cutoff:[300,16000,7000,1],att:[.001,.8,.01,0],rel:[.02,1.5,.25,0]}},
   pluck:   {label:'Pluck',    p:{cutoff:[100,4000,800,1],envAmt:[0,1,.6,0],decay:[.05,1,.3,0],res:[0,15,3,0]}},
+  psybass: {label:'Psy Bass', p:{cutoff:[80,3000,420,1],envAmt:[0,1,.5,0],res:[0,15,2,0],decay:[.05,.5,.16,0],drive:[0,1,.5,0],sub:[0,1,.6,0]}},
+  acid303: {label:'W0RM-303', p:{wave:[0,1,0,0],cutoff:[100,4000,700,1],res:[0,25,14,0],envAmt:[0,1,.65,0],decay:[.05,.8,.2,0],drive:[0,1,.4,0],rel:[.01,.5,.05,0]}},
   sampler: {label:'Sampler',  p:{root:[12,84,48,0],rel:[.01,.5,.04,0]}}
 };
 function defParams(type){const o={};for(const k in ITYPES[type].p)o[k]=ITYPES[type].p[k][2];return o}
@@ -464,7 +467,7 @@ function osc(type,f){const o=AC.createOscillator();o.type=type;o.frequency.value
 
 function trig(inst,note,t,tr,vel,off){
   const p=inst.params, ch=chans[tr], g=AC.createGain();
-  const rel={sub:p.rel,reese:p.rel,supersaw:p.rel,sampler:p.rel}[inst.type]||.05;
+  const rel={sub:p.rel,reese:p.rel,supersaw:p.rel,sampler:p.rel,acid303:p.rel}[inst.type]||.05;
   let srcs=[], v;
   switch(inst.type){
   case 'kick':{
@@ -552,6 +555,39 @@ function trig(inst,note,t,tr,vel,off){
     g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel*.8,t+.003);
     g.gain.setTargetAtTime(0,t+.005,p.decay/2.5);
     v=baseVoice(g,srcs,note,rel);v.filter=lp;break}
+  case 'psybass':{
+    /* tight self-closing bass — the israeli full-on / IM rolling sound:
+       instant attack, filter snap, gone by `decay` (no hanging release) */
+    const f=nfreq(note);
+    const o=osc('sawtooth',f);
+    const sh=mkShaper(.25+p.drive*.75);
+    const lp=AC.createBiquadFilter();lp.type='lowpass';lp.Q.value=p.res;
+    lp.frequency.setValueAtTime(Math.min(p.cutoff+p.envAmt*3800,16000),t);
+    lp.frequency.setTargetAtTime(p.cutoff,t+.002,Math.max(.015,p.decay/4));
+    o.connect(sh);sh.connect(lp);lp.connect(g);
+    o.start(t);o.stop(t+p.decay*4+.1);srcs=[o];
+    if(p.sub>0){
+      const so=osc('sine',f);const sg=AC.createGain();sg.gain.value=p.sub*.7;
+      so.connect(sg);sg.connect(g);so.start(t);so.stop(t+p.decay*4+.1);srcs.push(so);
+    }
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel,t+.002);
+    g.gain.setTargetAtTime(0,t+.004,p.decay/3);
+    v=baseVoice(g,srcs,note,.03);v.filter=lp;
+    break}
+  case 'acid303':{
+    /* single-osc 303: resonant sweep, post-filter drive; sustains until
+       note-off so Gxx glides and Cxx cutoff rides work like a real acid line */
+    const f=nfreq(note);
+    const o=osc(p.wave>=.5?'square':'sawtooth',f);
+    const lp=AC.createBiquadFilter();lp.type='lowpass';lp.Q.value=p.res;
+    lp.frequency.setValueAtTime(Math.min(p.cutoff+p.envAmt*4200,16000),t);
+    lp.frequency.setTargetAtTime(p.cutoff,t+.002,Math.max(.02,p.decay/3));
+    const sh=mkShaper(.2+p.drive*.8);
+    o.connect(lp);lp.connect(sh);sh.connect(g);
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel*.9,t+.003);
+    o.start(t);srcs=[o];
+    v=baseVoice(g,srcs,note,rel);v.filter=lp;
+    break}
   case 'sampler':{
     if(!inst.buffer){return null}
     const s=AC.createBufferSource();s.buffer=inst.buffer;
@@ -1237,6 +1273,12 @@ const PRESETS=[
   {cat:'Bass',name:'Reese Classic',type:'reese',p:{voices:3,detune:22,cutoff:340,res:8,lfoRate:.35,lfoAmt:.35,drive:.6,sub:.5,rel:.09}},
   {cat:'Bass',name:'Reese Wide',type:'reese',p:{voices:4,detune:38,cutoff:520,res:10,lfoRate:.2,lfoAmt:.5,drive:.7,sub:.6,rel:.12}},
   {cat:'Bass',name:'Neuro Growl',type:'reese',p:{voices:3,detune:14,cutoff:900,res:14,lfoRate:2.2,lfoAmt:.8,drive:.9,sub:.4,rel:.06}},
+  {cat:'Bass',name:'Psy Bass IM',type:'psybass',p:{cutoff:420,envAmt:.5,res:2,decay:.16,drive:.5,sub:.6}},
+  {cat:'Bass',name:'Psy Bass Dark',type:'psybass',p:{cutoff:300,envAmt:.35,res:3,decay:.14,drive:.65,sub:.75}},
+  {cat:'Bass',name:'Trance Offbeat',type:'psybass',p:{cutoff:520,envAmt:.45,res:2,decay:.22,drive:.4,sub:.7}},
+  {cat:'Acid',name:'W0RM Saw',type:'acid303',p:{wave:0,cutoff:700,res:14,envAmt:.65,decay:.2,drive:.4,rel:.05}},
+  {cat:'Acid',name:'W0RM Square',type:'acid303',p:{wave:1,cutoff:600,res:16,envAmt:.7,decay:.25,drive:.5,rel:.05}},
+  {cat:'Acid',name:'W0RM Screamer',type:'acid303',p:{wave:0,cutoff:1100,res:20,envAmt:.85,decay:.32,drive:.7,rel:.04}},
   {cat:'Lead / Pad',name:'Supersaw Trance',type:'supersaw',p:{detune:32,spread:.9,hp:170,cutoff:5200,att:.14,rel:.5}},
   {cat:'Lead / Pad',name:'Supersaw Stab',type:'supersaw',p:{detune:24,spread:.8,hp:200,cutoff:9000,att:.005,rel:.18}},
   {cat:'Lead / Pad',name:'Pluck Bright',type:'pluck',p:{cutoff:1400,envAmt:.7,decay:.25,res:4}},
@@ -1252,6 +1294,14 @@ document.getElementById('instAdd').onclick=()=>{
   const p=PRESETS[+newTypeSel.value]||PRESETS[0];
   song.instruments.push(mkInst(p.type,p.name,p.p));
   curInst=song.instruments.length-1;renderInstList();renderParams();saveSoon();
+};
+document.getElementById('instRep').onclick=()=>{
+  const p=PRESETS[+newTypeSel.value]||PRESETS[0];
+  const cur=song.instruments[curInst];if(!cur)return;
+  if(!confirm('Replace '+hex2(curInst)+' “'+cur.name+'” with preset “'+p.name+'”?\nPattern notes keep using this slot.'))return;
+  song.instruments[curInst]=mkInst(p.type,p.name,p.p);
+  renderInstList();renderParams();saveSoon();
+  status('replaced '+hex2(curInst)+' → '+p.name);
 };
 document.getElementById('instDel').onclick=()=>{
   if(song.instruments.length<=1)return;
@@ -1613,7 +1663,7 @@ function tplTrance(){
     mkInst('clap','Clap',{tone:1250,decay:.28}),
     mkInst('hat','Hat C',{tone:9000,decay:.04}),
     mkInst('hat','Hat O',{tone:7000,decay:.22}),
-    mkInst('sub','Bass',{harm:.3,rel:.05}),
+    mkInst('psybass','Bass',{cutoff:520,envAmt:.45,res:2,decay:.22,drive:.4,sub:.7}),
     mkInst('pluck','Pluck',{cutoff:820,envAmt:.62,decay:.3,res:3.5}),
     mkInst('supersaw','Pad',{detune:32,spread:.9,hp:170,cutoff:5200,att:.14,rel:.5}),
   ];
@@ -1659,7 +1709,7 @@ function tplFullon(){
   s.name='full-on';s.bpm=145;
   s.instruments=[
     mkInst('kick','Kick',{pitch:56,punch:.75,decay:.24,drive:.45}),
-    mkInst('reese','Psy Bass',{voices:1,detune:0,cutoff:720,res:4,lfoRate:.05,lfoAmt:0,drive:.5,sub:.7,rel:.05}),
+    mkInst('psybass','Psy Bass',{cutoff:430,envAmt:.5,res:2.5,decay:.15,drive:.55,sub:.65}),
     mkInst('hat','Hat C',{tone:9500,decay:.035}),
     mkInst('hat','Hat O',{tone:7200,decay:.18}),
     mkInst('snare','Snare',{tone:220,snap:.85,decay:.13}),
@@ -1696,11 +1746,11 @@ function tplGoa(){
   s.name='goa';s.bpm=143;
   s.instruments=[
     mkInst('kick','Kick',{pitch:54,punch:.7,decay:.26,drive:.4}),
-    mkInst('reese','Goa Bass',{voices:1,detune:0,cutoff:640,res:5,lfoRate:.05,lfoAmt:0,drive:.45,sub:.75,rel:.05}),
+    mkInst('psybass','Goa Bass',{cutoff:380,envAmt:.4,res:3,decay:.14,drive:.5,sub:.7}),
     mkInst('hat','Hat C',{tone:10000,decay:.03}),
     mkInst('hat','Hat O',{tone:7500,decay:.16}),
     mkInst('pluck','Goa Lead',{cutoff:1500,envAmt:.6,decay:.22,res:6}),
-    mkInst('reese','303 Squelch',{voices:1,detune:0,cutoff:320,res:15,lfoRate:6,lfoAmt:.5,drive:.7,sub:.2,rel:.06}),
+    mkInst('acid303','W0RM Squelch',{wave:0,cutoff:520,res:16,envAmt:.7,decay:.22,drive:.55,rel:.05}),
     mkInst('supersaw','Pad',{detune:36,spread:.95,hp:180,cutoff:5200,att:.25,rel:.7}),
   ];
   const ts=s.trackset;

@@ -50,7 +50,7 @@ Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `h
 - **Everything sample search**: type a query in the sidebar, preview (▶), add as new (+, never overwrites) or replace the selected instrument (⇄, asks first). ⚙ settings: host/port/user/pass/extension filter
 - **Copy to project folder**: added samples are copied into a folder you pick (File System Access API, Chrome/Edge; the handle persists in IndexedDB)
 - **Selection & clipboard**: Shift+arrows or mouse drag; `Ctrl+A` cycles column → track → whole pattern; `Ctrl+C/X/V`, `Del` clears
-- **Project tabs**: several songs open side by side; the clipboard works across tabs, so copy in one project and paste in another. `×` closes a tab (asks first — closing deletes it from the browser, so Export anything you want to keep). Double-click a tab to rename; Import opens the file in a new tab
+- **Project tabs**: several songs open side by side; the clipboard works across tabs, so copy in one project and paste in another. `×` closes a tab via a dialog with **Export & close** / Close without saving / Cancel (closing deletes it from the browser). Double-click a tab to rename; Import opens the file in a new tab
 - **Themes** (top bar): VOLT Night · Pitch Black (dark room) · Warm Dim (low-blue, evening) · Daylight (bright room)
 
 ## Keys

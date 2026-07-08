@@ -37,7 +37,7 @@ Security: it only injects on `mickeyperry.github.io` (fork = edit `matches` + `h
 ## Features
 
 - 8-track pattern editor, hex FX column (`Rxx` retrig, `Sxx` sample offset, `U/Dxx` slide, `Gxx` glide, `Cxx` cutoff)
-- Synth engine: kick, snare, hat, clap, sub, reese, supersaw, pluck + sampler
+- Synth engine: kick, snare, hat, clap, sub, reese, supersaw, pluck, **Psy Bass** (tight self-closing full-on bass), **W0RM-303** acid + sampler
 - Per-track volume / ping-pong delay / reverb / kick-ducking / 3-band EQ, mute & solo (hotkeys + dimmed columns), renameable tracks (double-click header or `F2`)
 - **Mixer panel** (`F9` or Mixer button): channel strips with fader, live meters, EQ, sends, mute/solo
 - Song strip: drag chips to reorder patterns; playing chip fills with loop progress, header shows a pattern-loop progress bar

@@ -8,7 +8,8 @@
   --bg:#0a0c12; --panel:#10141d; --raised:#171d2a; --line:#232b3a;
   --txt:#c7d1e0; --dim:#68748a; --faint:#3d4658;
   --teal:#3fe0b4; --teal-dim:#1d5c4c; --mag:#ff4d9d; --amber:#f0b24e; --blue:#6aaeff;
-  --b4:#0d1019; --b16:#10141f; --playrow:#123328; --cellline:#161b26; --curtxt:#062019;
+  --b4:#0d1019; --b16:#10141f; --playrow:#123328; --cellline:#2b3549; --curtxt:#062019;
+  --oddtrk:rgba(255,255,255,.025);
   --muteon:#4a1526; --selbg:rgba(63,224,180,.17); --seltxt:#eaf6f1;
   --trkhl:rgba(63,224,180,.05); --trkhlline:#1e4a3d;
   --glow:#0e1424; --headtop:#141a28; --well:#0a0e16; --scroll:#232c3e; --scrollh:#313d56;
@@ -114,6 +115,7 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 .prow.playrow{background:var(--playrow);box-shadow:inset 2px 0 0 var(--teal)}
 .prow.playrow .rn{color:var(--teal)}
 .tcell{padding:0 7px;border-left:1px solid var(--cellline)}
+.tcell.odd{background:var(--oddtrk)}
 .tcell i{font-style:normal;color:var(--faint)}
 .tcell i.set{color:var(--txt)}
 .tcell i[data-c="1"].set,.tcell i[data-c="2"].set{color:var(--blue)}
@@ -222,8 +224,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   </div>
   <span class="sep"></span>
   <div class="grp">
-    <button id="tplDnb" title="Load DnB template (replaces song)">DnB kit</button>
-    <button id="tplTrance" title="Load Trance template (replaces song)">Trance kit</button>
+    <label class="fld">Kit <select id="tplSel" title="Genre starting kits"></select></label>
+    <button id="tplLoad" title="Load the kit into this tab (replaces the current song)">Load</button>
   </div>
   <span class="sep"></span>
   <div class="grp">
@@ -748,7 +750,7 @@ function cellHTML(t,r){
   const i2=c.i!=null?hex2(c.i):'··';
   const v2=c.v!=null?hex2(c.v):'··';
   const fx=c.c?c.c+hex2(c.x||0):'···';
-  return '<span class="tcell" data-t="'+t+'">'
+  return '<span class="tcell'+(t%2?' odd':'')+'" data-t="'+t+'">'
     +sp(0,nT,nSet,nOff)+' '
     +sp(1,i2[0],c.i!=null)+sp(2,i2[1],c.i!=null)+' '
     +sp(3,v2[0],c.v!=null)+sp(4,v2[1],c.v!=null)+' '
@@ -774,7 +776,7 @@ function renderHead(){
     const ts=song.trackset[t];
     const hk=t<10?(t+1)%10:null;
     const hint=hk!=null?' (Alt+'+hk+' mute · Alt+Shift+'+hk+' solo)':'';
-    h+='<span class="tcell thead'+(trackAudible(t)?'':' hushed')+'" data-t="'+t+'" title="Double-click to rename'+hint+'">'
+    h+='<span class="tcell thead'+(t%2?' odd':'')+(trackAudible(t)?'':' hushed')+'" data-t="'+t+'" title="Double-click to rename'+hint+'">'
       +'<span class="tname'+(ts.name?'':' unnamed')+'">'+(ts.name?esc(ts.name):'&#183;&#183;&#183;')+'</span>'
       +'<span class="thctl"><span class="tno">'+String(t+1).padStart(2,'0')+'</span>'
       +'<button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'" title="Mute'+(hk!=null?' (Alt+'+hk+')':'')+'">M</button>'
@@ -1652,8 +1654,92 @@ function embeddedDefault(){
   try{const s=JSON.parse(document.getElementById('defaultSong').textContent);
     return(s&&s.patterns&&s.instruments)?s:null}catch(e){return null}
 }
-document.getElementById('tplDnb').onclick=()=>{if(confirm('Load DnB kit? This replaces the current song.'))loadSong(embeddedDefault()||tplDnb())};
-document.getElementById('tplTrance').onclick=()=>{if(confirm('Load Trance template? This replaces the current song.'))loadSong(tplTrance())};
+function tplFullon(){
+  const s=blankSong();
+  s.name='full-on';s.bpm=145;
+  s.instruments=[
+    mkInst('kick','Kick',{pitch:56,punch:.75,decay:.24,drive:.45}),
+    mkInst('reese','Psy Bass',{voices:1,detune:0,cutoff:720,res:4,lfoRate:.05,lfoAmt:0,drive:.5,sub:.7,rel:.05}),
+    mkInst('hat','Hat C',{tone:9500,decay:.035}),
+    mkInst('hat','Hat O',{tone:7200,decay:.18}),
+    mkInst('snare','Snare',{tone:220,snap:.85,decay:.13}),
+    mkInst('pluck','Acid',{cutoff:950,envAmt:.72,decay:.17,res:9}),
+    mkInst('supersaw','Pad',{detune:30,spread:.9,hp:200,cutoff:4600,att:.2,rel:.6}),
+  ];
+  const ts=s.trackset;
+  ts[0].vol=.95;
+  ts[1].vol=.85;ts[1].duck=.45;
+  ts[2].vol=.38;ts[3].vol=.5;ts[3].dly=.1;
+  ts[4].vol=.7;ts[4].rvb=.15;
+  ts[5].vol=.6;ts[5].dly=.3;ts[5].duck=.3;
+  ts[6].vol=.4;ts[6].rvb=.3;ts[6].duck=.6;
+  ts[7].vol=.42;ts[7].rvb=.3;ts[7].duck=.6;
+  const p=mkPattern(64);
+  /* E minor: kick on the beat, rolling bass on the three 16ths after it */
+  const arp=[40,43,45,47,45,43,47,45];
+  for(let bar=0;bar<4;bar++){
+    const o=bar*16;
+    for(let r=0;r<16;r+=4)put(p,0,o+r,48,0);
+    for(let r=0;r<16;r++)if(r%4)put(p,1,o+r,28,1,r%4===2?44:38);
+    for(let r=1;r<16;r+=2)put(p,2,o+r,60,2,bar%2?14:10);
+    for(let r=2;r<16;r+=4)put(p,3,o+r,60,3,26);
+    if(bar%2)put(p,4,o+8,48,4,36);
+    for(let r=0;r<16;r+=2)put(p,5,o+r,arp[(r/2)|0]+(bar===3?12:0),5,r%4===0?40:24,'C',clamp(40+r*8+bar*16,0,255));
+    put(p,6,o,52,6,26);put(p,7,o,59,6,22);
+  }
+  put(p,4,60,48,4,26,'R',2);put(p,4,62,48,4,34,'R',4);put(p,1,63,OFF);
+  s.patterns=[p];s.order=[0];
+  return s;
+}
+function tplGoa(){
+  const s=blankSong();
+  s.name='goa';s.bpm=143;
+  s.instruments=[
+    mkInst('kick','Kick',{pitch:54,punch:.7,decay:.26,drive:.4}),
+    mkInst('reese','Goa Bass',{voices:1,detune:0,cutoff:640,res:5,lfoRate:.05,lfoAmt:0,drive:.45,sub:.75,rel:.05}),
+    mkInst('hat','Hat C',{tone:10000,decay:.03}),
+    mkInst('hat','Hat O',{tone:7500,decay:.16}),
+    mkInst('pluck','Goa Lead',{cutoff:1500,envAmt:.6,decay:.22,res:6}),
+    mkInst('reese','303 Squelch',{voices:1,detune:0,cutoff:320,res:15,lfoRate:6,lfoAmt:.5,drive:.7,sub:.2,rel:.06}),
+    mkInst('supersaw','Pad',{detune:36,spread:.95,hp:180,cutoff:5200,att:.25,rel:.7}),
+  ];
+  const ts=s.trackset;
+  ts[0].vol=.95;
+  ts[1].vol=.85;ts[1].duck=.45;
+  ts[2].vol=.36;ts[3].vol=.48;ts[3].dly=.1;
+  ts[4].vol=.62;ts[4].dly=.28;ts[4].duck=.25;
+  ts[5].vol=.5;ts[5].dly=.22;ts[5].rvb=.12;ts[5].duck=.3;
+  ts[6].vol=.38;ts[6].rvb=.3;ts[6].duck=.6;
+  ts[7].vol=.4;ts[7].rvb=.3;ts[7].duck=.6;
+  const p=mkPattern(64);
+  /* E phrygian 16th-note ladder — the classic goa melody runner */
+  const mel=[40,41,43,45,47,45,43,41,40,43,45,47,52,50,47,45];
+  for(let bar=0;bar<4;bar++){
+    const o=bar*16, up=bar===3?12:0;
+    for(let r=0;r<16;r+=4)put(p,0,o+r,48,0);
+    for(let r=0;r<16;r++)if(r%4)put(p,1,o+r,28,1,r%4===2?44:38);
+    for(let r=1;r<16;r+=2)put(p,2,o+r,60,2,12);
+    for(let r=2;r<16;r+=4)put(p,3,o+r,60,3,24);
+    for(let r=0;r<16;r++)put(p,4,o+r,mel[r]+up,4,r%4===0?42:26);
+    if(bar>=2)for(let r=2;r<16;r+=4)put(p,5,o+r,40,5,30,'C',clamp(60+r*10,0,255));
+    put(p,6,o,52,6,24);put(p,7,o,55,6,20);
+  }
+  put(p,1,63,OFF);put(p,4,63,OFF);
+  s.patterns=[p];s.order=[0];
+  return s;
+}
+const KITS={
+  dnb:{label:'DnB 174',make:()=>embeddedDefault()||tplDnb()},
+  trance:{label:'Trance 138',make:tplTrance},
+  fullon:{label:'Full-on Psy 145',make:tplFullon},
+  goa:{label:'Goa 143',make:tplGoa}
+};
+document.getElementById('tplSel').innerHTML=Object.entries(KITS).map(([id,k])=>'<option value="'+id+'">'+k.label+'</option>').join('');
+function loadKit(id){
+  const k=KITS[id];
+  if(k&&confirm('Load '+k.label+' kit? This replaces the song in this tab.'))loadSong(k.make());
+}
+document.getElementById('tplLoad').onclick=()=>loadKit(document.getElementById('tplSel').value);
 
 /* ================= selection / clipboard ================= */
 let sel=null; /* {a:{t,c,r}, b:{t,c,r}} anchor + focus, display cols 0-7 */
@@ -1916,7 +2002,7 @@ async function esSearch(){
     esRes=(j.results||[]).filter(x=>x.type==='file');
     $id('esResults').innerHTML=esRes.map((x,i)=>
       '<div class="esrow"><div class="nm" title="'+esc(x.path+'\\'+x.name)+'"><b>'+esc(x.name)+'</b><span>'+esc(x.path)+'</span></div>'
-      +'<button data-pv="'+i+'" title="Preview">&#9654;</button><button data-add="'+i+'" title="Add as sampler instrument">+</button></div>').join('');
+      +'<button data-pv="'+i+'" title="Preview">&#9654;</button><button data-add="'+i+'" title="Add as NEW instrument (never replaces)">+</button><button data-rep="'+i+'" title="Replace the selected instrument with this sample (asks first)">&#8644;</button></div>').join('');
     esMsg(j.totalResults>esRes.length?'showing '+esRes.length+' of '+j.totalResults:esRes.length+' result'+(esRes.length===1?'':'s'));
   }catch(err){
     if(location.protocol==='https:')
@@ -1952,11 +2038,14 @@ async function esPreview(i){
     s.start();pvSrc=s;
   }catch(err){esMsg('preview failed: '+err.message,1)}
 }
-async function esAdd(i){
+async function esAdd(i,replace){
   const x=esRes[i];
   audio();if(AC.state==='suspended')AC.resume();
-  const cur=song.instruments[curInst];
-  const replace=cur?confirm('Replace instrument '+hex2(curInst)+' “'+cur.name+'” with “'+x.name+'”?\n\nOK = replace (notes in patterns keep using this slot)\nCancel = add as a new instrument'):false;
+  if(replace){
+    const cur=song.instruments[curInst];
+    if(!cur)return;
+    if(!confirm('Replace instrument '+hex2(curInst)+' “'+cur.name+'” with “'+x.name+'”?\nPattern notes keep using this slot.'))return;
+  }
   esMsg('loading '+x.name+'…');
   let ab;
   try{ab=await esFetchFile(x)}catch(err){esMsg('download failed: '+err.message,1);return}
@@ -1975,9 +2064,10 @@ async function esAdd(i){
   esMsg(m);
 }
 $id('esResults').addEventListener('click',e=>{
-  const pv=e.target.dataset.pv,ad=e.target.dataset.add;
+  const pv=e.target.dataset.pv,ad=e.target.dataset.add,rp=e.target.dataset.rep;
   if(pv!=null)esPreview(+pv);
-  else if(ad!=null)esAdd(+ad);
+  else if(ad!=null)esAdd(+ad,false);
+  else if(rp!=null)esAdd(+rp,true);
 });
 /* project folder (File System Access API, persisted in IndexedDB) */
 let projDir=null;
@@ -2065,8 +2155,10 @@ const COMMANDS=[
   {n:'Render song to WAV',kw:'export audio bounce record file',f:renderWav},
   {n:'Export song JSON',kw:'save file download',f:()=>document.getElementById('expBtn').click()},
   {n:'Import song JSON',kw:'load open file',f:()=>document.getElementById('impBtn').click()},
-  {n:'Load DnB kit',kw:'template default drum bass 174',f:()=>document.getElementById('tplDnb').click()},
-  {n:'Load Trance kit',kw:'template 138',f:()=>document.getElementById('tplTrance').click()},
+  {n:'Load DnB kit',kw:'template default drum bass 174',f:()=>loadKit('dnb')},
+  {n:'Load Trance kit',kw:'template 138',f:()=>loadKit('trance')},
+  {n:'Load Full-on Psy kit',kw:'template psytrance fullon 145',f:()=>loadKit('fullon')},
+  {n:'Load Goa kit',kw:'template psytrance goa 143',f:()=>loadKit('goa')},
   {n:'Undo',k:'Ctrl+Z',kw:'revert back',f:undo},
   {n:'Redo',k:'Ctrl+Y',kw:'forward again',f:redo},
 ];
@@ -2173,7 +2265,8 @@ const THEMES={
     '--bg':'#000000','--panel':'#08080b','--raised':'#101016','--line':'#1d1d26',
     '--txt':'#d8dee9','--dim':'#626c7e','--faint':'#303744',
     '--teal':'#00ffc8','--teal-dim':'#004d3c','--mag':'#ff2f92','--amber':'#ffc555','--blue':'#4fb3ff',
-    '--b4':'#050508','--b16':'#09090f','--playrow':'#002a1f','--cellline':'#0e0e14','--curtxt':'#00190f',
+    '--b4':'#050508','--b16':'#09090f','--playrow':'#002a1f','--cellline':'#22222e','--curtxt':'#00190f',
+    '--oddtrk':'rgba(255,255,255,.03)',
     '--muteon':'#38091c','--selbg':'rgba(0,255,200,.14)','--seltxt':'#e8fff8',
     '--trkhl':'rgba(0,255,200,.045)','--trkhlline':'#00402f',
     '--glow':'#04070a','--headtop':'#0b0b12','--well':'#050508','--scroll':'#1c1c26','--scrollh':'#2a2a3a',
@@ -2182,7 +2275,8 @@ const THEMES={
     '--bg':'#171008','--panel':'#1e150b','--raised':'#2a1d0f','--line':'#3f2d17',
     '--txt':'#ecdcbb','--dim':'#99805a','--faint':'#5c4a2c',
     '--teal':'#f5a83c','--teal-dim':'#5c3a10','--mag':'#ff7a4d','--amber':'#ffd27a','--blue':'#d9b06c',
-    '--b4':'#1c130a','--b16':'#201609','--playrow':'#3a2708','--cellline':'#241a0e','--curtxt':'#241300',
+    '--b4':'#1c130a','--b16':'#201609','--playrow':'#3a2708','--cellline':'#44331b','--curtxt':'#241300',
+    '--oddtrk':'rgba(255,255,255,.025)',
     '--muteon':'#4a1d0e','--selbg':'rgba(245,168,60,.18)','--seltxt':'#fff3dc',
     '--trkhl':'rgba(245,168,60,.05)','--trkhlline':'#55401c',
     '--glow':'#241809','--headtop':'#281c0e','--well':'#140d06','--scroll':'#3a2c18','--scrollh':'#4e3c22',
@@ -2191,7 +2285,8 @@ const THEMES={
     '--bg':'#eceadf','--panel':'#f7f5ec','--raised':'#e4e1d3','--line':'#c9c4b0',
     '--txt':'#23293a','--dim':'#6b7280','--faint':'#a3a894',
     '--teal':'#087a5e','--teal-dim':'#cdeade','--mag':'#c2186e','--amber':'#8a5a00','--blue':'#2456c4',
-    '--b4':'#e4e1d4','--b16':'#dedacb','--playrow':'#c6e6d6','--cellline':'#d6d2c2','--curtxt':'#ffffff',
+    '--b4':'#e4e1d4','--b16':'#dedacb','--playrow':'#c6e6d6','--cellline':'#aaa590','--curtxt':'#ffffff',
+    '--oddtrk':'rgba(0,0,0,.035)',
     '--muteon':'#f2c6d6','--selbg':'rgba(8,122,94,.16)','--seltxt':'#14352a',
     '--trkhl':'rgba(8,122,94,.06)','--trkhlline':'#a8cfc0',
     '--glow':'#f4f2ea','--headtop':'#efede2','--well':'#ffffff','--scroll':'#c2bda9','--scrollh':'#a8a38e',

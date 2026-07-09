@@ -209,6 +209,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 .bstep:hover{border-color:var(--dim)}
 .bstep.on{background:var(--teal);border-color:var(--teal)}
 .bstep.on.acc{background:var(--mag);border-color:var(--mag)}
+.bstep.noff{border-color:var(--mag);box-shadow:inset 0 0 0 1px var(--mag);background:transparent}
 .bstep.ph{box-shadow:inset 0 -3px 0 var(--amber)}
 
 /* ---- automation lanes ---- */
@@ -469,8 +470,8 @@ function mkInst(type,name,over){const i={name,type,params:defParams(type)};if(ov
 /* songs saved before a param existed: backfill defaults so sliders/engine always have a value */
 function normInst(ins){const d=ITYPES[ins.type]&&ITYPES[ins.type].p;if(!d||!ins.params)return;
   for(const k in d)if(ins.params[k]==null)ins.params[k]=d[k][2]}
-function mkTs(){return{vol:.85,dly:0,rvb:0,duck:0,mute:false,solo:false,name:'',eq:{l:0,m:0,h:0},cmp:0,drv:0,fltF:1,fltQ:0}}
-function normTs(ts){if(!ts.eq)ts.eq={l:0,m:0,h:0};if(ts.cmp==null)ts.cmp=0;if(ts.drv==null)ts.drv=0;if(ts.fltF==null)ts.fltF=1;if(ts.fltQ==null)ts.fltQ=0}
+function mkTs(){return{vol:.85,pan:0,dly:0,rvb:0,duck:0,mute:false,solo:false,name:'',eq:{l:0,m:0,h:0},cmp:0,drv:0,fltF:1,fltQ:0}}
+function normTs(ts){if(!ts.eq)ts.eq={l:0,m:0,h:0};if(ts.cmp==null)ts.cmp=0;if(ts.drv==null)ts.drv=0;if(ts.fltF==null)ts.fltF=1;if(ts.fltQ==null)ts.fltQ=0;if(ts.pan==null)ts.pan=0}
 function mkTrackset(){const a=[];for(let t=0;t<TRACKS;t++)a.push(mkTs());return a}
 function blankSong(){TRACKS=8;return{name:'untitled',bpm:170,lpb:4,instruments:[mkInst('kick','Kick'),mkInst('snare','Snare'),mkInst('hat','Hat'),mkInst('reese','Reese')],patterns:[mkPattern(64)],order:[0],trackset:mkTrackset()}}
 function cellAt(t,r){return song.patterns[curPat].data[t][r]}
@@ -532,11 +533,12 @@ function ensureChans(n){
     const flt=AC.createBiquadFilter();flt.type='lowpass';flt.frequency.value=18000;flt.Q.value=0;
     const shp=AC.createWaveShaper();shp.oversample='2x';
     const cmp=AC.createDynamicsCompressor();
+    const pan=AC.createStereoPanner();
     const an=AC.createAnalyser();an.fftSize=512;
-    g.connect(eqL);eqL.connect(eqM);eqM.connect(eqH);eqH.connect(flt);flt.connect(shp);shp.connect(cmp);cmp.connect(duckG);
+    g.connect(eqL);eqL.connect(eqM);eqM.connect(eqH);eqH.connect(flt);flt.connect(shp);shp.connect(cmp);cmp.connect(pan);pan.connect(duckG);
     duckG.connect(master);duckG.connect(ds);duckG.connect(rs);duckG.connect(an);
     ds.connect(dlyIn);rs.connect(rvbIn);
-    chans.push({in:g,duckG,ds,rs,eqL,eqM,eqH,flt,shp,cmp,an,_drv:0,pk:0,voice:null,lastI:null});
+    chans.push({in:g,duckG,ds,rs,eqL,eqM,eqH,flt,shp,cmp,pan,an,_drv:0,pk:0,voice:null,lastI:null});
   }
 }
 function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{const ch=chans[t];if(!ch)return;
@@ -544,6 +546,7 @@ function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{const ch=chans[
   const eq=ts.eq||{l:0,m:0,h:0};
   ch.eqL.gain.value=eq.l;ch.eqM.gain.value=eq.m;ch.eqH.gain.value=eq.h;
   ch.flt.frequency.value=fltHz(ts.fltF==null?1:ts.fltF);ch.flt.Q.value=(ts.fltQ||0)*20;
+  ch.pan.pan.value=ts.pan||0;
   const c=ts.cmp||0;
   ch.cmp.threshold.value=-30*c;ch.cmp.ratio.value=1+7*c;ch.cmp.knee.value=6;
   ch.cmp.attack.value=.003;ch.cmp.release.value=.12;
@@ -1379,10 +1382,10 @@ function trackPanel(){
   document.getElementById('trkTitle').textContent='Track '+(t+1)+(ts.name?' · '+ts.name:'');
   const el=document.getElementById('trackMix');
   normTs(ts);
-  const rows=[['vol','Volume'],['dly','Delay'],['rvb','Reverb'],['duck','Duck'],['cmp','Comp'],['drv','Drive'],['fltF','Filter'],['fltQ','F.Res']];
-  el.innerHTML=rows.map(([k,lbl])=>
+  const rows=[['vol','Volume'],['pan','Pan',-100],['dly','Delay'],['rvb','Reverb'],['duck','Duck'],['cmp','Comp'],['drv','Drive'],['fltF','Filter'],['fltQ','F.Res']];
+  el.innerHTML=rows.map(([k,lbl,mn])=>
     '<div class="param"><span class="pn">'+lbl+'</span>'
-    +'<input type="range" min="0" max="100" value="'+Math.round(ts[k]*100)+'" data-tk="'+k+'">'
+    +'<input type="range" min="'+(mn||0)+'" max="100" value="'+Math.round(ts[k]*100)+'" data-tk="'+k+'">'
     +'<span class="pv">'+tkPv(ts,k)+'</span></div>'
   ).join('')
   +[['l','EQ Low'],['m','EQ Mid'],['h','EQ High']].map(([k,lbl])=>
@@ -1397,6 +1400,7 @@ function fmtDb(v){return(v>0?'+':'')+(+v).toFixed(1)}
 function tkPv(ts,k){
   if(k==='fltF')return fmtHz(fltHz(ts.fltF==null?1:ts.fltF));
   if(k==='fltQ')return((ts.fltQ||0)*20).toFixed(1);
+  if(k==='pan'){const v=Math.round((ts.pan||0)*100);return v===0?'C':v<0?'L'+(-v):'R'+v}
   return Math.round(ts[k]*100);
 }
 document.getElementById('trackMix').addEventListener('input',e=>{
@@ -1412,7 +1416,7 @@ document.getElementById('trackMix').addEventListener('input',e=>{
 });
 document.getElementById('trackMix').addEventListener('change',()=>{if(!mixer.hidden)renderMixer()});
 /* dblclick a slider = reset to default */
-const TRK_DEF={vol:.85,dly:0,rvb:0,duck:0,cmp:0,drv:0,fltF:1,fltQ:0};
+const TRK_DEF={vol:.85,pan:0,dly:0,rvb:0,duck:0,cmp:0,drv:0,fltF:1,fltQ:0};
 document.getElementById('trackMix').addEventListener('dblclick',e=>{
   const ts=song.trackset[cursor.t];
   if(e.target.dataset.teq)ts.eq[e.target.dataset.teq]=0;
@@ -1451,6 +1455,7 @@ function renderMixer(){
       +'<span class="mno">'+String(t+1).padStart(2,'0')+'</span>'
       +'<div class="mv"><input class="vert" type="range" min="0" max="100" value="'+Math.round(ts.vol*100)+'" data-mvol="1" title="Volume">'
       +'<div class="mmeter"><i></i></div></div>'
+      +'<div class="mrow"><span class="l">PN</span><input type="range" min="-100" max="100" value="'+Math.round((ts.pan||0)*100)+'" data-mpan="1" title="Pan (dblclick = center)"></div>'
       +[['l','L'],['m','M'],['h','H']].map(([k,l])=>'<div class="mrow"><span class="l">'+l+'</span><input type="range" min="-12" max="12" step="0.5" value="'+ts.eq[k]+'" data-meq="'+k+'" title="EQ '+l+'"></div>').join('')
       +[['dly','DL'],['rvb','RV'],['duck','DK'],['cmp','CP'],['drv','DR'],['fltF','FL'],['fltQ','FQ']].map(([k,l])=>'<div class="mrow"><span class="l">'+l+'</span><input type="range" min="0" max="100" value="'+Math.round(ts[k]*100)+'" data-msend="'+k+'" title="'+({dly:'Delay send',rvb:'Reverb send',duck:'Kick duck',cmp:'Compressor',drv:'Drive / saturation',fltF:'Channel filter cutoff',fltQ:'Channel filter resonance'})[k]+'"></div>').join('')
       +'<div class="msbtns"><button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'">M</button><button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'">S</button></div>'
@@ -1473,6 +1478,7 @@ mixch.addEventListener('input',e=>{
   const mchEl=e.target.closest('.mch');if(!mchEl)return;
   const t=+mchEl.dataset.t,ts=song.trackset[t];
   if(e.target.dataset.mvol)ts.vol=+e.target.value/100;
+  else if(e.target.dataset.mpan)ts.pan=+e.target.value/100;
   else if(e.target.dataset.meq){ts.eq=ts.eq||{l:0,m:0,h:0};ts.eq[e.target.dataset.meq]=+e.target.value}
   else if(e.target.dataset.msend)ts[e.target.dataset.msend]=+e.target.value/100;
   else return;
@@ -1497,6 +1503,7 @@ mixch.addEventListener('contextmenu',e=>{
   const mchEl=e.target.closest('.mch');if(!mchEl)return;
   let k=null;
   if(e.target.dataset.mvol)k='vol';
+  else if(e.target.dataset.mpan)k='pan';
   else if(e.target.dataset.msend)k=e.target.dataset.msend;
   else if(e.target.dataset.meq)k='eq.'+e.target.dataset.meq;
   if(!k||!AUTO_PARAMS[k])return;
@@ -1513,6 +1520,7 @@ mixch.addEventListener('dblclick',e=>{
   const t=+mchEl.dataset.t,ts=song.trackset[t];
   if(e.target.tagName==='INPUT'){ /* dblclick slider = reset */
     if(e.target.dataset.mvol)ts.vol=TRK_DEF.vol;
+    else if(e.target.dataset.mpan)ts.pan=0;
     else if(e.target.dataset.meq)ts.eq[e.target.dataset.meq]=0;
     else if(e.target.dataset.msend)ts[e.target.dataset.msend]=TRK_DEF[e.target.dataset.msend]||0;
     else return;
@@ -1691,12 +1699,14 @@ document.getElementById('instList').addEventListener('drop',async e=>{
   document.querySelectorAll('#instList .irow.dropHl').forEach(x=>x.classList.remove('dropHl'));
   if(!p)return;
   const r=e.target.closest('.irow');
-  const ins=await instFromPreset(p);
   if(r){ /* replace that slot — pattern notes keep using it */
     const i=+r.dataset.i;
-    song.instruments[i]=ins;curInst=i;
+    const cur=song.instruments[i];
+    if(!await askConfirm('Replace '+hex2(i)+' “'+cur.name+'” with preset “'+p.name+'”?\nPattern notes keep using this slot.','Replace'))return;
+    song.instruments[i]=await instFromPreset(p);curInst=i;
     status('replaced '+hex2(i)+' → '+p.name);
   }else{
+    const ins=await instFromPreset(p);
     song.instruments.push(ins);curInst=song.instruments.length-1;
     status('added '+p.name);
   }
@@ -2665,6 +2675,19 @@ grows.addEventListener('mousedown',e=>{
   clearSel();
   dragSel={t:cursor.t,c:cursor.c,r:cursor.r};
 });
+/* dblclick a cell: select that row within the track; dblclick again: the row across all tracks */
+grows.addEventListener('dblclick',e=>{
+  const cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
+  if(!cell||!row)return;
+  const t=+cell.dataset.t,r=+row.dataset.r;
+  const line={a:{t,c:0,r},b:{t,c:7,r}};
+  const full={a:{t:0,c:0,r},b:{t:TRACKS-1,c:7,r}};
+  const same=(x,y)=>x&&JSON.stringify(x)===JSON.stringify(y);
+  const wide=same(sel,line);
+  sel=wide?full:line;
+  renderRows(r,r);
+  status(wide?'row selected (all tracks)':'row selected (track '+(t+1)+')');
+});
 grows.addEventListener('mouseover',e=>{
   if(!dragSel)return;
   const i=e.target.closest('i[data-c]'),cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
@@ -2997,11 +3020,16 @@ function renderBeat(){
     for(let r=0;r<pat.rows;r++){
       const c=pat.data[t][r];
       const on=!!(c&&c.n!=null&&c.n!==OFF);
+      const noff=!!(c&&c.n===OFF);
       let cls='bstep';
       if(r%4===0)cls+=' b4';
       if(r%16===0&&r)cls+=' bar';
       if(on){cls+=' on';if((c.v==null?32:c.v)>=40)cls+=' acc'}
-      h+='<i class="'+cls+'" data-t="'+t+'" data-r="'+r+'"'+(on?' title="'+noteName(c.n)+' — scroll: ±semitone, Shift+scroll: ±octave"':'')+'></i>';
+      if(noff)cls+=' noff';
+      const tit=on?noteName(c.n)+' — scroll: ±semitone, Shift+scroll: ±octave'
+        :noff?'note OFF — Ctrl+click to clear'
+        :'click: note · Shift: accent · Ctrl: note OFF · scroll: pitch';
+      h+='<i class="'+cls+'" data-t="'+t+'" data-r="'+r+'" title="'+tit+'"></i>';
     }
     h+='</div>';
   }
@@ -3028,12 +3056,25 @@ function beatSet(t,r,on,acc){
   }
   renderRow(r);
 }
-function beatCellUI(el,on,acc){el.classList.toggle('on',on);el.classList.toggle('acc',!!(on&&acc))}
+function beatCellUI(el,on,acc){el.classList.toggle('on',on);el.classList.toggle('acc',!!(on&&acc));el.classList.remove('noff')}
+/* Ctrl+click: place / clear a note-off (cuts whatever the track is playing) */
+function beatSetOff(t,r,on){
+  if(on){const cell=ensureCell(t,r);cell.n=OFF;cell.i=null;cell.v=null}
+  else{const c=cellAt(t,r);if(c&&c.n===OFF){c.n=null;pruneCell(t,r)}}
+  renderRow(r);
+}
+function beatOffUI(el,on){el.classList.toggle('noff',on);el.classList.remove('on','acc')}
 beatLanes.addEventListener('mousedown',e=>{
   const s=e.target.closest('.bstep');if(!s)return;
   e.preventDefault();
   const t=+s.dataset.t,r=+s.dataset.r;
   const c=cellAt(t,r);
+  if(e.ctrlKey||e.metaKey){
+    const off=!(c&&c.n===OFF);
+    BEAT.paint={offNote:true,on:off};
+    beatSetOff(t,r,off);beatOffUI(s,off);saveSoon();
+    return;
+  }
   const curOn=!!(c&&c.n!=null&&c.n!==OFF);
   const on=e.shiftKey?true:!curOn;
   BEAT.paint={on,acc:e.shiftKey};
@@ -3042,6 +3083,11 @@ beatLanes.addEventListener('mousedown',e=>{
 beatLanes.addEventListener('mouseover',e=>{
   if(!BEAT.paint)return;
   const s=e.target.closest('.bstep');if(!s)return;
+  if(BEAT.paint.offNote){
+    beatSetOff(+s.dataset.t,+s.dataset.r,BEAT.paint.on);
+    beatOffUI(s,BEAT.paint.on);saveSoon();
+    return;
+  }
   beatSet(+s.dataset.t,+s.dataset.r,BEAT.paint.on,BEAT.paint.acc);
   beatCellUI(s,BEAT.paint.on,BEAT.paint.acc);saveSoon();
 });
@@ -3097,6 +3143,8 @@ const AUTO_PARAMS={
     if(chans[tr])chans[tr].ds.gain.setTargetAtTime(v,t,.02)}},
   rvb:{label:'Reverb send',apply:(tr,v,t)=>{
     if(chans[tr])chans[tr].rs.gain.setTargetAtTime(v,t,.02)}},
+  pan:{label:'Pan',apply:(tr,v,t)=>{
+    const ch=chans[tr];if(ch&&ch.pan)ch.pan.pan.setTargetAtTime(v*2-1,t,.02)}},
   fltF:{label:'Filter cutoff',apply:(tr,v,t)=>{
     const ch=chans[tr];if(!ch)return;
     ch.flt.frequency.cancelScheduledValues(t);
@@ -3259,6 +3307,7 @@ function autoCurrent(t,p){
   if(p==='vol')return 1;
   if(p==='dly')return ts.dly;
   if(p==='rvb')return ts.rvb;
+  if(p==='pan')return((ts.pan||0)+1)/2;
   if(p==='fltF')return ts.fltF==null?1:ts.fltF;
   if(p==='fltQ')return ts.fltQ||0;
   if(p==='drv')return ts.drv||0;

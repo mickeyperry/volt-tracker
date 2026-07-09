@@ -288,6 +288,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
     <button id="playPat" title="Play pattern (Space)">&#9654; Pattern</button>
     <button id="playSong" title="Play song">&#9654; Song</button>
     <button id="stopBtn" title="Stop (Space)">&#9632;</button>
+    <button id="followBtn" title="Follow playback — auto-scroll the grid to the playhead">Follow</button>
   </div>
   <span class="sep"></span>
   <div class="grp">
@@ -767,9 +768,15 @@ function play(songMode){
 function stop(silent){
   if(SEQ.timer)clearInterval(SEQ.timer);SEQ.timer=null;
   if(SEQ.playing&&!silent){stopAllVoices()}
+  const wasPlaying=SEQ.playing;
   SEQ.playing=false;SEQ.q=[];setPlayRow(-1);
   document.getElementById('playPat').classList.remove('playing');
   document.getElementById('playSong').classList.remove('playing');
+  /* snap sliders back to their stored values after automation moved them */
+  if(wasPlaying&&!silent&&song){
+    if(AC)applyMix();
+    trackPanel();renderParams();if(!mixer.hidden)renderMixer();
+  }
 }
 function pump(){
   while(SEQ.next<AC.currentTime+.16){
@@ -837,12 +844,21 @@ function schedRow(pi,row,t){
 }
 /* playhead */
 let playRowEl=null;
+let followPlay=true;try{followPlay=localStorage.getItem('volt.follow')!=='0'}catch(e){}
+function setFollow(on){
+  followPlay=on;
+  document.getElementById('followBtn').classList.toggle('on',on);
+  try{localStorage.setItem('volt.follow',on?'1':'0')}catch(e){}
+}
+document.getElementById('followBtn').onclick=()=>{setFollow(!followPlay);status('follow '+(followPlay?'on':'off'))};
+document.getElementById('followBtn').classList.toggle('on',followPlay);
 function setPlayRow(r){
   beatPlayhead(r);autoPlayhead(r);
   if(playRowEl){playRowEl.classList.remove('playrow');playRowEl=null}
   if(r<0)return;
   const el=grows.children[r];if(!el)return;
   el.classList.add('playrow');playRowEl=el;
+  if(!followPlay)return;
   const gw=gridwrap;
   const y=el.offsetTop-gw.clientHeight/2+40;
   gw.scrollTop=y;
@@ -867,9 +883,10 @@ function raf(){
     if(cur){
       /* follow the song only when the PLAYING pattern changes — if the user browsed to
          another pattern mid-play, don't yank the grid back every row (flicker) */
-      if(cur.pat!==curPat&&cur.pat!==SEQ.lastPat)curPatSet(cur.pat);
+      if(followPlay&&cur.pat!==curPat&&cur.pat!==SEQ.lastPat)curPatSet(cur.pat);
       SEQ.lastPat=cur.pat;
       setPlayRow(curPat===cur.pat?cur.row:-1);
+      reflectAuto(cur.pat,cur.row);
       lastQ=cur;
     }
     if(lastQ){
@@ -2939,6 +2956,7 @@ const COMMANDS=[
   {n:'Play pattern',k:'Space',kw:'start loop',f:()=>play(false)},
   {n:'Play song',kw:'start all order',f:()=>play(true)},
   {n:'Stop playback',k:'Esc',kw:'halt',f:()=>stop()},
+  {n:'Toggle follow playback',kw:'scroll autoscroll playhead lock',f:()=>{setFollow(!followPlay);status('follow '+(followPlay?'on':'off'))}},
   {n:'New pattern',k:'Ctrl+⏎',kw:'add create',f:newPattern},
   {n:'Duplicate pattern',k:'Ctrl+D',kw:'copy clone',f:dupPattern},
   {n:'Rename pattern',kw:'name label current',f:()=>renamePattern(curPat)},
@@ -3333,6 +3351,55 @@ function autoLabel(p){
   if(p.indexOf('p.')===0)return p.slice(2);
   return p;
 }
+/* live feedback: while playing, move the visible sliders along with the lanes */
+function reflectAuto(pi,row){
+  const pat=song.patterns[pi];if(!pat||!pat.auto)return;
+  for(const k in pat.auto){
+    const arr=pat.auto[k];if(!arr)continue;
+    const v=arr[row];if(v==null)continue;
+    const dot=k.indexOf('.');const tr=+k.slice(0,dot),p=k.slice(dot+1);
+    /* mixer strip */
+    if(!mixer.hidden){
+      const mchEl=mixch.children[tr];
+      if(mchEl){
+        let inp=null,val=null;
+        if(p==='vol'){inp=mchEl.querySelector('input[data-mvol]');val=(song.trackset[tr]?song.trackset[tr].vol:1)*v*100}
+        else if(p==='pan'){inp=mchEl.querySelector('input[data-mpan]');val=(v*2-1)*100}
+        else if(p.indexOf('eq.')===0){inp=mchEl.querySelector('input[data-meq="'+p.slice(3)+'"]');val=v*24-12}
+        else{inp=mchEl.querySelector('input[data-msend="'+p+'"]');val=v*100}
+        if(inp)inp.value=val;
+      }
+    }
+    /* side panel: only the cursor track's sliders are visible */
+    if(tr!==cursor.t)continue;
+    if(p.indexOf('p.')===0||p==='cutoff'){
+      const key=p.indexOf('p.')===0?p.slice(2):'cutoff';
+      const inp=document.querySelector('#params input[data-k="'+key+'"]');
+      if(inp){
+        inp.value=Math.round(v*1000);
+        const ins=song.instruments[curInst];
+        const d=ins&&ITYPES[ins.type].p[key];
+        const pv=document.getElementById('pv_'+key);
+        if(d&&pv)pv.textContent=fmtP(d[3]?d[0]*Math.pow(d[1]/d[0],v):d[0]+(d[1]-d[0])*v);
+      }
+    }else if(p.indexOf('eq.')===0){
+      const inp=document.querySelector('#trackMix input[data-teq="'+p.slice(3)+'"]');
+      if(inp){inp.value=v*24-12;
+        const pv=inp.parentElement.querySelector('.pv');if(pv)pv.textContent=fmtDb(v*24-12)}
+    }else{
+      const inp=document.querySelector('#trackMix input[data-tk="'+p+'"]');
+      if(inp){
+        inp.value=p==='pan'?(v*2-1)*100:v*100;
+        const pv=inp.parentElement.querySelector('.pv');
+        if(pv)pv.textContent=p==='fltF'?fmtHz(fltHz(v))
+          :p==='fltQ'?(v*20).toFixed(1)
+          :p==='pan'?(Math.round((v*2-1)*100)===0?'C':(v*2-1<0?'L'+Math.round((1-v*2)*100):'R'+Math.round((v*2-1)*100)))
+          :p==='vol'?Math.round((song.trackset[tr]?song.trackset[tr].vol:1)*v*100)
+          :Math.round(v*100);
+      }
+    }
+  }
+}
 function autoCreate(t,p){
   const pat=song.patterns[curPat];
   const isNew=!(pat.auto&&pat.auto[t+'.'+p]);
@@ -3356,10 +3423,12 @@ function markAuto(){
   if(!song)return;
   const pat=song.patterns[curPat];
   const has=p=>!!(pat.auto&&pat.auto[cursor.t+'.'+p]);
+  const pt=trackForInst(curInst);
+  const phas=p=>!!(pat.auto&&pat.auto[pt+'.'+p]);
   document.querySelectorAll('#params .param').forEach(el=>{
     const inp=el.querySelector('input[data-k]');if(!inp)return;
     const k=inp.dataset.k;
-    el.classList.toggle('automated',has('p.'+k)||(k==='cutoff'&&has('cutoff')));
+    el.classList.toggle('automated',phas('p.'+k)||(k==='cutoff'&&phas('cutoff')));
   });
   document.querySelectorAll('#trackMix .param').forEach(el=>{
     const inp=el.querySelector('input[data-tk],input[data-teq]');if(!inp)return;
@@ -3378,20 +3447,29 @@ document.getElementById('trackMix').addEventListener('contextmenu',e=>{
     items.push({label:'✕ Delete '+AUTO_PARAMS[k].label+' automation',f:()=>autoDelete(cursor.t,k)});
   openCtx(e.clientX,e.clientY,items);
 });
+/* instrument params belong to an instrument, not the cursor — automate the track
+   that actually PLAYS this instrument (the cursor track only if it does) */
+function trackForInst(ii){
+  const uses=t=>song.patterns.some(p=>p.data[t]&&p.data[t].some(c=>c&&c.i===ii));
+  if(uses(cursor.t))return cursor.t;
+  for(let t=0;t<TRACKS;t++)if(uses(t))return t;
+  return cursor.t;
+}
 document.getElementById('params').addEventListener('contextmenu',e=>{
   const k=e.target.dataset&&e.target.dataset.k;
   if(!k)return;
   e.preventDefault();
   const pat=song.patterns[curPat];
+  const t=trackForInst(curInst);
   const items=[];
   if(k==='cutoff'){
-    items.push({label:'⚡ Automate Cutoff — Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,'cutoff')});
-    if(pat.auto&&pat.auto[cursor.t+'.cutoff'])
-      items.push({label:'✕ Delete Cutoff automation',f:()=>autoDelete(cursor.t,'cutoff')});
+    items.push({label:'⚡ Automate Cutoff — Track '+(t+1),f:()=>autoCreate(t,'cutoff')});
+    if(pat.auto&&pat.auto[t+'.cutoff'])
+      items.push({label:'✕ Delete Cutoff automation',f:()=>autoDelete(t,'cutoff')});
   }else{
-    items.push({label:'⚡ Automate '+k+' — Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,'p.'+k)});
-    if(pat.auto&&pat.auto[cursor.t+'.p.'+k])
-      items.push({label:'✕ Delete '+k+' automation',f:()=>autoDelete(cursor.t,'p.'+k)});
+    items.push({label:'⚡ Automate '+k+' — Track '+(t+1),f:()=>autoCreate(t,'p.'+k)});
+    if(pat.auto&&pat.auto[t+'.p.'+k])
+      items.push({label:'✕ Delete '+k+' automation',f:()=>autoDelete(t,'p.'+k)});
   }
   openCtx(e.clientX,e.clientY,items);
 });

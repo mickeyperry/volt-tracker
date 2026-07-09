@@ -723,9 +723,9 @@ function trig(inst,note,t,tr,vel,off,ov){
     s.connect(g);s.start(t,st,Math.max(.001,s1*bd-st));srcs=[s];
     break}
   case 'sliced':{
-    /* note picks the slice: C-4 = slice 1, C#4 = slice 2 … */
+    /* note picks the slice upward from the base (C-4, or C-2 for 48+ slice kits) */
     if(!inst.buffer||!inst.slices||!inst.slices.length){return null}
-    const sl=inst.slices[clamp(note-48,0,inst.slices.length-1)];
+    const sl=inst.slices[clamp(note-(inst.sliceBase||48),0,inst.slices.length-1)];
     const s=AC.createBufferSource();s.buffer=inst.buffer;
     s.playbackRate.value=p.rate||1;
     g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel,t+.002);
@@ -1037,11 +1037,22 @@ function moveCursor(dt,dr,dc){
     else if(bot>gw.scrollTop+gw.clientHeight)gw.scrollTop=bot-gw.clientHeight;
   }
 }
+/* the whitespace between a cell's note/inst/vol/fx fields belongs to no <i> —
+   snap to the nearest field by x so clicks and drags don't jump to column 0 */
+function colFromEvent(cell,e){
+  let best=0,bd=1e9;
+  cell.querySelectorAll('i[data-c]').forEach(el=>{
+    const r=el.getBoundingClientRect();
+    const d=Math.abs(e.clientX-(r.left+r.right)/2);
+    if(d<bd){bd=d;best=+el.dataset.c}
+  });
+  return best;
+}
 grows.addEventListener('mousedown',e=>{
   const i=e.target.closest('i[data-c]'),cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
   if(!cell||!row)return;
   const oldR=cursor.r;
-  cursor.t=+cell.dataset.t;cursor.r=+row.dataset.r;cursor.c=i?+i.dataset.c:0;
+  cursor.t=+cell.dataset.t;cursor.r=+row.dataset.r;cursor.c=i?+i.dataset.c:colFromEvent(cell,e);
   renderRow(oldR);renderRow(cursor.r);trackPanel();
 });
 function cutInaudible(){if(!AC)return;const t=AC.currentTime;chans.forEach((ch,i)=>{if(i<TRACKS&&!trackAudible(i)&&ch.voice){ch.voice.cut(t);ch.voice=null}})}
@@ -1191,9 +1202,54 @@ function previewNote(n,key){
 function renderInstList(){
   const el=document.getElementById('instList');
   el.innerHTML=song.instruments.map((ins,i)=>
-    '<div class="irow'+(i===curInst?' sel':'')+'" data-i="'+i+'"><span class="no">'+hex2(i)+'</span><span>'+esc(ins.name)+'</span></div>'
+    '<div class="irow'+(i===curInst?' sel':'')+'" data-i="'+i+'" draggable="true"'
+    +(ins.type==='sliced'?' title="Drag onto a grid column to lay the slices out, aligned to the BPM"':'')
+    +'><span class="no">'+hex2(i)+'</span><span>'+esc(ins.name)+'</span></div>'
   ).join('');
 }
+/* drag a sliced instrument onto the grid: its slices land as notes on the sample's
+   own timing, stretched to the project BPM (playback rate is matched too) */
+let instDrag=null;
+document.getElementById('instList').addEventListener('dragstart',e=>{
+  const r=e.target.closest('.irow');if(!r)return;
+  instDrag=+r.dataset.i;
+  e.dataTransfer.effectAllowed='copy';
+  e.dataTransfer.setData('text/plain','volt-inst');
+});
+document.addEventListener('dragend',()=>{instDrag=null});
+function laySlices(ins,ii,t,r0){
+  const pat=song.patterns[curPat];
+  const D=ins.buffer.duration,rd=rowDur();
+  const bars=Math.max(1,Math.round(D/(rd*16)));
+  const base=ins.sliceBase||48;
+  let n=0;
+  ins.slices.forEach((sl,i)=>{
+    if(base+i>95)return;
+    const r=r0+Math.round(sl.s0*bars*16);
+    if(r>=pat.rows)return;
+    const cell=ensureCell(t,r);
+    cell.n=base+i;cell.i=ii;
+    n++;
+  });
+  ins.params.rate=clamp(D/(bars*16*rd),.25,4);
+  renderGrid();renderParams();saveSoon();
+  status(n+' slices laid on track '+(t+1)+' over '+bars+' bar'+(bars>1?'s':'')+' · rate '+Math.round(ins.params.rate*100)+'%');
+}
+grows.addEventListener('dragover',e=>{if(instDrag!=null)e.preventDefault()});
+grows.addEventListener('drop',e=>{
+  if(instDrag==null)return;
+  e.preventDefault();e.stopPropagation();
+  const ii=instDrag;instDrag=null;
+  const ins=song.instruments[ii];if(!ins)return;
+  const cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
+  const t=cell?+cell.dataset.t:cursor.t;
+  const r0=row?+row.dataset.r:0;
+  if(ins.type!=='sliced'||!ins.slices||!ins.buffer){
+    status('drop a SLICED instrument to lay out its groove (use Slice… on a sampler first)');
+    return;
+  }
+  laySlices(ins,ii,t,r0);
+});
 function esc(s){return String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
 document.getElementById('instList').addEventListener('click',e=>{
   const r=e.target.closest('.irow');if(!r)return;
@@ -1222,7 +1278,7 @@ function renderParams(){
     +'<div class="btnrow"><button data-slc="auto" title="Re-slice on detected transients">Auto</button>'
     +'<button data-slc="8" title="8 equal slices">8</button><button data-slc="16" title="16 equal slices">16</button>'
     +'<span id="smpInfo"></span></div>'
-    +'<div id="slHint">'+(ins.slices?ins.slices.length+' slices &#183; ':'')+'C-4 = slice 1, C#4 = slice 2 &#8230;</div></div>':'');
+    +'<div id="slHint">'+(ins.slices?ins.slices.length+' slices &#183; ':'')+noteName(ins.sliceBase||48)+' = slice 1, up a semitone per slice &#183; drag the instrument onto the grid to lay out its groove</div></div>':'');
   if(ins.type==='sampler'&&ins.buffer)drawSmp(ins);
   if(ins.type==='sliced'&&ins.buffer)drawSlices(ins);
   markAuto();
@@ -1284,15 +1340,16 @@ async function sliceInstrument(ins){
     {label:'Auto',value:'auto',cls:'primary'},{label:'8',value:'8'},{label:'16',value:'16'},{label:'Cancel',value:''}
   ]);
   if(!mode)return;
-  const slices=mode==='auto'?(autoSliceBuf(ins.buffer,32)||equalSlices(8)):equalSlices(+mode);
+  const slices=mode==='auto'?(autoSliceBuf(ins.buffer,64)||equalSlices(8)):equalSlices(+mode);
   const ns=cloneInst(ins);
   ns.type='sliced';ns.name=ins.name+' slices';
   ns.params=defParams('sliced');ns.slices=slices;
+  ns.sliceBase=slices.length>48?24:48;
   delete ns.s0;delete ns.s1;
   song.instruments.push(ns);
   curInst=song.instruments.length-1;
   renderInstList();renderParams();saveSoon();
-  status(slices.length+' slices — lay them out from C-4');
+  status(slices.length+' slices — lay them out from '+noteName(ns.sliceBase)+', or drag the instrument onto the grid');
 }
 /* ---- sample trim editor ---- */
 function smpPeaks(ins,w){
@@ -1369,15 +1426,16 @@ document.getElementById('params').addEventListener('click',e=>{
   }else if(ins.type==='sliced'){
     if(e.target.dataset.slc){
       const m=e.target.dataset.slc;
-      ins.slices=m==='auto'?(autoSliceBuf(ins.buffer,32)||equalSlices(8)):equalSlices(+m);
+      ins.slices=m==='auto'?(autoSliceBuf(ins.buffer,64)||equalSlices(8)):equalSlices(+m);
+      ins.sliceBase=ins.slices.length>48?24:48;
       drawSlices(ins);
       const hint=document.getElementById('slHint');
-      if(hint)hint.innerHTML=ins.slices.length+' slices &#183; C-4 = slice 1, C#4 = slice 2 &#8230;';
+      if(hint)hint.innerHTML=ins.slices.length+' slices &#183; '+noteName(ins.sliceBase)+' = slice 1 &#8230;';
       saveSoon();status(ins.slices.length+' slices');
     }else if(e.target.id==='slCanvas'&&ins.slices){
       const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
       const i=ins.slices.findIndex(sl=>x>=sl.s0&&x<sl.s1);
-      if(i>=0){playSlice(ins,ins.slices[i]);status('slice '+(i+1)+' = '+noteName(48+i))}
+      if(i>=0){playSlice(ins,ins.slices[i]);status('slice '+(i+1)+' = '+noteName((ins.sliceBase||48)+i))}
     }
   }
 });
@@ -1925,6 +1983,7 @@ const snapState=()=>JSON.stringify({
       o.sid=sidFor(ins);o.sampleName=ins.sampleName;o.sourcePath=ins.sourcePath;
       o.s0=ins.s0;o.s1=ins.s1;
       if(ins.slices)o.slices=ins.slices.map(x=>({s0:x.s0,s1:x.s1}));
+      if(ins.sliceBase)o.sliceBase=ins.sliceBase;
     }
     return o;
   })
@@ -1955,6 +2014,7 @@ function applyState(s){
         ins.sampleName=x.sampleName;ins.sourcePath=x.sourcePath;
         if(x.s0!=null)ins.s0=x.s0;if(x.s1!=null)ins.s1=x.s1;
         if(x.slices)ins.slices=x.slices.map(y=>({s0:y.s0,s1:y.s1}));
+        if(x.sliceBase)ins.sliceBase=x.sliceBase;
       }
       normInst(ins);
       return ins;
@@ -2570,6 +2630,7 @@ function cloneInst(src){
   if(src.sourcePath)ins.sourcePath=src.sourcePath;
   if(src.s0!=null)ins.s0=src.s0;if(src.s1!=null)ins.s1=src.s1;
   if(src.slices)ins.slices=src.slices.map(x=>({s0:x.s0,s1:x.s1}));
+  if(src.sliceBase)ins.sliceBase=src.sliceBase;
   return ins;
 }
 function pasteClip(){
@@ -2709,7 +2770,7 @@ grows.addEventListener('mouseover',e=>{
   if(!dragSel)return;
   const i=e.target.closest('i[data-c]'),cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
   if(!cell||!row)return;
-  const b={t:+cell.dataset.t,c:i?+i.dataset.c:0,r:+row.dataset.r};
+  const b={t:+cell.dataset.t,c:i?+i.dataset.c:colFromEvent(cell,e),r:+row.dataset.r};
   if(!sel&&b.t===dragSel.t&&b.c===dragSel.c&&b.r===dragSel.r)return;
   /* while dragging only the outline frame moves — no per-row rerender (was janky);
      the cell tint is painted once on mouseup */

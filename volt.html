@@ -92,6 +92,8 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 .btnrow button{padding:3px 8px;font-size:11px}
 .param{display:grid;grid-template-columns:64px 1fr 40px;align-items:center;gap:6px;margin-bottom:4px}
 .param .pn{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.param.automated .pn{color:var(--amber)}
+.param.automated .pn::after{content:' \26A1';font-size:9px}
 .param .pv{font-family:var(--mono);font-size:11px;color:var(--amber);text-align:right;font-variant-numeric:tabular-nums}
 input[type=range]{-webkit-appearance:none;appearance:none;height:16px;background:transparent;width:100%}
 input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--line);border-radius:2px}
@@ -211,7 +213,9 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 .alane .al b{color:var(--amber);font-weight:600}
 .alane .al u{text-decoration:none;color:var(--faint);cursor:pointer}
 .alane .al u:hover{color:var(--mag)}
-.astep{display:block;width:16px;height:44px;flex:none;border:1px solid var(--line);border-radius:2px;background:var(--bg);position:relative;cursor:crosshair;overflow:hidden}
+#autoGrip{height:6px;margin:-4px 0 4px;border-radius:3px;cursor:ns-resize}
+#autoGrip:hover{background:var(--teal-dim)}
+.astep{display:block;width:16px;height:var(--astepH,44px);flex:none;border:1px solid var(--line);border-radius:2px;background:var(--bg);position:relative;cursor:crosshair;overflow:hidden}
 .astep.b4{background:var(--raised)}
 .astep.bar{margin-left:7px}
 .astep i{position:absolute;left:0;right:0;bottom:0;background:var(--amber);opacity:.8;pointer-events:none}
@@ -352,7 +356,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 <div id="beat" hidden><div id="beatLanes"></div></div>
 
-<div id="autoPan" hidden><div id="autoLanes"></div></div>
+<div id="autoPan" hidden><div id="autoGrip" title="Drag to resize the lanes"></div><div id="autoLanes"></div></div>
 <div id="ctxMenu" hidden></div>
 
 <div id="palWrap" hidden><div id="pal">
@@ -523,8 +527,18 @@ function baseVoice(g,srcs,note,rel){
 }
 function osc(type,f){const o=AC.createOscillator();o.type=type;o.frequency.value=f;return o}
 
-function trig(inst,note,t,tr,vel,off){
-  const p=inst.params, ch=chans[tr], g=AC.createGain();
+/* automation override: normalized lane values -> real param values via the slider curve */
+function ovDenorm(inst,ov){
+  const defs=ITYPES[inst.type].p,o={};
+  for(const k in ov){
+    const d=defs[k];if(!d)continue;
+    const v=ov[k];
+    o[k]=d[3]?d[0]*Math.pow(d[1]/d[0],v):d[0]+(d[1]-d[0])*v;
+  }
+  return o;
+}
+function trig(inst,note,t,tr,vel,off,ov){
+  const p=ov?Object.assign({},inst.params,ovDenorm(inst,ov)):inst.params, ch=chans[tr], g=AC.createGain();
   const rel={sub:p.rel,reese:p.rel,supersaw:p.rel,sampler:p.rel,acid303:p.rel}[inst.type]||.05;
   let srcs=[], v;
   switch(inst.type){
@@ -701,6 +715,19 @@ function pump(){
 function schedRow(pi,row,t){
   const pat=song.patterns[pi];
   const soloed=song.trackset.some(s=>s.solo);
+  /* collect this row's automation: 'p.*' keys pre-apply to triggered notes,
+     the rest post-apply to channels/voices */
+  let autoPre=null,autoPost=null;
+  if(pat.auto)for(const k in pat.auto){
+    const arr=pat.auto[k];if(!arr)continue;
+    const v=arr[row];if(v==null)continue;
+    const dot=k.indexOf('.');const tr2=+k.slice(0,dot),p2=k.slice(dot+1);
+    if(tr2>=TRACKS)continue;
+    const ts2=song.trackset[tr2];
+    if(ts2.mute||(soloed&&!ts2.solo))continue;
+    if(p2.indexOf('p.')===0){(autoPre=autoPre||{});(autoPre[tr2]=autoPre[tr2]||{})[p2.slice(2)]=v}
+    else{(autoPost=autoPost||[]).push([tr2,p2,v])}
+  }
   for(let tr=0;tr<TRACKS;tr++){
     const ts=song.trackset[tr];
     if(ts.mute||(soloed&&!ts.solo))continue;
@@ -721,7 +748,7 @@ function schedRow(pi,row,t){
           for(let k=0;k<hits;k++){
             const tt=t+k*intv;
             if(ch.voice)ch.voice.cut(tt);
-            const nv=trig(inst,cell.n,tt,tr,vel*(k?0.8:1),fxc==='S'?fxv/256:0);
+            const nv=trig(inst,cell.n,tt,tr,vel*(k?0.8:1),fxc==='S'?fxv/256:0,autoPre&&autoPre[tr]);
             ch.voice=nv;
             if(inst.type==='kick')duck(tt);
           }
@@ -737,16 +764,7 @@ function schedRow(pi,row,t){
       ch.voice.slide((fxc==='U'?1:-1)*fxv*12.5,t,rowDur());
     }
   }
-  /* automation lanes */
-  if(pat.auto)for(const k in pat.auto){
-    const arr=pat.auto[k];if(!arr)continue;
-    const v=arr[row];if(v==null)continue;
-    const dot=k.indexOf('.');const tr=+k.slice(0,dot),p=k.slice(dot+1);
-    if(tr>=TRACKS)continue;
-    const ts=song.trackset[tr];
-    if(ts.mute||(soloed&&!ts.solo))continue;
-    const ap=AUTO_PARAMS[p];if(ap)ap.apply(tr,v,t);
-  }
+  if(autoPost)for(const[tr,p,v]of autoPost){const ap=AUTO_PARAMS[p];if(ap)ap.apply(tr,v,t)}
 }
 /* playhead */
 let playRowEl=null;
@@ -912,7 +930,7 @@ function renderGrid(){
   grows.innerHTML=h;playRowEl=null;
   renderHead();
   document.getElementById('patLen').value=pat.rows;
-  renderPatSel();renderOrder();renderBeatIfOpen();renderAutoIfOpen();
+  renderPatSel();renderOrder();renderBeatIfOpen();renderAutoIfOpen();markAuto();
 }
 let lastCurRow=0;
 function moveCursor(dt,dr,dc){
@@ -1099,6 +1117,7 @@ function renderParams(){
     +'<div class="btnrow"><button id="smpPlay">&#9654; region</button><button id="smpReset">Reset</button>'
     +'<span id="smpInfo"></span></div></div>':'');
   if(ins.type==='sampler'&&ins.buffer)drawSmp(ins);
+  markAuto();
 }
 /* ---- sample trim editor ---- */
 function smpPeaks(ins,w){
@@ -1198,6 +1217,7 @@ function trackPanel(){
     +'<input type="range" min="-12" max="12" step="0.5" value="'+ts.eq[k]+'" data-teq="'+k+'">'
     +'<span class="pv">'+fmtDb(ts.eq[k])+'</span></div>'
   ).join('');
+  markAuto();
 }
 function fmtDb(v){return(v>0?'+':'')+(+v).toFixed(1)}
 document.getElementById('trackMix').addEventListener('input',e=>{
@@ -2578,7 +2598,7 @@ function renderAuto(){
   for(const k of keys.sort()){
     const dot=k.indexOf('.');const tr=+k.slice(0,dot),p=k.slice(dot+1);
     const arr=pat.auto[k];
-    h+='<div class="alane"><div class="al"><b>T'+(tr+1)+' &#183; '+(AUTO_PARAMS[p]?AUTO_PARAMS[p].label:esc(p))+'</b><span><u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
+    h+='<div class="alane"><div class="al"><b>T'+(tr+1)+' &#183; '+esc(autoLabel(p))+'</b><span><u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
     for(let r=0;r<pat.rows;r++){
       let cls='astep';if(r%4===0)cls+=' b4';if(r%16===0&&r)cls+=' bar';
       const v=arr[r];
@@ -2615,7 +2635,10 @@ function autoErase(el){
 autoLanes.addEventListener('mousedown',e=>{
   const x=e.target.closest('u[data-x]');
   if(x){
-    if(confirm('Remove this automation lane?')){delete song.patterns[curPat].auto[x.dataset.x];renderAuto();saveSoon()}
+    if(confirm('Remove this automation lane?')){
+      const k=x.dataset.x,dot=k.indexOf('.');
+      autoDelete(+k.slice(0,dot),k.slice(dot+1));
+    }
     return;
   }
   const s=e.target.closest('.astep');if(!s)return;
@@ -2652,24 +2675,112 @@ function openCtx(x,y,items){
   ctxMenu.hidden=false;
 }
 document.addEventListener('mousedown',e=>{if(!ctxMenu.hidden&&!e.target.closest('#ctxMenu'))ctxMenu.hidden=true});
+/* current value of a target, normalized 0..1 — used to prefill new lanes */
+function autoCurrent(t,p){
+  const ts=song.trackset[t];
+  if(p==='vol')return 1;
+  if(p==='dly')return ts.dly;
+  if(p==='rvb')return ts.rvb;
+  const a=beatAuto(t);
+  const ins=song.instruments[a&&a.i!=null?a.i:curInst];
+  if(p==='cutoff'){
+    if(ins&&ins.params.cutoff!=null)return clamp(Math.log(ins.params.cutoff/40)/Math.log(300),0,1);
+    return .5;
+  }
+  if(p.indexOf('p.')===0&&ins){
+    const k=p.slice(2),d=ITYPES[ins.type].p[k];
+    if(d&&ins.params[k]!=null){
+      const val=ins.params[k];
+      return clamp(d[3]?Math.log(val/d[0])/Math.log(d[1]/d[0]):(val-d[0])/(d[1]-d[0]),0,1);
+    }
+  }
+  return .5;
+}
+function autoLabel(p){
+  if(AUTO_PARAMS[p])return AUTO_PARAMS[p].label;
+  if(p.indexOf('p.')===0)return p.slice(2);
+  return p;
+}
 function autoCreate(t,p){
-  ensureLane(t,p);
+  const pat=song.patterns[curPat];
+  const isNew=!(pat.auto&&pat.auto[t+'.'+p]);
+  const lane=ensureLane(t,p);
+  if(isNew){
+    const v=Math.round(autoCurrent(t,p)*100)/100;
+    lane.fill(v);
+  }
   if(autoPan.hidden)autoToggle();else renderAuto();
-  saveSoon();
-  status('automation: T'+(t+1)+' '+(AUTO_PARAMS[p]?AUTO_PARAMS[p].label:p)+' — paint it in the Auto panel');
+  markAuto();saveSoon();
+  status('automation: T'+(t+1)+' '+autoLabel(p)+(isNew?' — starts at its current value, paint away':''));
+}
+function autoDelete(t,p){
+  const pat=song.patterns[curPat];
+  if(pat.auto)delete pat.auto[t+'.'+p];
+  renderAuto();markAuto();saveSoon();
+  status('automation removed: T'+(t+1)+' '+autoLabel(p));
+}
+/* ⚡ marks on sliders that have a lane in this pattern (for the cursor track) */
+function markAuto(){
+  if(!song)return;
+  const pat=song.patterns[curPat];
+  const has=p=>!!(pat.auto&&pat.auto[cursor.t+'.'+p]);
+  document.querySelectorAll('#params .param').forEach(el=>{
+    const inp=el.querySelector('input[data-k]');if(!inp)return;
+    const k=inp.dataset.k;
+    el.classList.toggle('automated',has('p.'+k)||(k==='cutoff'&&has('cutoff')));
+  });
+  document.querySelectorAll('#trackMix .param').forEach(el=>{
+    const inp=el.querySelector('input[data-tk]');if(!inp)return;
+    el.classList.toggle('automated',has(inp.dataset.tk));
+  });
 }
 document.getElementById('trackMix').addEventListener('contextmenu',e=>{
   const k=e.target.dataset&&e.target.dataset.tk;
   if(!k||!AUTO_PARAMS[k])return;
   e.preventDefault();
-  openCtx(e.clientX,e.clientY,[{label:'⚡ Automate '+AUTO_PARAMS[k].label+' (Track '+(cursor.t+1)+')',f:()=>autoCreate(cursor.t,k)}]);
+  const items=[{label:'⚡ Automate '+AUTO_PARAMS[k].label+' — Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,k)}];
+  const pat=song.patterns[curPat];
+  if(pat.auto&&pat.auto[cursor.t+'.'+k])
+    items.push({label:'✕ Delete '+AUTO_PARAMS[k].label+' automation',f:()=>autoDelete(cursor.t,k)});
+  openCtx(e.clientX,e.clientY,items);
 });
 document.getElementById('params').addEventListener('contextmenu',e=>{
   const k=e.target.dataset&&e.target.dataset.k;
-  if(k!=='cutoff')return;
+  if(!k)return;
   e.preventDefault();
-  openCtx(e.clientX,e.clientY,[{label:'⚡ Automate Cutoff on Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,'cutoff')}]);
+  const pat=song.patterns[curPat];
+  const items=[];
+  if(k==='cutoff'){
+    items.push({label:'⚡ Automate Cutoff — Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,'cutoff')});
+    if(pat.auto&&pat.auto[cursor.t+'.cutoff'])
+      items.push({label:'✕ Delete Cutoff automation',f:()=>autoDelete(cursor.t,'cutoff')});
+  }else{
+    items.push({label:'⚡ Automate '+k+' — Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,'p.'+k)});
+    if(pat.auto&&pat.auto[cursor.t+'.p.'+k])
+      items.push({label:'✕ Delete '+k+' automation',f:()=>autoDelete(cursor.t,'p.'+k)});
+  }
+  openCtx(e.clientX,e.clientY,items);
 });
+/* resizable panel: drag the grip to change lane height */
+(function(){
+  const grip=document.getElementById('autoGrip');
+  let drag=false,sy=0,sh=44;
+  let saved=44;try{saved=+localStorage.getItem('volt.autoH')||44}catch(e){}
+  document.documentElement.style.setProperty('--astepH',clamp(saved,28,120)+'px');
+  grip.addEventListener('mousedown',e=>{
+    drag=true;sy=e.clientY;
+    sh=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--astepH'))||44;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    document.documentElement.style.setProperty('--astepH',clamp(sh-(e.clientY-sy),28,120)+'px');
+  });
+  document.addEventListener('mouseup',()=>{
+    if(!drag)return;drag=false;
+    try{localStorage.setItem('volt.autoH',parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--astepH'))||44)}catch(e){}
+  });
+})();
 
 /* ================= project tabs ================= */
 const PM={tabs:[],active:null};

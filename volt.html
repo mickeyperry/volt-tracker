@@ -125,6 +125,7 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 .prow.b4{background:var(--b4)}
 .prow.b16{background:var(--b16)}
 .prow.playrow{background:var(--playrow);box-shadow:inset 2px 0 0 var(--teal)}
+.prow.dropRow{background:var(--playrow);box-shadow:inset 0 0 0 1px var(--teal)}
 .prow.playrow .rn{color:var(--teal)}
 .tcell{padding:0 7px;border-left:1px solid var(--cellline)}
 .tcell.odd{background:var(--oddtrk)}
@@ -568,85 +569,127 @@ function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{const ch=chans[
   if(d!==ch._drv){ch._drv=d;ch.shp.curve=d>0?driveCurveArr(d):null}})}
 function setDelayTime(){if(!AC)return;const d=60/song.bpm*.75;dlyL.delayTime.value=d;dlyR.delayTime.value=d}
 /* ---- per-track insert FX chain (sits between the channel filter and drive) ---- */
+function crushCurve(bits){
+  const steps=Math.pow(2,clamp(bits,1,16));
+  const n=2048,c=new Float32Array(n);
+  for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.round(x*steps)/steps}
+  return c;
+}
 const FX_TYPES={
-  crush:{label:'Bitcrush',p:{bits:[1,16,8],mix:[0,1,1]},build:p=>{
-    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
-    const ws=AC.createWaveShaper();
-    const steps=Math.pow(2,clamp(p.bits,1,16));
-    const n=2048,c=new Float32Array(n);
-    for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.round(x*steps)/steps}
-    ws.curve=c;
-    dry.gain.value=1-p.mix;wet.gain.value=p.mix;
-    inG.connect(ws);ws.connect(wet);wet.connect(out);
-    inG.connect(dry);dry.connect(out);
-    return{in:inG,out,nodes:[inG,out,dry,wet,ws]};
-  }},
-  flanger:{label:'Flanger',p:{rate:[.05,5,.3],depth:[0,1,.7],fb:[0,.9,.5],mix:[0,1,.5]},build:p=>{
-    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
-    const dl=AC.createDelay(.05);dl.delayTime.value=.004;
-    const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
-    const lg=AC.createGain();lg.gain.value=.0035*p.depth;
-    lfo.connect(lg);lg.connect(dl.delayTime);lfo.start();
-    const fb=AC.createGain();fb.gain.value=p.fb;
-    dl.connect(fb);fb.connect(dl);
-    dry.gain.value=1-p.mix*.5;wet.gain.value=p.mix;
-    inG.connect(dl);dl.connect(wet);wet.connect(out);
-    inG.connect(dry);dry.connect(out);
-    return{in:inG,out,nodes:[inG,out,dry,wet,dl,lfo,lg,fb]};
-  }},
-  chorus:{label:'Chorus',p:{rate:[.05,4,.8],depth:[0,1,.5],mix:[0,1,.5]},build:p=>{
-    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
-    const dl=AC.createDelay(.08);dl.delayTime.value=.018;
-    const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
-    const lg=AC.createGain();lg.gain.value=.008*p.depth;
-    lfo.connect(lg);lg.connect(dl.delayTime);lfo.start();
-    dry.gain.value=1-p.mix*.4;wet.gain.value=p.mix;
-    inG.connect(dl);dl.connect(wet);wet.connect(out);
-    inG.connect(dry);dry.connect(out);
-    return{in:inG,out,nodes:[inG,out,dry,wet,dl,lfo,lg]};
-  }},
-  phaser:{label:'Phaser',p:{rate:[.05,6,.5],depth:[0,1,.7],mix:[0,1,.6]},build:p=>{
-    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
-    const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
-    const lg=AC.createGain();lg.gain.value=900*p.depth;
-    lfo.connect(lg);lfo.start();
-    let head=inG;const aps=[];
-    [400,800,1600,2400].forEach(f=>{
-      const ap=AC.createBiquadFilter();ap.type='allpass';ap.frequency.value=f;ap.Q.value=.6;
-      lg.connect(ap.frequency);
-      head.connect(ap);head=ap;aps.push(ap);
-    });
-    dry.gain.value=1-p.mix*.5;wet.gain.value=p.mix;
-    head.connect(wet);wet.connect(out);
-    inG.connect(dry);dry.connect(out);
-    return{in:inG,out,nodes:[inG,out,dry,wet,lfo,lg,...aps]};
-  }},
-  widen:{label:'Stereo Widen',p:{width:[0,1,.5]},build:p=>{
-    /* Haas widener: dry left, a few ms of delay on the right */
-    const inG=AC.createGain(),out=AC.createGain();
-    const mg=AC.createChannelMerger(2);
-    const dl=AC.createDelay(.05);dl.delayTime.value=.001+.016*p.width;
-    inG.connect(mg,0,0);
-    inG.connect(dl);dl.connect(mg,0,1);
-    mg.connect(out);
-    return{in:inG,out,nodes:[inG,out,mg,dl]};
-  }}
+  crush:{label:'Bitcrush',p:{bits:[1,16,8],mix:[0,1,1]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const ws=AC.createWaveShaper();ws.curve=crushCurve(p.bits);
+      dry.gain.value=1-p.mix;wet.gain.value=p.mix;
+      inG.connect(ws);ws.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      return{in:inG,out,nodes:[inG,out,dry,wet,ws],refs:{dry,wet,ws}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='bits')r.ws.curve=crushCurve(v);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }},
+  flanger:{label:'Flanger',p:{rate:[.05,5,.3],depth:[0,1,.7],fb:[0,.9,.5],mix:[0,1,.5]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const dl=AC.createDelay(.05);dl.delayTime.value=.004;
+      const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
+      const lg=AC.createGain();lg.gain.value=.0035*p.depth;
+      lfo.connect(lg);lg.connect(dl.delayTime);lfo.start();
+      const fb=AC.createGain();fb.gain.value=p.fb;
+      dl.connect(fb);fb.connect(dl);
+      dry.gain.value=1-p.mix*.5;wet.gain.value=p.mix;
+      inG.connect(dl);dl.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      return{in:inG,out,nodes:[inG,out,dry,wet,dl,lfo,lg,fb],refs:{dl,lfo,lg,fb,dry,wet}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='rate')r.lfo.frequency.setTargetAtTime(v,t,.05);
+      else if(k==='depth')r.lg.gain.setTargetAtTime(.0035*v,t,.05);
+      else if(k==='fb')r.fb.gain.setTargetAtTime(v,t,.02);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v*.5,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }},
+  chorus:{label:'Chorus',p:{rate:[.05,4,.8],depth:[0,1,.5],mix:[0,1,.5]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const dl=AC.createDelay(.08);dl.delayTime.value=.018;
+      const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
+      const lg=AC.createGain();lg.gain.value=.008*p.depth;
+      lfo.connect(lg);lg.connect(dl.delayTime);lfo.start();
+      dry.gain.value=1-p.mix*.4;wet.gain.value=p.mix;
+      inG.connect(dl);dl.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      return{in:inG,out,nodes:[inG,out,dry,wet,dl,lfo,lg],refs:{lfo,lg,dry,wet}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='rate')r.lfo.frequency.setTargetAtTime(v,t,.05);
+      else if(k==='depth')r.lg.gain.setTargetAtTime(.008*v,t,.05);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v*.4,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }},
+  phaser:{label:'Phaser',p:{rate:[.05,6,.5],depth:[0,1,.7],mix:[0,1,.6]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
+      const lg=AC.createGain();lg.gain.value=900*p.depth;
+      lfo.connect(lg);lfo.start();
+      let head=inG;const aps=[];
+      [400,800,1600,2400].forEach(f=>{
+        const ap=AC.createBiquadFilter();ap.type='allpass';ap.frequency.value=f;ap.Q.value=.6;
+        lg.connect(ap.frequency);
+        head.connect(ap);head=ap;aps.push(ap);
+      });
+      dry.gain.value=1-p.mix*.5;wet.gain.value=p.mix;
+      head.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      return{in:inG,out,nodes:[inG,out,dry,wet,lfo,lg,...aps],refs:{lfo,lg,dry,wet}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='rate')r.lfo.frequency.setTargetAtTime(v,t,.05);
+      else if(k==='depth')r.lg.gain.setTargetAtTime(900*v,t,.05);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v*.5,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }},
+  widen:{label:'Stereo Widen',p:{width:[0,1,.5],mix:[0,1,1]},
+    build:p=>{
+      /* Haas widener: dry center, a few ms of delay on the right of the wet path */
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const mg=AC.createChannelMerger(2);
+      const dl=AC.createDelay(.05);dl.delayTime.value=.001+.016*p.width;
+      inG.connect(mg,0,0);
+      inG.connect(dl);dl.connect(mg,0,1);
+      mg.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      dry.gain.value=1-p.mix;wet.gain.value=p.mix;
+      return{in:inG,out,nodes:[inG,out,dry,wet,mg,dl],refs:{dl,dry,wet}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='width')r.dl.delayTime.setTargetAtTime(.001+.016*v,t,.02);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }}
 };
 function buildFx(ch,list){
   if(!AC||!ch||!ch.fxIn)return;
   ch.fxIn.disconnect();
   (ch._fxNodes||[]).forEach(n=>{try{if(n.stop)n.stop()}catch(e){}try{n.disconnect()}catch(e){}});
-  ch._fxNodes=[];
+  ch._fxNodes=[];ch._fxLive={};
   let head=ch.fxIn;
-  for(const fx of(list||[])){
-    if(fx.on===false)continue;
-    const ft=FX_TYPES[fx.type];if(!ft)continue;
+  (list||[]).forEach((fx,fi)=>{
+    if(fx.on===false)return;
+    const ft=FX_TYPES[fx.type];if(!ft)return;
     const p={};for(const k in ft.p)p[k]=fx.p&&fx.p[k]!=null?fx.p[k]:ft.p[k][2];
     const built=ft.build(p);
     head.connect(built.in);head=built.out;
     ch._fxNodes.push(...built.nodes);
-  }
+    ch._fxLive[fi]={type:fx.type,refs:built.refs};
+  });
   head.connect(ch.fxOut);
+}
+/* automation lane 'fxN.param' → live-tune the Nth effect on that channel */
+function applyFxAuto(tr,p,v,t){
+  const m=/^fx(\d+)\.(.+)$/.exec(p);if(!m)return;
+  const ch=chans[tr];if(!ch||!ch._fxLive)return;
+  const live=ch._fxLive[+m[1]];if(!live)return;
+  const ft=FX_TYPES[live.type],d=ft.p[m[2]];
+  if(d&&ft.tune)ft.tune(live.refs,m[2],d[0]+(d[1]-d[0])*v,t);
 }
 function applyFxAll(){
   if(!AC||!song)return;
@@ -938,7 +981,11 @@ function schedRow(pi,row,t){
       ch.voice.slide((fxc==='U'?1:-1)*fxv*12.5,t,rowDur());
     }
   }
-  if(autoPost)for(const[tr,p,v]of autoPost){const ap=AUTO_PARAMS[p];if(ap)ap.apply(tr,v,t)}
+  if(autoPost)for(const[tr,p,v]of autoPost){
+    const ap=AUTO_PARAMS[p];
+    if(ap)ap.apply(tr,v,t);
+    else if(p.indexOf('fx')===0)applyFxAuto(tr,p,v,t);
+  }
 }
 /* playhead */
 let playRowEl=null;
@@ -1184,6 +1231,57 @@ ghead.addEventListener('dblclick',e=>{
   const cell=e.target.closest('.thead');if(!cell||e.target.closest('.tbtn')||e.target.tagName==='INPUT')return;
   renameTrack(+cell.dataset.t,cell.querySelector('.tname'));
 });
+/* right-click a track header: track operations */
+ghead.addEventListener('contextmenu',e=>{
+  const cell=e.target.closest('.thead');if(!cell)return;
+  e.preventDefault();
+  const t=+cell.dataset.t;
+  const nm='track '+(t+1)+(song.trackset[t].name?' “'+song.trackset[t].name+'”':'');
+  openCtx(e.clientX,e.clientY,[
+    {label:'Select '+nm,f:()=>selectTrack(t)},
+    {label:'Rename',f:()=>renameTrack(t)},
+    {label:'Clear notes (this pattern)',f:()=>clearTrackNotes(t)},
+    {label:'✕ Delete '+nm,f:()=>deleteTrack(t)}
+  ]);
+});
+function trackHasNotes(t){
+  return song.patterns.some(p=>p.data[t]&&p.data[t].some(c=>c&&(c.n!=null||c.i!=null||c.v!=null||c.c)));
+}
+async function clearTrackNotes(t){
+  const pat=song.patterns[curPat];
+  if(pat.data[t].some(c=>c)&&!await askConfirm('Clear all notes on track '+(t+1)+' in this pattern?','Clear'))return;
+  pat.data[t]=new Array(pat.rows).fill(null);
+  renderGrid();saveSoon();status('track '+(t+1)+' cleared');
+}
+async function deleteTrack(t){
+  if(TRACKS<=2){status('minimum 2 tracks');return}
+  if(trackHasNotes(t)){
+    const nm=song.trackset[t].name?' “'+song.trackset[t].name+'”':'';
+    if(!await askConfirm('Track '+(t+1)+nm+' has notes — delete it anyway?\nIts notes and automation are removed in every pattern; columns to the right shift left.','Delete'))return;
+  }
+  if(AC)stopAllVoices();
+  song.patterns.forEach(p=>{
+    p.data.splice(t,1);
+    if(p.auto){
+      const na={};
+      for(const k in p.auto){
+        const dot=k.indexOf('.');const tr=+k.slice(0,dot),pp=k.slice(dot+1);
+        if(tr===t)continue;
+        na[(tr>t?tr-1:tr)+'.'+pp]=p.auto[k];
+      }
+      p.auto=na;
+    }
+  });
+  song.trackset.splice(t,1);
+  TRACKS--;
+  cursor.t=Math.min(cursor.t,TRACKS-1);
+  sel=null;
+  document.getElementById('trkN').value=TRACKS;
+  genCtCSS();
+  if(AC){applyMix();applyFxAll()}
+  renderGrid();trackPanel();if(!mixer.hidden)renderMixer();saveSoon();
+  status('track deleted');
+}
 
 /* ================= keyboard ================= */
 const KEYMAP={z:0,s:1,x:2,d:3,c:4,v:5,g:6,b:7,h:8,n:9,j:10,m:11,',':12,l:13,'.':14,';':15,'/':16,
@@ -1333,8 +1431,19 @@ function laySlices(ins,ii,t,r0){
   renderGrid();renderParams();saveSoon();
   status(n+' slices laid on track '+(t+1)+' over '+bars+' bar'+(bars>1?'s':'')+' · rate '+Math.round(ins.params.rate*100)+'%');
 }
-grows.addEventListener('dragover',e=>{if(instDrag!=null)e.preventDefault()});
+let dropRowEl=null;
+function clearDropRow(){if(dropRowEl){dropRowEl.classList.remove('dropRow');dropRowEl=null}}
+grows.addEventListener('dragover',e=>{
+  if(instDrag==null)return;
+  e.preventDefault();
+  /* light the row where the slices will start */
+  const row=e.target.closest('.prow');
+  if(row!==dropRowEl){clearDropRow();if(row){row.classList.add('dropRow');dropRowEl=row}}
+});
+grows.addEventListener('dragleave',e=>{if(e.target===grows)clearDropRow()});
+document.addEventListener('dragend',clearDropRow);
 grows.addEventListener('drop',e=>{
+  clearDropRow();
   if(instDrag==null)return;
   e.preventDefault();e.stopPropagation();
   const ii=instDrag;instDrag=null;
@@ -1352,6 +1461,18 @@ function esc(s){return String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&
 document.getElementById('instList').addEventListener('click',e=>{
   const r=e.target.closest('.irow');if(!r)return;
   curInst=+r.dataset.i;renderInstList();renderParams();
+});
+/* dblclick an instrument = rename it in place */
+document.getElementById('instList').addEventListener('dblclick',e=>{
+  const r=e.target.closest('.irow');if(!r)return;
+  curInst=+r.dataset.i;renderInstList();renderParams();
+  const ins=song.instruments[curInst];
+  const span=document.querySelector('#instList .irow.sel span:last-child');
+  if(!ins||!span)return;
+  inlineEdit(span,ins.name,v=>{
+    if(v)ins.name=v;
+    renderInstList();renderParams();saveSoon();
+  });
 });
 function renderParams(){
   const ins=song.instruments[curInst],el=document.getElementById('params');
@@ -1372,7 +1493,7 @@ function renderParams(){
     +'<button id="smpSlice" title="Chop the sample into slices playable from the keyboard">Slice&#8230;</button>'
     +'<span id="smpInfo"></span></div></div>':'')
   +(ins.type==='sliced'&&ins.buffer?
-    '<div id="smpEd"><canvas id="slCanvas" height="64" title="Click: preview &#183; drag a marker line: move it &#183; dblclick: add a slice &#183; right-click a line: remove it"></canvas>'
+    '<div id="smpEd"><canvas id="slCanvas" height="64" draggable="true" title="Click: preview &#183; scroll: zoom (Shift+scroll: pan) &#183; drag a marker line: move it &#183; dblclick: add a slice &#183; right-click a line: remove it &#183; drag the waveform onto the grid to lay out the groove"></canvas>'
     +'<div class="btnrow"><button data-slc="auto" title="Re-slice on detected transients">Auto</button>'
     +'<button data-slc="8" title="8 equal slices">8</button><button data-slc="16" title="16 equal slices">16</button>'
     +'<span id="smpInfo"></span></div>'
@@ -1403,28 +1524,64 @@ function autoSliceBuf(buf,maxN){
   if(starts.length<2)return null;
   return starts.map((w,ix)=>({s0:w*win/d.length,s1:starts[ix+1]!=null?starts[ix+1]*win/d.length:1}));
 }
+/* view transform: wheel zooms around the cursor, Shift+wheel pans */
+function slView(ins){const z=ins._slZ||1;return{z,o:clamp(ins._slO||0,0,1-1/z)}}
+function slFrac(cv,e,ins){
+  const r=cv.getBoundingClientRect(),v=slView(ins);
+  return clamp(v.o+((e.clientX-r.left)/r.width)/v.z,0,1);
+}
 function drawSlices(ins){
   const cv=document.getElementById('slCanvas');if(!cv||!ins.buffer)return;
   const w=cv.clientWidth||226;if(cv.width!==w)cv.width=w;
   const h=cv.height,ctx=cv.getContext('2d');
-  const pk=smpPeaks(ins,w);
+  const{z,o}=slView(ins);ins._slO=o;
+  const W=Math.round(w*z);
+  const pk=smpPeaks(ins,W);
   ctx.fillStyle='#0a0e16';ctx.fillRect(0,0,w,h);
   ctx.fillStyle='#2b8f76';
+  const x0=Math.round(o*W);
   for(let x=0;x<w;x++){
-    const mn=pk[x*2],mx=pk[x*2+1];
+    const i=x0+x;if(i>=W)break;
+    const mn=pk[i*2],mx=pk[i*2+1];
     ctx.fillRect(x,h/2-mx*h/2,1,Math.max(1,(mx-mn)*h/2));
   }
+  const fx=f=>(f-o)*z*w;
   (ins.slices||[]).forEach((sl,i)=>{
-    if(i%2){ctx.fillStyle='rgba(255,255,255,.045)';ctx.fillRect(sl.s0*w,0,(sl.s1-sl.s0)*w,h)}
-    ctx.fillStyle='#ff4d9d';ctx.fillRect(Math.round(sl.s0*w),0,1,h);
-    if((ins.slices.length<=16||i%2===0)&&(sl.s1-sl.s0)*w>12){
-      ctx.fillStyle='#68748a';ctx.font='8px monospace';
-      ctx.fillText(String(i+1),sl.s0*w+2,8);
-    }
+    const a=fx(sl.s0),b=fx(sl.s1);
+    if(b<0||a>w)return;
+    if(i%2){ctx.fillStyle='rgba(255,255,255,.045)';ctx.fillRect(Math.max(0,a),0,Math.min(w,b)-Math.max(0,a),h)}
+    ctx.fillStyle='#ff4d9d';ctx.fillRect(Math.round(a),0,1,h);
+    if(b-a>12){ctx.fillStyle='#68748a';ctx.font='8px monospace';ctx.fillText(String(i+1),a+2,8)}
   });
   const info=document.getElementById('smpInfo');
-  if(info)info.textContent=(ins.slices||[]).length+' slices';
+  if(info)info.textContent=(ins.slices||[]).length+' slices'+(z>1?' · '+(z>=10?Math.round(z):z.toFixed(1))+'×':'');
 }
+/* dragging the waveform itself works like dragging the instrument from the list */
+document.getElementById('params').addEventListener('dragstart',e=>{
+  if(e.target.id!=='slCanvas')return;
+  const ins=song.instruments[curInst];
+  if(!ins||ins.type!=='sliced'){e.preventDefault();return}
+  instDrag=curInst;
+  e.dataTransfer.effectAllowed='copy';
+  e.dataTransfer.setData('text/plain','volt-inst');
+});
+document.getElementById('params').addEventListener('wheel',e=>{
+  if(e.target.id!=='slCanvas')return;
+  const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.buffer)return;
+  e.preventDefault();
+  const r=e.target.getBoundingClientRect();
+  const xN=(e.clientX-r.left)/r.width;
+  let{z,o}=slView(ins);
+  if(e.shiftKey){
+    o+=(e.deltaY>0?1:-1)*.2/z;
+  }else{
+    const f=o+xN/z;
+    z=clamp(z*(e.deltaY<0?1.25:.8),1,32);
+    o=f-xN/z;
+  }
+  ins._slZ=z;ins._slO=clamp(o,0,1-1/z);
+  drawSlices(ins);
+},{passive:false});
 function playSlice(ins,sl){
   audio();if(AC.state==='suspended')AC.resume();
   const s=AC.createBufferSource();s.buffer=ins.buffer;
@@ -1487,11 +1644,16 @@ document.getElementById('params').addEventListener('mousedown',e=>{
   /* slice markers: grab a boundary line to fine-tune it (Slicex-style) */
   if(e.target.id==='slCanvas'&&e.button===0){
     const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.slices)return;
-    const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
-    const tol=6/r.width;
+    const r=e.target.getBoundingClientRect();
+    const x=slFrac(e.target,e,ins);
+    const tol=6/(r.width*(ins._slZ||1));
     for(let i=1;i<ins.slices.length;i++){
-      if(Math.abs(x-ins.slices[i].s0)<tol){slDrag=i;slMoved=false;e.preventDefault();return}
+      if(Math.abs(x-ins.slices[i].s0)<tol){
+        e.target.draggable=false; /* marker drag beats instrument drag */
+        slDrag=i;slMoved=false;e.preventDefault();return;
+      }
     }
+    e.target.draggable=true;
     return;
   }
   if(e.target.id!=='smpCanvas')return;
@@ -1505,9 +1667,8 @@ document.addEventListener('mousemove',e=>{
   if(slDrag==null)return;
   const cv=document.getElementById('slCanvas'),ins=song.instruments[curInst];
   if(!cv||!ins||!ins.slices){slDrag=null;return}
-  const r=cv.getBoundingClientRect();
-  let x=clamp((e.clientX-r.left)/r.width,0,1);
-  x=clamp(x,ins.slices[slDrag-1].s0+.005,ins.slices[slDrag].s1-.005);
+  let x=slFrac(cv,e,ins);
+  x=clamp(x,ins.slices[slDrag-1].s0+.002,ins.slices[slDrag].s1-.002);
   ins.slices[slDrag].s0=x;ins.slices[slDrag-1].s1=x;
   slMoved=true;drawSlices(ins);
 });
@@ -1553,7 +1714,7 @@ document.getElementById('params').addEventListener('click',e=>{
       saveSoon();status(ins.slices.length+' slices');
     }else if(e.target.id==='slCanvas'&&ins.slices){
       if(slMoved){slMoved=false;return} /* just finished dragging a marker */
-      const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
+      const x=slFrac(e.target,e,ins);
       const i=ins.slices.findIndex(sl=>x>=sl.s0&&x<sl.s1);
       if(i>=0){playSlice(ins,ins.slices[i]);status('slice '+(i+1)+' = '+noteName((ins.sliceBase||48)+i))}
     }
@@ -1599,6 +1760,8 @@ function fxChainHTML(ts){
       const on=fx.on!==false;
       return '<div class="fxrow'+(on?'':' fxoff')+'" data-f="'+fi+'">'
         +'<div class="fxhead"><b>'+ft.label+'</b><span>'
+        +'<u data-fxup="'+fi+'" title="Move earlier in the chain">&#9650;</u>'
+        +'<u data-fxdn="'+fi+'" title="Move later in the chain">&#9660;</u>'
         +'<u data-fxon="'+fi+'" title="Enable / bypass">'+(on?'on':'off')+'</u>'
         +'<u data-fxdel="'+fi+'" title="Remove effect">&#215;</u></span></div>'
         +Object.keys(ft.p).map(k=>{
@@ -1627,6 +1790,7 @@ document.getElementById('trackMix').addEventListener('click',e=>{
     return;
   }
   const on=e.target.dataset.fxon,del=e.target.dataset.fxdel;
+  const up=e.target.dataset.fxup,dn=e.target.dataset.fxdn;
   if(on!=null&&ts.fx&&ts.fx[+on]){
     ts.fx[+on].on=ts.fx[+on].on===false;
     trackPanel();fxRebuildCur();saveSoon();
@@ -1635,6 +1799,14 @@ document.getElementById('trackMix').addEventListener('click',e=>{
   if(del!=null&&ts.fx){
     ts.fx.splice(+del,1);
     trackPanel();fxRebuildCur();saveSoon();
+    return;
+  }
+  if((up!=null||dn!=null)&&ts.fx){
+    const i=+(up!=null?up:dn),j=up!=null?i-1:i+1;
+    if(j<0||j>=ts.fx.length)return;
+    [ts.fx[i],ts.fx[j]]=[ts.fx[j],ts.fx[i]];
+    trackPanel();fxRebuildCur();saveSoon();
+    status('fx order: '+ts.fx.map(f=>FX_TYPES[f.type].label).join(' → '));
   }
 });
 function fmtDb(v){return(v>0?'+':'')+(+v).toFixed(1)}
@@ -1684,7 +1856,7 @@ document.getElementById('trackMix').addEventListener('dblclick',e=>{
 document.getElementById('params').addEventListener('dblclick',e=>{
   if(e.target.id==='slCanvas'){ /* dblclick a slice = split it there */
     const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.slices)return;
-    const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
+    const x=slFrac(e.target,e,ins);
     const i=ins.slices.findIndex(sl=>x>sl.s0+.005&&x<sl.s1-.005);
     if(i<0)return;
     ins.slices.splice(i+1,0,{s0:x,s1:ins.slices[i].s1});
@@ -3580,6 +3752,15 @@ function autoCurrent(t,p){
   if(p==='dly')return ts.dly;
   if(p==='rvb')return ts.rvb;
   if(p==='pan')return((ts.pan||0)+1)/2;
+  const fm=/^fx(\d+)\.(.+)$/.exec(p);
+  if(fm){
+    const fx=ts.fx&&ts.fx[+fm[1]];
+    if(fx&&FX_TYPES[fx.type]){
+      const d=FX_TYPES[fx.type].p[fm[2]];
+      if(d){const val=fx.p&&fx.p[fm[2]]!=null?fx.p[fm[2]]:d[2];return clamp((val-d[0])/(d[1]-d[0]),0,1)}
+    }
+    return .5;
+  }
   if(p==='fltF')return ts.fltF==null?1:ts.fltF;
   if(p==='fltQ')return ts.fltQ||0;
   if(p==='drv')return ts.drv||0;
@@ -3603,6 +3784,8 @@ function autoCurrent(t,p){
 function autoLabel(p){
   if(AUTO_PARAMS[p])return AUTO_PARAMS[p].label;
   if(p.indexOf('p.')===0)return p.slice(2);
+  const m=/^fx(\d+)\.(.+)$/.exec(p);
+  if(m)return 'FX'+(+m[1]+1)+' '+m[2];
   return p;
 }
 /* live feedback: while playing, move the visible sliders along with the lanes */
@@ -3640,6 +3823,16 @@ function reflectAuto(pi,row){
       const inp=document.querySelector('#trackMix input[data-teq="'+p.slice(3)+'"]');
       if(inp){inp.value=v*24-12;
         const pv=inp.parentElement.querySelector('.pv');if(pv)pv.textContent=fmtDb(v*24-12)}
+    }else if(/^fx\d+\./.test(p)){
+      const m=/^fx(\d+)\.(.+)$/.exec(p);
+      const inp=document.querySelector('#trackMix input[data-fxi="'+m[1]+'"][data-fxp="'+m[2]+'"]');
+      if(inp){
+        inp.value=Math.round(v*1000);
+        const ts2=song.trackset[tr],fx=ts2&&ts2.fx&&ts2.fx[+m[1]];
+        const d=fx&&FX_TYPES[fx.type]&&FX_TYPES[fx.type].p[m[2]];
+        const pv=inp.parentElement.querySelector('.pv');
+        if(d&&pv)pv.textContent=fmtP(d[0]+(d[1]-d[0])*v);
+      }
     }else{
       const inp=document.querySelector('#trackMix input[data-tk="'+p+'"]');
       if(inp){
@@ -3685,20 +3878,22 @@ function markAuto(){
     el.classList.toggle('automated',phas('p.'+k)||(k==='cutoff'&&phas('cutoff')));
   });
   document.querySelectorAll('#trackMix .param').forEach(el=>{
-    const inp=el.querySelector('input[data-tk],input[data-teq]');if(!inp)return;
-    const key=inp.dataset.tk||('eq.'+inp.dataset.teq);
+    const inp=el.querySelector('input[data-tk],input[data-teq],input[data-fxp]');if(!inp)return;
+    const key=inp.dataset.tk||(inp.dataset.teq?'eq.'+inp.dataset.teq:'fx'+inp.dataset.fxi+'.'+inp.dataset.fxp);
     el.classList.toggle('automated',has(key));
   });
 }
 document.getElementById('trackMix').addEventListener('contextmenu',e=>{
   let k=e.target.dataset&&e.target.dataset.tk;
   if(!k&&e.target.dataset&&e.target.dataset.teq)k='eq.'+e.target.dataset.teq;
-  if(!k||!AUTO_PARAMS[k])return;
+  if(!k&&e.target.dataset&&e.target.dataset.fxp)k='fx'+e.target.dataset.fxi+'.'+e.target.dataset.fxp;
+  if(!k)return;
+  if(!AUTO_PARAMS[k]&&!/^fx\d+\./.test(k))return;
   e.preventDefault();
-  const items=[{label:'⚡ Automate '+AUTO_PARAMS[k].label+' — Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,k)}];
+  const items=[{label:'⚡ Automate '+autoLabel(k)+' — Track '+(cursor.t+1),f:()=>autoCreate(cursor.t,k)}];
   const pat=song.patterns[curPat];
   if(pat.auto&&pat.auto[cursor.t+'.'+k])
-    items.push({label:'✕ Delete '+AUTO_PARAMS[k].label+' automation',f:()=>autoDelete(cursor.t,k)});
+    items.push({label:'✕ Delete '+autoLabel(k)+' automation',f:()=>autoDelete(cursor.t,k)});
   openCtx(e.clientX,e.clientY,items);
 });
 /* instrument params belong to an instrument, not the cursor — automate the track
@@ -3713,8 +3908,9 @@ document.getElementById('params').addEventListener('contextmenu',e=>{
   if(e.target.id==='slCanvas'){ /* right-click a marker line = merge that slice back */
     const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.slices)return;
     e.preventDefault();
-    const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
-    const tol=8/r.width;
+    const r=e.target.getBoundingClientRect();
+    const x=slFrac(e.target,e,ins);
+    const tol=8/(r.width*(ins._slZ||1));
     for(let i=1;i<ins.slices.length;i++){
       if(Math.abs(x-ins.slices[i].s0)<tol){
         ins.slices[i-1].s1=ins.slices[i].s1;

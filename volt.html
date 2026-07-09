@@ -251,6 +251,18 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 #esDirName{color:var(--dim);font-size:10px;word-break:break-all}
 #esCfgBtn{float:right;padding:0 6px;font-size:10px}
 
+/* ---- track FX chain ---- */
+#fxChain{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+.fxrow{border:1px solid var(--line);border-radius:4px;padding:5px 6px;margin-bottom:6px;background:var(--well)}
+.fxrow.fxoff{opacity:.45}
+.fxhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.fxhead b{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);font-weight:600}
+.fxhead u{text-decoration:none;color:var(--faint);font-size:10px;padding:0 4px;cursor:pointer}
+.fxhead u:hover{color:var(--mag)}
+.fxrow.fxoff .fxhead b{color:var(--dim)}
+#fxChain .btnrow{display:flex;gap:5px}
+#fxSel{flex:1;min-width:0}
+
 /* ---- user preset chips ---- */
 #userPresets{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 #userPresets:empty{display:none}
@@ -486,7 +498,7 @@ function audio(){
   AC=new (window.AudioContext||window.webkitAudioContext)();
   buildGraph();
   ensureChans(TRACKS);
-  applyMix();setDelayTime();
+  applyMix();setDelayTime();applyFxAll();
   return AC;
 }
 /* builds the whole bus graph on the current AC — reused for OfflineAudioContext rendering */
@@ -532,14 +544,15 @@ function ensureChans(n){
     const eqM=AC.createBiquadFilter();eqM.type='peaking';eqM.frequency.value=950;eqM.Q.value=.9;
     const eqH=AC.createBiquadFilter();eqH.type='highshelf';eqH.frequency.value=6500;
     const flt=AC.createBiquadFilter();flt.type='lowpass';flt.frequency.value=18000;flt.Q.value=0;
+    const fxIn=AC.createGain(),fxOut=AC.createGain();
     const shp=AC.createWaveShaper();shp.oversample='2x';
     const cmp=AC.createDynamicsCompressor();
     const pan=AC.createStereoPanner();
     const an=AC.createAnalyser();an.fftSize=512;
-    g.connect(eqL);eqL.connect(eqM);eqM.connect(eqH);eqH.connect(flt);flt.connect(shp);shp.connect(cmp);cmp.connect(pan);pan.connect(duckG);
+    g.connect(eqL);eqL.connect(eqM);eqM.connect(eqH);eqH.connect(flt);flt.connect(fxIn);fxIn.connect(fxOut);fxOut.connect(shp);shp.connect(cmp);cmp.connect(pan);pan.connect(duckG);
     duckG.connect(master);duckG.connect(ds);duckG.connect(rs);duckG.connect(an);
     ds.connect(dlyIn);rs.connect(rvbIn);
-    chans.push({in:g,duckG,ds,rs,eqL,eqM,eqH,flt,shp,cmp,pan,an,_drv:0,pk:0,voice:null,lastI:null});
+    chans.push({in:g,duckG,ds,rs,eqL,eqM,eqH,flt,fxIn,fxOut,shp,cmp,pan,an,_fxNodes:[],_drv:0,pk:0,voice:null,lastI:null});
   }
 }
 function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{const ch=chans[t];if(!ch)return;
@@ -554,6 +567,91 @@ function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{const ch=chans[
   const d=ts.drv||0;
   if(d!==ch._drv){ch._drv=d;ch.shp.curve=d>0?driveCurveArr(d):null}})}
 function setDelayTime(){if(!AC)return;const d=60/song.bpm*.75;dlyL.delayTime.value=d;dlyR.delayTime.value=d}
+/* ---- per-track insert FX chain (sits between the channel filter and drive) ---- */
+const FX_TYPES={
+  crush:{label:'Bitcrush',p:{bits:[1,16,8],mix:[0,1,1]},build:p=>{
+    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+    const ws=AC.createWaveShaper();
+    const steps=Math.pow(2,clamp(p.bits,1,16));
+    const n=2048,c=new Float32Array(n);
+    for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.round(x*steps)/steps}
+    ws.curve=c;
+    dry.gain.value=1-p.mix;wet.gain.value=p.mix;
+    inG.connect(ws);ws.connect(wet);wet.connect(out);
+    inG.connect(dry);dry.connect(out);
+    return{in:inG,out,nodes:[inG,out,dry,wet,ws]};
+  }},
+  flanger:{label:'Flanger',p:{rate:[.05,5,.3],depth:[0,1,.7],fb:[0,.9,.5],mix:[0,1,.5]},build:p=>{
+    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+    const dl=AC.createDelay(.05);dl.delayTime.value=.004;
+    const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
+    const lg=AC.createGain();lg.gain.value=.0035*p.depth;
+    lfo.connect(lg);lg.connect(dl.delayTime);lfo.start();
+    const fb=AC.createGain();fb.gain.value=p.fb;
+    dl.connect(fb);fb.connect(dl);
+    dry.gain.value=1-p.mix*.5;wet.gain.value=p.mix;
+    inG.connect(dl);dl.connect(wet);wet.connect(out);
+    inG.connect(dry);dry.connect(out);
+    return{in:inG,out,nodes:[inG,out,dry,wet,dl,lfo,lg,fb]};
+  }},
+  chorus:{label:'Chorus',p:{rate:[.05,4,.8],depth:[0,1,.5],mix:[0,1,.5]},build:p=>{
+    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+    const dl=AC.createDelay(.08);dl.delayTime.value=.018;
+    const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
+    const lg=AC.createGain();lg.gain.value=.008*p.depth;
+    lfo.connect(lg);lg.connect(dl.delayTime);lfo.start();
+    dry.gain.value=1-p.mix*.4;wet.gain.value=p.mix;
+    inG.connect(dl);dl.connect(wet);wet.connect(out);
+    inG.connect(dry);dry.connect(out);
+    return{in:inG,out,nodes:[inG,out,dry,wet,dl,lfo,lg]};
+  }},
+  phaser:{label:'Phaser',p:{rate:[.05,6,.5],depth:[0,1,.7],mix:[0,1,.6]},build:p=>{
+    const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+    const lfo=AC.createOscillator();lfo.frequency.value=p.rate;
+    const lg=AC.createGain();lg.gain.value=900*p.depth;
+    lfo.connect(lg);lfo.start();
+    let head=inG;const aps=[];
+    [400,800,1600,2400].forEach(f=>{
+      const ap=AC.createBiquadFilter();ap.type='allpass';ap.frequency.value=f;ap.Q.value=.6;
+      lg.connect(ap.frequency);
+      head.connect(ap);head=ap;aps.push(ap);
+    });
+    dry.gain.value=1-p.mix*.5;wet.gain.value=p.mix;
+    head.connect(wet);wet.connect(out);
+    inG.connect(dry);dry.connect(out);
+    return{in:inG,out,nodes:[inG,out,dry,wet,lfo,lg,...aps]};
+  }},
+  widen:{label:'Stereo Widen',p:{width:[0,1,.5]},build:p=>{
+    /* Haas widener: dry left, a few ms of delay on the right */
+    const inG=AC.createGain(),out=AC.createGain();
+    const mg=AC.createChannelMerger(2);
+    const dl=AC.createDelay(.05);dl.delayTime.value=.001+.016*p.width;
+    inG.connect(mg,0,0);
+    inG.connect(dl);dl.connect(mg,0,1);
+    mg.connect(out);
+    return{in:inG,out,nodes:[inG,out,mg,dl]};
+  }}
+};
+function buildFx(ch,list){
+  if(!AC||!ch||!ch.fxIn)return;
+  ch.fxIn.disconnect();
+  (ch._fxNodes||[]).forEach(n=>{try{if(n.stop)n.stop()}catch(e){}try{n.disconnect()}catch(e){}});
+  ch._fxNodes=[];
+  let head=ch.fxIn;
+  for(const fx of(list||[])){
+    if(fx.on===false)continue;
+    const ft=FX_TYPES[fx.type];if(!ft)continue;
+    const p={};for(const k in ft.p)p[k]=fx.p&&fx.p[k]!=null?fx.p[k]:ft.p[k][2];
+    const built=ft.build(p);
+    head.connect(built.in);head=built.out;
+    ch._fxNodes.push(...built.nodes);
+  }
+  head.connect(ch.fxOut);
+}
+function applyFxAll(){
+  if(!AC||!song)return;
+  chans.forEach((ch,t)=>buildFx(ch,song.trackset[t]&&song.trackset[t].fx));
+}
 function mkNoise(t,dur){const s=AC.createBufferSource();s.buffer=noiseBuf;s.loop=true;s.start(t);s.stop(t+dur);return s}
 function driveCurveArr(amt){const n=512,c=new Float32Array(n);const k=1+amt*24;
   for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.tanh(x*k)/Math.tanh(k)}return c}
@@ -1274,7 +1372,7 @@ function renderParams(){
     +'<button id="smpSlice" title="Chop the sample into slices playable from the keyboard">Slice&#8230;</button>'
     +'<span id="smpInfo"></span></div></div>':'')
   +(ins.type==='sliced'&&ins.buffer?
-    '<div id="smpEd"><canvas id="slCanvas" height="64" title="Click a slice to preview it"></canvas>'
+    '<div id="smpEd"><canvas id="slCanvas" height="64" title="Click: preview &#183; drag a marker line: move it &#183; dblclick: add a slice &#183; right-click a line: remove it"></canvas>'
     +'<div class="btnrow"><button data-slc="auto" title="Re-slice on detected transients">Auto</button>'
     +'<button data-slc="8" title="8 equal slices">8</button><button data-slc="16" title="16 equal slices">16</button>'
     +'<span id="smpInfo"></span></div>'
@@ -1384,8 +1482,18 @@ function drawSmp(ins){
   const info=document.getElementById('smpInfo'),bd=ins.buffer.duration;
   if(info)info.textContent=(s0*bd*1000).toFixed(0)+'–'+(s1*bd*1000).toFixed(0)+'ms / '+(bd*1000).toFixed(0)+'ms';
 }
-let smpDrag=null;
+let smpDrag=null,slDrag=null,slMoved=false;
 document.getElementById('params').addEventListener('mousedown',e=>{
+  /* slice markers: grab a boundary line to fine-tune it (Slicex-style) */
+  if(e.target.id==='slCanvas'&&e.button===0){
+    const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.slices)return;
+    const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
+    const tol=6/r.width;
+    for(let i=1;i<ins.slices.length;i++){
+      if(Math.abs(x-ins.slices[i].s0)<tol){slDrag=i;slMoved=false;e.preventDefault();return}
+    }
+    return;
+  }
   if(e.target.id!=='smpCanvas')return;
   const ins=song.instruments[curInst];if(!ins||ins.type!=='sampler'||!ins.buffer)return;
   const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
@@ -1393,6 +1501,17 @@ document.getElementById('params').addEventListener('mousedown',e=>{
   smpDrag=Math.abs(x-s0)<=Math.abs(x-s1)?'s0':'s1';
   setSmp(ins,x);e.preventDefault();
 });
+document.addEventListener('mousemove',e=>{
+  if(slDrag==null)return;
+  const cv=document.getElementById('slCanvas'),ins=song.instruments[curInst];
+  if(!cv||!ins||!ins.slices){slDrag=null;return}
+  const r=cv.getBoundingClientRect();
+  let x=clamp((e.clientX-r.left)/r.width,0,1);
+  x=clamp(x,ins.slices[slDrag-1].s0+.005,ins.slices[slDrag].s1-.005);
+  ins.slices[slDrag].s0=x;ins.slices[slDrag-1].s1=x;
+  slMoved=true;drawSlices(ins);
+});
+document.addEventListener('mouseup',()=>{if(slDrag!=null){slDrag=null;saveSoon()}});
 document.addEventListener('mousemove',e=>{
   if(!smpDrag)return;
   const cv=document.getElementById('smpCanvas');
@@ -1433,6 +1552,7 @@ document.getElementById('params').addEventListener('click',e=>{
       if(hint)hint.innerHTML=ins.slices.length+' slices &#183; '+noteName(ins.sliceBase)+' = slice 1 &#8230;';
       saveSoon();status(ins.slices.length+' slices');
     }else if(e.target.id==='slCanvas'&&ins.slices){
+      if(slMoved){slMoved=false;return} /* just finished dragging a marker */
       const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
       const i=ins.slices.findIndex(sl=>x>=sl.s0&&x<sl.s1);
       if(i>=0){playSlice(ins,ins.slices[i]);status('slice '+(i+1)+' = '+noteName((ins.sliceBase||48)+i))}
@@ -1467,9 +1587,56 @@ function trackPanel(){
     '<div class="param"><span class="pn">'+lbl+'</span>'
     +'<input type="range" min="-12" max="12" step="0.5" value="'+ts.eq[k]+'" data-teq="'+k+'">'
     +'<span class="pv">'+fmtDb(ts.eq[k])+'</span></div>'
-  ).join('');
+  ).join('')
+  +fxChainHTML(ts);
   markAuto();
 }
+/* ---- insert FX chain UI (in the Track section, under the sliders) ---- */
+function fxChainHTML(ts){
+  return '<div id="fxChain">'
+    +(ts.fx||[]).map((fx,fi)=>{
+      const ft=FX_TYPES[fx.type];if(!ft)return'';
+      const on=fx.on!==false;
+      return '<div class="fxrow'+(on?'':' fxoff')+'" data-f="'+fi+'">'
+        +'<div class="fxhead"><b>'+ft.label+'</b><span>'
+        +'<u data-fxon="'+fi+'" title="Enable / bypass">'+(on?'on':'off')+'</u>'
+        +'<u data-fxdel="'+fi+'" title="Remove effect">&#215;</u></span></div>'
+        +Object.keys(ft.p).map(k=>{
+          const[mn,mx,df]=ft.p[k];
+          const v=fx.p&&fx.p[k]!=null?fx.p[k]:df;
+          return '<div class="param"><span class="pn">'+k+'</span>'
+            +'<input type="range" min="0" max="1000" value="'+Math.round((v-mn)/(mx-mn)*1000)+'" data-fxi="'+fi+'" data-fxp="'+k+'">'
+            +'<span class="pv">'+fmtP(v)+'</span></div>';
+        }).join('')
+        +'</div>';
+    }).join('')
+    +'<div class="btnrow"><select id="fxSel">'
+    +Object.entries(FX_TYPES).map(([id,f])=>'<option value="'+id+'">'+f.label+'</option>').join('')
+    +'</select><button id="fxAdd" title="Add the effect to this track&#8217;s chain">+ FX</button></div></div>';
+}
+function fxRebuildCur(){if(AC&&chans[cursor.t])buildFx(chans[cursor.t],song.trackset[cursor.t].fx)}
+document.getElementById('trackMix').addEventListener('click',e=>{
+  const ts=song.trackset[cursor.t];
+  if(e.target.id==='fxAdd'){
+    const type=document.getElementById('fxSel').value;
+    const ft=FX_TYPES[type];if(!ft)return;
+    const p={};for(const k in ft.p)p[k]=ft.p[k][2];
+    (ts.fx=ts.fx||[]).push({type,on:true,p});
+    trackPanel();fxRebuildCur();saveSoon();
+    status(ft.label+' added to track '+(cursor.t+1));
+    return;
+  }
+  const on=e.target.dataset.fxon,del=e.target.dataset.fxdel;
+  if(on!=null&&ts.fx&&ts.fx[+on]){
+    ts.fx[+on].on=ts.fx[+on].on===false;
+    trackPanel();fxRebuildCur();saveSoon();
+    return;
+  }
+  if(del!=null&&ts.fx){
+    ts.fx.splice(+del,1);
+    trackPanel();fxRebuildCur();saveSoon();
+  }
+});
 function fmtDb(v){return(v>0?'+':'')+(+v).toFixed(1)}
 /* slider readout: filter rows show Hz / Q, everything else shows percent */
 function tkPv(ts,k){
@@ -1480,6 +1647,16 @@ function tkPv(ts,k){
 }
 document.getElementById('trackMix').addEventListener('input',e=>{
   const ts=song.trackset[cursor.t];
+  const fk=e.target.dataset.fxp;
+  if(fk){
+    const fx=ts.fx&&ts.fx[+e.target.dataset.fxi];if(!fx)return;
+    const ft=FX_TYPES[fx.type],[mn,mx]=ft.p[fk];
+    const v=mn+(mx-mn)*(+e.target.value/1000);
+    (fx.p=fx.p||{})[fk]=v;
+    e.target.parentElement.querySelector('.pv').textContent=fmtP(v);
+    fxRebuildCur();saveSoon();
+    return;
+  }
   const q=e.target.dataset.teq;
   if(q){ts.eq=ts.eq||{l:0,m:0,h:0};ts.eq[q]=+e.target.value;
     e.target.parentElement.querySelector('.pv').textContent=fmtDb(ts.eq[q]);
@@ -1494,12 +1671,28 @@ document.getElementById('trackMix').addEventListener('change',()=>{if(!mixer.hid
 const TRK_DEF={vol:.85,pan:0,dly:0,rvb:0,duck:0,cmp:0,drv:0,fltF:1,fltQ:0};
 document.getElementById('trackMix').addEventListener('dblclick',e=>{
   const ts=song.trackset[cursor.t];
+  if(e.target.dataset.fxp){ /* reset an FX param to its default */
+    const fx=ts.fx&&ts.fx[+e.target.dataset.fxi];if(!fx)return;
+    fx.p[e.target.dataset.fxp]=FX_TYPES[fx.type].p[e.target.dataset.fxp][2];
+    trackPanel();fxRebuildCur();saveSoon();return;
+  }
   if(e.target.dataset.teq)ts.eq[e.target.dataset.teq]=0;
   else if(e.target.dataset.tk)ts[e.target.dataset.tk]=TRK_DEF[e.target.dataset.tk];
   else return;
   trackPanel();applyMix();if(!mixer.hidden)renderMixer();saveSoon();
 });
 document.getElementById('params').addEventListener('dblclick',e=>{
+  if(e.target.id==='slCanvas'){ /* dblclick a slice = split it there */
+    const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.slices)return;
+    const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
+    const i=ins.slices.findIndex(sl=>x>sl.s0+.005&&x<sl.s1-.005);
+    if(i<0)return;
+    ins.slices.splice(i+1,0,{s0:x,s1:ins.slices[i].s1});
+    ins.slices[i].s1=x;
+    ins.sliceBase=ins.slices.length>48?24:48;
+    drawSlices(ins);saveSoon();status(ins.slices.length+' slices');
+    return;
+  }
   const k=e.target.dataset.k;if(!k)return;
   const ins=song.instruments[curInst];if(!ins)return;
   ins.params[k]=ITYPES[ins.type].p[k][2];
@@ -1864,7 +2057,7 @@ async function setTracks(n){
   sel=null;
   document.getElementById('trkN').value=TRACKS;
   genCtCSS();
-  if(AC){ensureChans(TRACKS);applyMix()}
+  if(AC){ensureChans(TRACKS);applyMix();applyFxAll()}
   renderGrid();trackPanel();if(!mixer.hidden)renderMixer();saveSoon();
 }
 function newPattern(){
@@ -2028,7 +2221,7 @@ function applyState(s){
   sel=null;
   document.getElementById('trkN').value=TRACKS;
   genCtCSS();
-  if(AC){ensureChans(TRACKS);applyMix()}
+  if(AC){ensureChans(TRACKS);applyMix();applyFxAll()}
   renderGrid();renderInstList();renderParams();trackPanel();if(!mixer.hidden)renderMixer();
   saveSoon();
   restoring=false;
@@ -2082,7 +2275,7 @@ async function loadSong(s){
   sel=null;
   curPat=0;curInst=0;cursor.t=0;cursor.r=0;cursor.c=0;
   document.getElementById('bpm').value=song.bpm;
-  if(AC){applyMix();setDelayTime()}
+  if(AC){applyMix();setDelayTime();applyFxAll()}
   for(const ins of song.instruments){
     normInst(ins);
     if((ins.type==='sampler'||ins.type==='sliced')&&ins.sampleB64&&!ins.buffer){
@@ -2184,7 +2377,7 @@ async function renderWav(){
     const SR=44100,dur=rows*rd+2;
     AC=new OfflineAudioContext(2,Math.ceil(dur*SR),SR);
     chans=[];
-    buildGraph();ensureChans(TRACKS);applyMix();setDelayTime();
+    buildGraph();ensureChans(TRACKS);applyMix();setDelayTime();applyFxAll();
     let t=.05;
     for(const pi of order){const pat=song.patterns[pi];for(let r=0;r<pat.rows;r++){schedRow(pi,r,t);t+=rd}}
     chans.forEach(ch=>{if(ch.voice&&!ch.voice.dead)ch.voice.release(t)});
@@ -3517,6 +3710,22 @@ function trackForInst(ii){
   return cursor.t;
 }
 document.getElementById('params').addEventListener('contextmenu',e=>{
+  if(e.target.id==='slCanvas'){ /* right-click a marker line = merge that slice back */
+    const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.slices)return;
+    e.preventDefault();
+    const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width;
+    const tol=8/r.width;
+    for(let i=1;i<ins.slices.length;i++){
+      if(Math.abs(x-ins.slices[i].s0)<tol){
+        ins.slices[i-1].s1=ins.slices[i].s1;
+        ins.slices.splice(i,1);
+        ins.sliceBase=ins.slices.length>48?24:48;
+        drawSlices(ins);saveSoon();status(ins.slices.length+' slices');
+        return;
+      }
+    }
+    return;
+  }
   const k=e.target.dataset&&e.target.dataset.k;
   if(!k)return;
   e.preventDefault();

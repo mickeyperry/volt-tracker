@@ -2189,6 +2189,8 @@ const esFetchOpts=()=>{
    the extension holds the localhost permission and relays requests, so the hosted
    page needs no CORS setup on Everything and no local-network permission prompts */
 let esBridge=false,esBridgeId=0;const esBridgeQ={};
+/* file:// gives location.origin==='null' (Firefox), an illegal postMessage target — same-window messages are already filtered by e.source */
+const MSG_ORIGIN=location.origin&&location.origin!=='null'?location.origin:'*';
 window.addEventListener('message',e=>{
   if(e.source!==window)return;
   const d=e.data;
@@ -2200,7 +2202,7 @@ window.addEventListener('message',e=>{
   }
   if(d.type==='res'&&esBridgeQ[d.id]){const cb=esBridgeQ[d.id];delete esBridgeQ[d.id];cb(d.res)}
 });
-window.postMessage({src:'volt-page',type:'ping'},location.origin);
+window.postMessage({src:'volt-page',type:'ping'},MSG_ORIGIN);
 function bridgeFetch(path){
   return new Promise((res,rej)=>{
     const id=++esBridgeId;
@@ -2208,7 +2210,7 @@ function bridgeFetch(path){
       if(!r||(!r.ok&&r.error))return rej(new Error((r&&r.error)||'bridge error'));
       res({ok:r.ok,status:r.status,ab:b64ToAb(r.b64||'')});
     };
-    window.postMessage({src:'volt-page',type:'req',id,path},location.origin);
+    window.postMessage({src:'volt-page',type:'req',id,path},MSG_ORIGIN);
     setTimeout(()=>{if(esBridgeQ[id]){delete esBridgeQ[id];rej(new Error('bridge timeout'))}},30000);
   });
 }

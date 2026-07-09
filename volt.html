@@ -321,6 +321,14 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       </div>
     </div>
     <div class="sec">
+      <h3 id="parTitle">Params</h3>
+      <div id="params"></div>
+    </div>
+    <div class="sec">
+      <h3 id="trkTitle">Track 1</h3>
+      <div id="trackMix"></div>
+    </div>
+    <div class="sec">
       <h3>Sample Search <button id="esCfgBtn" title="Everything server settings">&#9881;</button></h3>
       <div id="esCfgPanel" hidden>
         <label>Host <input type="text" id="esHost"></label>
@@ -335,14 +343,6 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       <input type="text" id="esQ" placeholder="Search samples (Everything)&#8230;" autocomplete="off" spellcheck="false">
       <div id="esResults"></div>
       <div id="esMsg"></div>
-    </div>
-    <div class="sec">
-      <h3 id="parTitle">Params</h3>
-      <div id="params"></div>
-    </div>
-    <div class="sec">
-      <h3 id="trkTitle">Track 1</h3>
-      <div id="trackMix"></div>
     </div>
   </div>
   <div id="dragbar" title="Drag to resize panel"></div>
@@ -2591,7 +2591,7 @@ function renderAuto(){
   const pat=song.patterns[curPat];
   const keys=pat.auto?Object.keys(pat.auto).filter(k=>pat.auto[k]):[];
   if(!keys.length){
-    autoLanes.innerHTML='<div id="autoHint">No automation in this pattern yet — right-click a Cutoff / Volume / Delay / Reverb slider in the side panel and choose “Automate”. Left-drag paints, right-drag erases.</div>';
+    autoLanes.innerHTML='<div id="autoHint">No automation in this pattern yet — right-click any slider in the side panel and choose “Automate”. Left-drag paints &#183; Shift+drag draws a straight line &#183; right-drag erases.</div>';
     return;
   }
   let h='';
@@ -2632,6 +2632,17 @@ function autoErase(el){
   if(pat.auto&&pat.auto[k])pat.auto[k][r]=null;
   const f=el.querySelector('i');if(f)f.remove();
 }
+function updateLaneDOM(k){
+  const pat=song.patterns[curPat];
+  const arr=pat.auto&&pat.auto[k];if(!arr)return;
+  autoLanes.querySelectorAll('.astep[data-k="'+k+'"]').forEach(el=>{
+    const v=arr[+el.dataset.r];
+    let f=el.querySelector('i');
+    if(v==null){if(f)f.remove();return}
+    if(!f){f=document.createElement('i');el.appendChild(f)}
+    f.style.height=Math.round(v*100)+'%';
+  });
+}
 autoLanes.addEventListener('mousedown',e=>{
   const x=e.target.closest('u[data-x]');
   if(x){
@@ -2643,14 +2654,41 @@ autoLanes.addEventListener('mousedown',e=>{
   }
   const s=e.target.closest('.astep');if(!s)return;
   e.preventDefault();
-  if(e.button===2){autoPaint='erase';autoErase(s);saveSoon();return}
+  if(e.button===2){autoPaint={mode:'erase'};autoErase(s);saveSoon();return}
   if(e.button!==0)return;
-  autoPaint='draw';autoSetFromEvent(s,e);saveSoon();
+  const k=s.dataset.k,r=+s.dataset.r;
+  if(e.shiftKey){ /* FL-style line tool: anchor here, ramp to wherever the drag ends */
+    const rect=s.getBoundingClientRect();
+    const v=Math.round(clamp(1-(e.clientY-rect.top)/rect.height,0,1)*100)/100;
+    const dot=k.indexOf('.');
+    const lane=ensureLane(+k.slice(0,dot),k.slice(dot+1));
+    autoPaint={mode:'line',k,r0:r,v0:v,backup:lane.slice()};
+    lane[r]=v;updateLaneDOM(k);saveSoon();
+    return;
+  }
+  autoPaint={mode:'draw'};autoSetFromEvent(s,e);saveSoon();
 });
 autoLanes.addEventListener('mousemove',e=>{
   if(!autoPaint)return;
   const s=e.target.closest('.astep');if(!s)return;
-  if(autoPaint==='draw')autoSetFromEvent(s,e);else autoErase(s);
+  if(autoPaint.mode==='draw')autoSetFromEvent(s,e);
+  else if(autoPaint.mode==='erase')autoErase(s);
+  else{
+    if(s.dataset.k!==autoPaint.k)return;
+    const rect=s.getBoundingClientRect();
+    const v1=clamp(1-(e.clientY-rect.top)/rect.height,0,1);
+    const r1=+s.dataset.r;
+    const dot=autoPaint.k.indexOf('.');
+    const lane=ensureLane(+autoPaint.k.slice(0,dot),autoPaint.k.slice(dot+1));
+    for(let i=0;i<lane.length;i++)lane[i]=autoPaint.backup[i];
+    const a=Math.min(autoPaint.r0,r1),b=Math.max(autoPaint.r0,r1);
+    const vA=autoPaint.r0<=r1?autoPaint.v0:v1,vB=autoPaint.r0<=r1?v1:autoPaint.v0;
+    for(let r=a;r<=b;r++){
+      const f=b===a?0:(r-a)/(b-a);
+      lane[r]=Math.round((vA+(vB-vA)*f)*100)/100;
+    }
+    updateLaneDOM(autoPaint.k);
+  }
   saveSoon();
 });
 autoLanes.addEventListener('contextmenu',e=>e.preventDefault());

@@ -125,7 +125,10 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 .prow.b4{background:var(--b4)}
 .prow.b16{background:var(--b16)}
 .prow.playrow{background:var(--playrow);box-shadow:inset 2px 0 0 var(--teal)}
-.prow.dropRow{background:var(--playrow);box-shadow:inset 0 0 0 1px var(--teal)}
+.tcell.dropCell{background:var(--playrow);box-shadow:inset 0 0 0 1px var(--teal);border-radius:2px}
+#ghead .thAdd{display:inline-flex;align-items:center;padding:4px 8px}
+#ghead .thAdd button{font-size:13px;font-weight:700;line-height:18px;padding:0 9px;border-radius:3px;border:1px dashed var(--line);background:transparent;color:var(--faint);cursor:pointer}
+#ghead .thAdd button:hover{border-color:var(--teal);color:var(--teal)}
 .prow.playrow .rn{color:var(--teal)}
 .tcell{padding:0 7px;border-left:1px solid var(--cellline)}
 .tcell.odd{background:var(--oddtrk)}
@@ -1136,6 +1139,7 @@ function renderHead(){
       +'<button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'" title="Mute'+(hk!=null?' (Alt+'+hk+')':'')+'">M</button>'
       +'<button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'" title="Solo'+(hk!=null?' (Alt+Shift+'+hk+')':'')+'">S</button></span></span>';
   }
+  if(TRACKS<MAXTRACKS)h+='<span class="tcell thAdd"><button id="trkAdd" title="Add a track (Alt+=)">+</button></span>';
   ghead.innerHTML=h;
   genMixCSS();updateMixerState();
   /* match cell widths: header tcells get same content width via padding of a hidden ruler — simpler: fixed min-width from a rendered row later */
@@ -1209,6 +1213,11 @@ function toggleMS(t,what){
 }
 function clearMS(){song.trackset.forEach(ts=>{ts.mute=false;ts.solo=false});renderHead();saveSoon();status('all tracks audible')}
 ghead.addEventListener('click',e=>{
+  if(e.target.id==='trkAdd'){
+    if(TRACKS>=MAXTRACKS){status('max '+MAXTRACKS+' tracks');return}
+    setTracks(TRACKS+1);status('track '+TRACKS+' added');
+    return;
+  }
   const m=e.target.dataset.mu,s=e.target.dataset.so;
   if(m!=null){toggleMS(+m,'mute');return}
   if(s!=null){toggleMS(+s,'solo');return}
@@ -1303,6 +1312,17 @@ document.addEventListener('keydown',e=>{
     if(e.code==='KeyM'){e.preventDefault();toggleMS(cursor.t,'mute');return}
     if(e.code==='KeyS'){e.preventDefault();toggleMS(cursor.t,'solo');return}
     if(e.code==='KeyX'){e.preventDefault();clearMS();return}
+    /* Alt+= add a track · Alt+- remove the last one (asks if it has notes) */
+    if(e.code==='Equal'||e.code==='NumpadAdd'){
+      e.preventDefault();
+      if(TRACKS>=MAXTRACKS){status('max '+MAXTRACKS+' tracks');return}
+      setTracks(TRACKS+1);status('track '+TRACKS+' added');return;
+    }
+    if(e.code==='Minus'||e.code==='NumpadSubtract'){
+      e.preventDefault();
+      if(TRACKS<=2){status('minimum 2 tracks');return}
+      setTracks(TRACKS-1);return;
+    }
   }
   if(k==='F2'){e.preventDefault();renameTrack(cursor.t);return}
   if(k==='F9'){e.preventDefault();toggleMixer();return}
@@ -1431,14 +1451,14 @@ function laySlices(ins,ii,t,r0){
   renderGrid();renderParams();saveSoon();
   status(n+' slices laid on track '+(t+1)+' over '+bars+' bar'+(bars>1?'s':'')+' · rate '+Math.round(ins.params.rate*100)+'%');
 }
-let dropRowEl=null;
-function clearDropRow(){if(dropRowEl){dropRowEl.classList.remove('dropRow');dropRowEl=null}}
+let dropCellEl=null;
+function clearDropRow(){if(dropCellEl){dropCellEl.classList.remove('dropCell');dropCellEl=null}}
 grows.addEventListener('dragover',e=>{
   if(instDrag==null)return;
   e.preventDefault();
-  /* light the row where the slices will start */
-  const row=e.target.closest('.prow');
-  if(row!==dropRowEl){clearDropRow();if(row){row.classList.add('dropRow');dropRowEl=row}}
+  /* light the exact slot (track+row) where the slices will start */
+  const cell=e.target.closest('.tcell');
+  if(cell!==dropCellEl){clearDropRow();if(cell){cell.classList.add('dropCell');dropCellEl=cell}}
 });
 grows.addEventListener('dragleave',e=>{if(e.target===grows)clearDropRow()});
 document.addEventListener('dragend',clearDropRow);
@@ -3392,6 +3412,9 @@ const COMMANDS=[
   {n:'Mute current track',k:'Alt+M',kw:'silence channel',f:()=>toggleMS(cursor.t,'mute')},
   {n:'Solo current track',k:'Alt+S',kw:'isolate channel',f:()=>toggleMS(cursor.t,'solo')},
   {n:'All tracks audible',k:'Alt+X',kw:'unmute unsolo clear',f:clearMS},
+  {n:'Add track',k:'Alt+=',kw:'column new channel insert',f:()=>{if(TRACKS<MAXTRACKS){setTracks(TRACKS+1);status('track '+TRACKS+' added')}}},
+  {n:'Remove last track',k:'Alt+-',kw:'column delete channel',f:()=>{if(TRACKS>2)setTracks(TRACKS-1)}},
+  {n:'Delete current track',kw:'column remove this channel',f:()=>deleteTrack(cursor.t)},
   {n:'Transpose selection +1 semitone',k:'Alt+↑',kw:'pitch up note',f:()=>transposeSel(1)},
   {n:'Transpose selection −1 semitone',k:'Alt+↓',kw:'pitch down note',f:()=>transposeSel(-1)},
   {n:'Transpose selection +1 octave',kw:'pitch up note',f:()=>transposeSel(12)},

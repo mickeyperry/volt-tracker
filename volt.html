@@ -133,13 +133,17 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 .prow.playrow .rn{color:var(--teal)}
 .tcell{padding:0 7px;border-left:1px solid var(--cellline)}
 .tcell.odd{background:var(--oddtrk)}
-.tcell i{font-style:normal;color:var(--faint)}
+.tcell i{font-style:normal;color:var(--faint);display:inline-block;overflow:hidden;vertical-align:bottom}
+/* hard-locked field widths — glyph quirks (like OFF) can never shift the columns */
+.tcell i[data-c="0"]{width:3ch}
+.tcell i[data-c="1"],.tcell i[data-c="2"],.tcell i[data-c="3"],.tcell i[data-c="4"],
+.tcell i[data-c="5"],.tcell i[data-c="6"],.tcell i[data-c="7"]{width:1ch}
 .tcell i.set{color:var(--txt)}
 .tcell i[data-c="1"].set,.tcell i[data-c="2"].set{color:var(--blue)}
 .tcell i[data-c="3"].set,.tcell i[data-c="4"].set{color:var(--amber)}
 .tcell i[data-c="5"].set,.tcell i[data-c="6"].set,.tcell i[data-c="7"].set{color:var(--mag)}
 .tcell i.cur{background:var(--teal);color:var(--curtxt) !important;border-radius:1px}
-.tcell i.off{color:var(--mag);letter-spacing:.05em}
+.tcell i.off{color:var(--mag)}
 
 /* ---- order strip ---- */
 #orderRow{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}

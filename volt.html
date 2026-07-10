@@ -1284,12 +1284,27 @@ function colFromEvent(cell,e){
   });
   return best;
 }
+let clkSeq={t:-1,r:-1,at:0,n:0},dblPick=false;
 grows.addEventListener('mousedown',e=>{
   const i=e.target.closest('i[data-c]'),cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
   if(!cell||!row)return;
   const oldR=cursor.r;
   cursor.t=+cell.dataset.t;cursor.r=+row.dataset.r;cursor.c=i?+i.dataset.c:colFromEvent(cell,e);
-  renderRow(oldR);renderRow(cursor.r);trackPanel();
+  /* manual double / triple click: dbl = select the cell, triple = the whole row */
+  const now=performance.now();
+  if(clkSeq.t===cursor.t&&clkSeq.r===cursor.r&&now-clkSeq.at<450)clkSeq.n++;
+  else clkSeq.n=1;
+  clkSeq.t=cursor.t;clkSeq.r=cursor.r;clkSeq.at=now;
+  dblPick=clkSeq.n>=2;
+  if(clkSeq.n===2){
+    sel={a:{t:cursor.t,c:0,r:cursor.r},b:{t:cursor.t,c:7,r:cursor.r}};
+    status('cell selected — click again for the whole row');
+  }else if(clkSeq.n>=3){
+    sel={a:{t:0,c:0,r:cursor.r},b:{t:TRACKS-1,c:7,r:cursor.r}};
+    status('row selected (all tracks)');
+    clkSeq.n=0;
+  }
+  renderRow(oldR);renderRow(cursor.r);updateSelBox();trackPanel();
 });
 function cutInaudible(){if(!AC)return;const t=AC.currentTime;chans.forEach((ch,i)=>{if(i<TRACKS&&!trackAudible(i)&&ch.voice){ch.voice.cut(t);ch.voice=null}})}
 function toggleMS(t,what){
@@ -3276,21 +3291,12 @@ grows.addEventListener('mousedown',e=>{
   if(e.button!==0)return;
   if(!e.target.closest('.tcell'))return;
   e.preventDefault();
+  if(dblPick){dragSel=null;return} /* multi-click selection just happened — keep it */
   clearSel();
   dragSel={t:cursor.t,c:cursor.c,r:cursor.r};
 });
-/* dblclick a cell: select it; dblclick the same cell again: the row across all tracks */
-let lastDbl=null;
-grows.addEventListener('dblclick',e=>{
-  const cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
-  if(!cell||!row)return;
-  const t=+cell.dataset.t,r=+row.dataset.r;
-  const wide=lastDbl&&lastDbl.t===t&&lastDbl.r===r&&performance.now()-lastDbl.at<900;
-  sel=wide?{a:{t:0,c:0,r},b:{t:TRACKS-1,c:7,r}}:{a:{t,c:0,r},b:{t,c:7,r}};
-  lastDbl=wide?null:{t,r,at:performance.now()};
-  renderRows(r,r);
-  status(wide?'row selected (all tracks)':'cell selected');
-});
+/* double/triple-click selection is detected manually: the row re-renders on every
+   click (cursor move), which kills the native dblclick event mid-sequence */
 grows.addEventListener('mouseover',e=>{
   if(!dragSel)return;
   const i=e.target.closest('i[data-c]'),cell=e.target.closest('.tcell'),row=e.target.closest('.prow');

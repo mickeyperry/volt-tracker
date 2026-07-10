@@ -217,6 +217,14 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 .bstep.noff{border-color:var(--mag);box-shadow:inset 0 0 0 1px var(--mag);background:transparent}
 .bstep.ph{box-shadow:inset 0 -3px 0 var(--amber)}
 
+/* ---- piano roll ---- */
+#proll{background:var(--panel);border-top:1px solid var(--line);padding:6px 12px}
+#prHead{display:flex;gap:12px;align-items:baseline;margin-bottom:4px}
+#prHead b{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal)}
+#prHint{color:var(--dim);font-size:10px}
+#prWrap{overflow-x:auto;overflow-y:hidden}
+#prCanvas{display:block;cursor:crosshair}
+
 /* ---- automation lanes ---- */
 #autoPan{background:var(--panel);border-top:1px solid var(--line);overflow-x:auto;padding:8px 12px}
 .alane{display:flex;align-items:flex-end;gap:2px;margin-bottom:4px}
@@ -330,6 +338,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <div class="grp">
     <button id="mixBtn" title="Mixer (F9)">Mixer</button>
     <button id="beatBtn" title="Beat grid — FL-style step sequencer, edits the pattern live (F8)">Beat</button>
+    <button id="rollBtn" title="Piano roll (F6) — FL-style note editing of the current track">Roll</button>
     <button id="autoBtn" title="Automation lanes (F7) — right-click a Cutoff/Volume/Delay/Reverb slider to add one">Auto</button>
     <label class="fld">Theme <select id="themeSel" title="Color theme — pick for your room lighting"></select></label>
   </div>
@@ -410,6 +419,11 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 <div id="mixer" hidden><div id="mixch"></div></div>
 
 <div id="beat" hidden><div id="beatLanes"></div></div>
+
+<div id="proll" hidden>
+  <div id="prHead"><b id="prTitle"></b><span id="prHint">click: add &#183; drag: move &#183; right edge: resize (writes OFF) &#183; right-click: delete &#183; wheel: pitch &#183; Shift+wheel: scroll &#183; Ctrl+D: duplicate note</span></div>
+  <div id="prWrap"><canvas id="prCanvas"></canvas></div>
+</div>
 
 <div id="autoPan" hidden><div id="autoGrip" title="Drag to resize the lanes"></div><div id="autoLanes"></div></div>
 <div id="ctxMenu" hidden></div>
@@ -933,8 +947,37 @@ function pump(){
     if(SEQ.row>=pat.rows){SEQ.row=0;if(SEQ.songMode)SEQ.ord=(SEQ.ord+1)%song.order.length}
   }
 }
+/* automation is per-pattern but the audio nodes remember their last value — without
+   this, a send/filter lane in one pattern keeps affecting every later pattern */
+function applyBaseAt(t){
+  if(!AC)return;
+  song.trackset.forEach((ts,tr)=>{
+    const ch=chans[tr];if(!ch)return;
+    ch.in.gain.setTargetAtTime(ts.vol,t,.01);
+    ch.ds.gain.setTargetAtTime(ts.dly,t,.01);
+    ch.rs.gain.setTargetAtTime(ts.rvb,t,.01);
+    ch.pan.pan.setTargetAtTime(ts.pan||0,t,.01);
+    ch.flt.frequency.setTargetAtTime(fltHz(ts.fltF==null?1:ts.fltF),t,.01);
+    ch.flt.Q.setTargetAtTime((ts.fltQ||0)*20,t,.01);
+    const eq=ts.eq||{l:0,m:0,h:0};
+    ch.eqL.gain.setTargetAtTime(eq.l,t,.01);
+    ch.eqM.gain.setTargetAtTime(eq.m,t,.01);
+    ch.eqH.gain.setTargetAtTime(eq.h,t,.01);
+    ch.cmp.threshold.setTargetAtTime(-30*(ts.cmp||0),t,.01);
+    ch.cmp.ratio.setTargetAtTime(1+7*(ts.cmp||0),t,.01);
+    if(ch._fxLive)for(const fi in ch._fxLive){
+      const fx=ts.fx&&ts.fx[fi];if(!fx)continue;
+      const ft=FX_TYPES[fx.type];if(!ft||!ft.tune)continue;
+      for(const k in ft.p){
+        const val=fx.p&&fx.p[k]!=null?fx.p[k]:ft.p[k][2];
+        ft.tune(ch._fxLive[fi].refs,k,val,t);
+      }
+    }
+  });
+}
 function schedRow(pi,row,t){
   const pat=song.patterns[pi];
+  if(row===0)applyBaseAt(t);
   const soloed=song.trackset.some(s=>s.solo);
   /* collect this row's automation: 'p.*' keys pre-apply to triggered notes,
      the rest post-apply to channels/voices */
@@ -1002,7 +1045,7 @@ function setFollow(on){
 document.getElementById('followBtn').onclick=()=>{setFollow(!followPlay);status('follow '+(followPlay?'on':'off'))};
 document.getElementById('followBtn').classList.toggle('on',followPlay);
 function setPlayRow(r){
-  beatPlayhead(r);autoPlayhead(r);
+  beatPlayhead(r);autoPlayhead(r);prPlayhead(r);
   if(playRowEl){playRowEl.classList.remove('playrow');playRowEl=null}
   if(r<0)return;
   const el=grows.children[r];if(!el)return;
@@ -1166,7 +1209,7 @@ function renderGrid(){
   grows.innerHTML=h;playRowEl=null;
   renderHead();updateSelBox();
   document.getElementById('patLen').value=pat.rows;
-  renderPatSel();renderOrder();renderBeatIfOpen();renderAutoIfOpen();markAuto();
+  renderPatSel();renderOrder();renderBeatIfOpen();renderAutoIfOpen();prRenderIfOpen();markAuto();
 }
 let lastCurRow=0;
 function moveCursor(dt,dr,dc){
@@ -1756,7 +1799,7 @@ document.getElementById('params').addEventListener('input',e=>{
 function trackPanel(){
   const t=cursor.t,ts=song.trackset[t];
   gridwrap.dataset.ct=t;
-  updateMixerCur();
+  updateMixerCur();prRenderIfOpen();
   document.getElementById('trkTitle').textContent='Track '+(t+1)+(ts.name?' · '+ts.name:'');
   const el=document.getElementById('trackMix');
   normTs(ts);
@@ -3064,6 +3107,7 @@ document.addEventListener('keydown',e=>{
   const ARROWS={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]};
   if(k==='F8'){e.preventDefault();e.stopImmediatePropagation();beatToggle();return}
   if(k==='F7'){e.preventDefault();e.stopImmediatePropagation();autoToggle();return}
+  if(k==='F6'){e.preventDefault();e.stopImmediatePropagation();prToggle();return}
   if(e.altKey&&(k==='ArrowUp'||k==='ArrowDown')){
     e.preventDefault();e.stopImmediatePropagation();
     transposeSel((k==='ArrowUp'?1:-1)*(e.shiftKey?12:1));
@@ -3104,7 +3148,9 @@ document.addEventListener('keydown',e=>{
     e.preventDefault();e.stopImmediatePropagation();newPattern();return;
   }
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&low==='d'){
-    e.preventDefault();e.stopImmediatePropagation();dupPattern();return;
+    e.preventDefault();e.stopImmediatePropagation();
+    if(!prPan.hidden&&PR.sel)prDuplicate();else dupPattern();
+    return;
   }
   if((e.ctrlKey||e.metaKey)&&low==='a'){
     e.preventDefault();e.stopImmediatePropagation();
@@ -3427,6 +3473,7 @@ const COMMANDS=[
   {n:'Export song JSON',kw:'save file download',f:()=>document.getElementById('expBtn').click()},
   {n:'Import song JSON',kw:'load open file',f:()=>document.getElementById('impBtn').click()},
   {n:'Toggle beat grid',kw:'step sequencer fl drum machine beat f8',f:()=>beatToggle()},
+  {n:'Toggle piano roll',k:'F6',kw:'notes fl midi roll melody',f:()=>prToggle()},
   {n:'Toggle automation panel',kw:'auto lanes cutoff filter f7',f:()=>autoToggle()},
   {n:'Load Full-on main kit',kw:'template default mickey fullon psytrance 145',f:()=>loadKit('mine')},
   {n:'Load DnB kit',kw:'template drum bass 174',f:()=>loadKit('dnb')},
@@ -3594,6 +3641,210 @@ function beatPlayhead(r){
   if(beatEl.hidden)return;
   beatLanes.querySelectorAll('.bstep.ph').forEach(x=>x.classList.remove('ph'));
   if(r>=0)beatLanes.querySelectorAll('.bstep[data-r="'+r+'"]').forEach(x=>x.classList.add('ph'));
+}
+
+/* ================= piano roll (F6) — FL-style note editor for the current track ================= */
+const prPan=document.getElementById('proll'),prWrap=document.getElementById('prWrap'),prCv=document.getElementById('prCanvas');
+const PR={base:36,NP:30,CW:18,CH:11,GUT:36,sel:null,drag:null,lastLen:4,playRow:-1};
+const isBlackKey=n=>{const m=n%12;return m===1||m===3||m===6||m===8||m===10};
+function prToggle(){
+  prPan.hidden=!prPan.hidden;
+  document.getElementById('rollBtn').classList.toggle('on',!prPan.hidden);
+  if(!prPan.hidden){prAutoBase();prRender()}
+}
+document.getElementById('rollBtn').onclick=prToggle;
+/* derive note bars from the track: a note runs until the next note / OFF / pattern end */
+function prNotes(){
+  const pat=song.patterns[curPat],d=pat.data[cursor.t];
+  const out=[];let open=null;
+  for(let r=0;r<pat.rows;r++){
+    const c=d[r];if(!c)continue;
+    if(c.n===OFF){if(open){open.len=r-open.r;open=null}}
+    else if(c.n!=null){
+      if(open)open.len=r-open.r;
+      open={r,n:c.n,i:c.i,v:c.v,len:pat.rows-r};
+      out.push(open);
+    }
+  }
+  return out;
+}
+function prAutoBase(){
+  const ns=prNotes();
+  if(!ns.length){PR.base=36;return}
+  let mn=96,mx=0;ns.forEach(x=>{mn=Math.min(mn,x.n);mx=Math.max(mx,x.n)});
+  PR.base=clamp(Math.floor((mn+mx)/2-PR.NP/2),0,96-PR.NP);
+}
+function prRender(){
+  if(prPan.hidden||!song)return;
+  const pat=song.patterns[curPat];
+  const W=PR.GUT+pat.rows*PR.CW,H=PR.NP*PR.CH;
+  if(prCv.width!==W)prCv.width=W;
+  if(prCv.height!==H)prCv.height=H;
+  const ctx=prCv.getContext('2d');
+  ctx.fillStyle='#0a0e16';ctx.fillRect(0,0,W,H);
+  const rowY=n=>(PR.base+PR.NP-1-n)*PR.CH;
+  for(let n=PR.base;n<PR.base+PR.NP;n++){
+    const y=rowY(n);
+    if(isBlackKey(n)){ctx.fillStyle='rgba(255,255,255,.035)';ctx.fillRect(PR.GUT,y,W-PR.GUT,PR.CH)}
+    if(n%12===11){ctx.fillStyle='rgba(63,224,180,.12)';ctx.fillRect(PR.GUT,y,W-PR.GUT,1)}
+  }
+  for(let r=0;r<=pat.rows;r++){
+    const x=PR.GUT+r*PR.CW;
+    ctx.fillStyle=r%16===0?'rgba(255,255,255,.16)':r%4===0?'rgba(255,255,255,.07)':'rgba(255,255,255,.025)';
+    ctx.fillRect(x,0,1,H);
+  }
+  if(PR.playRow>=0){
+    ctx.fillStyle='rgba(63,224,180,.16)';
+    ctx.fillRect(PR.GUT+PR.playRow*PR.CW,0,PR.CW,H);
+  }
+  const ns=prNotes();
+  ns.forEach(no=>{
+    if(PR.drag&&PR.drag.orig===no)return;
+    prDrawNote(ctx,no,PR.sel&&no.r===PR.sel.r&&no.n===PR.sel.n,false);
+  });
+  if(PR.drag)prDrawNote(ctx,PR.drag.cur,true,true);
+  /* keyboard gutter */
+  ctx.fillStyle='#10141d';ctx.fillRect(0,0,PR.GUT,H);
+  for(let n=PR.base;n<PR.base+PR.NP;n++){
+    const y=rowY(n);
+    ctx.fillStyle=isBlackKey(n)?'#0b0e15':'#cfd6e4';
+    ctx.fillRect(0,y+1,PR.GUT-6,PR.CH-2);
+    if(n%12===0){ctx.fillStyle='#0b0e15';ctx.font='bold 8px monospace';ctx.fillText('C'+Math.floor(n/12),2,y+PR.CH-3)}
+  }
+  ctx.fillStyle='rgba(255,255,255,.1)';ctx.fillRect(PR.GUT-1,0,1,H);
+  const ts=song.trackset[cursor.t];
+  document.getElementById('prTitle').textContent='Piano Roll — Track '+(cursor.t+1)+(ts.name?' · '+ts.name:'');
+}
+function prDrawNote(ctx,no,seld,ghost){
+  if(no.n<PR.base||no.n>=PR.base+PR.NP)return;
+  const x=PR.GUT+no.r*PR.CW,y=(PR.base+PR.NP-1-no.n)*PR.CH;
+  const w=Math.max(5,no.len*PR.CW-2);
+  if(ghost)ctx.globalAlpha=.75;
+  const vel=no.v==null?40:no.v;
+  ctx.fillStyle=seld?'#ff4d9d':'#3fe0b4';
+  ctx.globalAlpha*= .45+.55*clamp(vel/64,0,1);
+  ctx.fillRect(x+1,y+1,w,PR.CH-2);
+  ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(0,0,0,.4)';
+  ctx.fillRect(x+w-3,y+1,3,PR.CH-2);
+}
+let prT=null;
+function prRenderIfOpen(){if(prPan.hidden||PR.drag)return;clearTimeout(prT);prT=setTimeout(prRender,150)}
+function prPlayhead(r){if(prPan.hidden)return;PR.playRow=r;if(!PR.drag)prRender()}
+function prHit(e){
+  const rect=prCv.getBoundingClientRect();
+  const x=e.clientX-rect.left,y=e.clientY-rect.top;
+  if(x<PR.GUT)return null;
+  const pat=song.patterns[curPat];
+  const row=clamp(Math.floor((x-PR.GUT)/PR.CW),0,pat.rows-1);
+  const n=clamp(PR.base+PR.NP-1-Math.floor(y/PR.CH),0,95);
+  let hit=null,edge=false;
+  for(const no of prNotes()){
+    if(no.n===n&&row>=no.r&&row<no.r+no.len){
+      hit=no;
+      edge=x-PR.GUT>(no.r+no.len)*PR.CW-7;
+      break;
+    }
+  }
+  return{row,n,hit,edge};
+}
+prCv.addEventListener('mousemove',e=>{
+  if(PR.drag)return;
+  const h=prHit(e);
+  prCv.style.cursor=h&&h.hit?(h.edge?'ew-resize':'grab'):'crosshair';
+});
+prCv.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  const h=prHit(e);if(!h)return;
+  e.preventDefault();
+  if(h.hit){
+    PR.sel={r:h.hit.r,n:h.hit.n};
+    PR.drag={orig:h.hit,cur:{r:h.hit.r,n:h.hit.n,len:h.hit.len,i:h.hit.i,v:h.hit.v},mode:h.edge?'resize':'move',grab:h.row-h.hit.r};
+  }else{
+    const pat=song.patterns[curPat];
+    PR.sel=null;
+    PR.drag={orig:null,cur:{r:h.row,n:h.n,len:Math.min(PR.lastLen,pat.rows-h.row),i:null,v:null},mode:'resize',grab:0};
+    if(!SEQ.playing)beatPreview(cursor.t,h.n,laneDefaults(cursor.t).i);
+  }
+  prRender();
+});
+document.addEventListener('mousemove',e=>{
+  if(!PR.drag)return;
+  const h=prHit(e);if(!h)return;
+  const d=PR.drag,rows=song.patterns[curPat].rows;
+  if(d.mode==='move'){
+    const nr=clamp(h.row-d.grab,0,rows-1);
+    if(nr!==d.cur.r||h.n!==d.cur.n){
+      if(h.n!==d.cur.n&&!SEQ.playing)beatPreview(cursor.t,h.n,d.cur.i!=null?d.cur.i:laneDefaults(cursor.t).i);
+      d.cur.r=nr;d.cur.n=h.n;
+      d.cur.len=Math.min(d.cur.len,rows-d.cur.r);
+    }
+  }else{
+    d.cur.len=clamp(h.row-d.cur.r+1,1,rows-d.cur.r);
+  }
+  prRender();
+});
+document.addEventListener('mouseup',()=>{
+  if(!PR.drag)return;
+  const d=PR.drag;PR.drag=null;
+  prApply(d);
+});
+function prEraseNote(no){
+  const pat=song.patterns[curPat],dt=pat.data[cursor.t];
+  const c=dt[no.r];
+  if(c){c.n=null;c.i=null;c.v=null;pruneCell(cursor.t,no.r)}
+  const end=no.r+no.len;
+  if(end<pat.rows){
+    const ec=dt[end];
+    if(ec&&ec.n===OFF){ec.n=null;pruneCell(cursor.t,end)}
+  }
+}
+function prWriteNote(no){
+  const pat=song.patterns[curPat];
+  const cell=ensureCell(cursor.t,no.r);
+  cell.n=no.n;
+  cell.i=no.i!=null?no.i:laneDefaults(cursor.t).i;
+  if(no.v!=null)cell.v=no.v;
+  const end=no.r+no.len;
+  /* clear retriggering notes inside the span, then close with an OFF if needed */
+  for(let r=no.r+1;r<end&&r<pat.rows;r++){
+    const c=pat.data[cursor.t][r];
+    if(c&&c.n!=null){c.n=null;c.i=null;pruneCell(cursor.t,r)}
+  }
+  if(end<pat.rows){
+    const nc=pat.data[cursor.t][end];
+    if(!(nc&&nc.n!=null&&nc.n!==OFF)){const ec=ensureCell(cursor.t,end);if(ec.n==null)ec.n=OFF}
+  }
+}
+function prApply(d){
+  if(d.orig)prEraseNote(d.orig);
+  prWriteNote(d.cur);
+  PR.lastLen=d.cur.len;
+  PR.sel={r:d.cur.r,n:d.cur.n};
+  renderGrid();saveSoon();prRender();
+}
+prCv.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  const h=prHit(e);if(!h||!h.hit)return;
+  prEraseNote(h.hit);
+  PR.sel=null;
+  renderGrid();saveSoon();prRender();
+  status('note deleted');
+});
+prCv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  if(e.shiftKey){prWrap.scrollLeft+=e.deltaY;return}
+  PR.base=clamp(PR.base+(e.deltaY<0?2:-2),0,96-PR.NP);
+  prRender();
+},{passive:false});
+function prDuplicate(){
+  const sel=PR.sel;if(!sel)return;
+  const no=prNotes().find(x=>x.r===sel.r&&x.n===sel.n);if(!no)return;
+  const rows=song.patterns[curPat].rows;
+  const r=no.r+no.len;
+  if(r>=rows){status('no room to duplicate');return}
+  prApply({orig:null,cur:{r,n:no.n,len:Math.min(no.len,rows-r),i:no.i,v:no.v}});
+  status('note duplicated');
 }
 
 /* ================= automation lanes (per-pattern, FL-style right-click → automate) ================= */

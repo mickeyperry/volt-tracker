@@ -3,7 +3,8 @@
 'use strict';
 (() => {
   const api = typeof browser !== 'undefined' ? browser : chrome;
-  const announce = () => window.postMessage({ src: 'volt-es-bridge', type: 'ready' }, window.location.origin);
+  const ORIGIN = window.location.origin && window.location.origin !== 'null' ? window.location.origin : '*';
+  const announce = () => window.postMessage({ src: 'volt-es-bridge', type: 'ready' }, ORIGIN);
   announce();
   window.addEventListener('message', e => {
     if (e.source !== window) return;
@@ -15,7 +16,7 @@
       window.postMessage({
         src: 'volt-es-bridge', type: 'res', id: d.id,
         res: res || { ok: false, error: (api.runtime.lastError && api.runtime.lastError.message) || 'no response' }
-      }, window.location.origin);
+      }, ORIGIN);
     });
   });
 })();

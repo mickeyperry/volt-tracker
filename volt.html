@@ -437,7 +437,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       <option value="0,7">5th</option>
       <option value="0,12">octave</option>
     </select></label>
-    <span id="prHint">click: place cursor (Space plays from it) &#183; Ctrl+click: add note &#183; drag: move (Shift: pitch only, Ctrl: time only) &#183; right edge: resize &#183; Ctrl+drag: select many &#183; Shift+click: add to selection &#183; Del: delete &#183; +/&#8722;: zoom &#183; Alt+wheel: note height &#183; Ctrl+D: duplicate</span></div>
+    <span id="prHint">click: cursor (Space plays from it, Home resets) &#183; Ctrl/Shift+click empty: add note &#183; drag: move (Shift: pitch lock, Ctrl: time lock) &#183; Ctrl+drag: select &#183; Ctrl+A/C/X/V: all/copy/cut/paste &#183; Shift+arrows: nudge &#189;tone/row &#183; Ctrl+&#8593;&#8595;: octave &#183; Del &#183; +/&#8722; zoom &#183; Ctrl+D dup</span></div>
   <div id="prWrap"><canvas id="prCanvas"></canvas></div>
 </div>
 
@@ -3157,6 +3157,38 @@ document.addEventListener('keydown',e=>{
   if(k==='F8'){e.preventDefault();e.stopImmediatePropagation();beatToggle();return}
   if(k==='F7'){e.preventDefault();e.stopImmediatePropagation();autoToggle();return}
   if(k==='F6'){e.preventDefault();e.stopImmediatePropagation();prToggle();return}
+  /* piano-roll keyboard layer (only while the roll is open) */
+  if(!prPan.hidden){
+    const ctl=e.ctrlKey||e.metaKey;
+    if(k==='Home'){
+      e.preventDefault();e.stopImmediatePropagation();
+      PR.cursorRow=0;cursor.r=0;prWrap.scrollLeft=0;
+      renderGrid();prRender();return;
+    }
+    if(ctl&&!e.shiftKey&&low==='a'){
+      e.preventDefault();e.stopImmediatePropagation();
+      PR.sel=prNotes().map(x=>({r:x.r,n:x.n}));
+      prRender();status(PR.sel.length+' note'+(PR.sel.length!==1?'s':'')+' selected');return;
+    }
+    if(ctl&&(low==='c'||low==='x')&&PR.sel.length){
+      e.preventDefault();e.stopImmediatePropagation();prCopySel(low==='x');return;
+    }
+    if(ctl&&low==='v'&&prClip){
+      e.preventDefault();e.stopImmediatePropagation();prPaste();return;
+    }
+    if(e.shiftKey&&!ctl&&!e.altKey&&ARROWS[k]&&PR.sel.length){
+      e.preventDefault();e.stopImmediatePropagation();
+      if(k==='ArrowUp')prMoveSel(0,1);
+      else if(k==='ArrowDown')prMoveSel(0,-1);
+      else if(k==='ArrowLeft')prMoveSel(-1,0);
+      else prMoveSel(1,0);
+      return;
+    }
+    if(ctl&&!e.shiftKey&&(k==='ArrowUp'||k==='ArrowDown')&&PR.sel.length){
+      e.preventDefault();e.stopImmediatePropagation();
+      prMoveSel(0,k==='ArrowUp'?12:-12);return;
+    }
+  }
   if(e.altKey&&(k==='ArrowUp'||k==='ArrowDown')){
     e.preventDefault();e.stopImmediatePropagation();
     transposeSel((k==='ArrowUp'?1:-1)*(e.shiftKey?12:1));
@@ -3880,6 +3912,13 @@ prCv.addEventListener('mousedown',e=>{
     const notes=prSelNotes().map(x=>({r:x.r,n:x.n,len:x.len,i:x.i,v:x.v}));
     PR.drag={mode:h.edge&&notes.length===1?'resize':'move',
              notes,grabRow:h.row,grabN:h.n,dr:0,dn:0,len:notes[0].len};
+  }else if(e.shiftKey){
+    /* Shift+drag on empty space: draw a new note (drag right to set its length) */
+    PR.sel=[];
+    const pat=song.patterns[curPat];
+    const no={r:h.row,n:h.n,len:Math.min(PR.lastLen,pat.rows-h.row),i:null,v:null};
+    PR.drag={mode:'resize',notes:[no],grabRow:h.row,grabN:h.n,dr:0,dn:0,len:no.len,isNew:true};
+    if(!SEQ.playing)beatPreview(cursor.t,h.n,laneDefaults(cursor.t).i);
   }else{
     /* empty space: place the play cursor — Space starts from here (Ctrl+click adds a note) */
     PR.sel=[];
@@ -4029,6 +4068,50 @@ prCv.addEventListener('wheel',e=>{
   PR.base=clamp(PR.base+(e.deltaY<0?2:-2),0,96-PR.NP);
   prRender();
 },{passive:false});
+/* roll clipboard + selection nudging */
+let prClip=null;
+function prCopySel(cut){
+  const sel=prSelNotes();if(!sel.length)return;
+  const mn=Math.min(...sel.map(x=>x.r));
+  prClip=sel.map(x=>({dr:x.r-mn,n:x.n,len:x.len,i:x.i,v:x.v}));
+  if(cut){
+    sel.forEach(x=>prEraseNote(cursor.t,x));
+    PR.sel=[];
+    renderGrid();saveSoon();prRender();
+  }
+  status((cut?'cut ':'copied ')+prClip.length+' note'+(prClip.length>1?'s':''));
+}
+function prPaste(){
+  if(!prClip||!prClip.length)return;
+  const rows=song.patterns[curPat].rows;
+  const at=PR.cursorRow!=null?PR.cursorRow:0;
+  const outs=[];
+  prClip.forEach(x=>{
+    const r=at+x.dr;if(r>=rows)return;
+    const no={r,n:x.n,len:Math.min(x.len,rows-r),i:x.i,v:x.v};
+    prWriteNote(cursor.t,no);outs.push({r:no.r,n:no.n});
+  });
+  if(!outs.length){status('paste lands outside the pattern');return}
+  PR.sel=outs;
+  renderGrid();saveSoon();prRender();
+  status('pasted '+outs.length+' note'+(outs.length>1?'s':'')+' at row '+at);
+}
+function prMoveSel(dr,dn){
+  const sel=prSelNotes();if(!sel.length)return;
+  const rows=song.patterns[curPat].rows;
+  let mnR=1e9,mxR=-1,mnN=99,mxN=-1;
+  sel.forEach(x=>{mnR=Math.min(mnR,x.r);mxR=Math.max(mxR,x.r);mnN=Math.min(mnN,x.n);mxN=Math.max(mxN,x.n)});
+  dr=clamp(dr,-mnR,rows-1-mxR);dn=clamp(dn,-mnN,95-mxN);
+  if(!dr&&!dn)return;
+  sel.forEach(x=>prEraseNote(cursor.t,x));
+  const outs=[];
+  sel.forEach(x=>{
+    const no={r:x.r+dr,n:x.n+dn,len:Math.min(x.len,rows-(x.r+dr)),i:x.i,v:x.v};
+    prWriteNote(cursor.t,no);outs.push({r:no.r,n:no.n});
+  });
+  PR.sel=outs;
+  renderGrid();saveSoon();prRender();
+}
 function prDuplicate(){
   const sel=prSelNotes();if(!sel.length)return;
   const rows=song.patterns[curPat].rows;

@@ -204,7 +204,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 /* ---- beat grid (FL-style step sequencer) ---- */
 #beat{background:var(--panel);border-top:1px solid var(--line);overflow-x:auto;padding:8px 12px}
-.blane{display:flex;align-items:center;gap:2px;margin-bottom:3px}
+.blane{display:flex;align-items:center;gap:2px;margin-bottom:4px;padding:3px 4px;border-radius:4px;border-bottom:1px solid rgba(255,255,255,.05)}
+.blane:nth-child(odd){background:rgba(255,255,255,.02)}
 .blane .bl{width:118px;flex:none;display:flex;gap:6px;align-items:center;font-size:10px;color:var(--dim)}
 .blane .bl b{color:var(--txt);font-weight:600;font-size:9px;letter-spacing:.06em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px}
 .blane .bnote{font-family:var(--mono);font-size:10px;color:var(--blue);cursor:ns-resize;user-select:none}
@@ -436,7 +437,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       <option value="0,7">5th</option>
       <option value="0,12">octave</option>
     </select></label>
-    <span id="prHint">click: add &#183; drag: move &#183; right edge: resize (writes OFF) &#183; Ctrl+drag: select many &#183; Shift+click: add to selection &#183; Del: delete &#183; +/&#8722;: time zoom &#183; Alt+wheel: note height &#183; wheel: pitch &#183; Ctrl+D: duplicate</span></div>
+    <span id="prHint">click: place cursor (Space plays from it) &#183; Ctrl+click: add note &#183; drag: move (Shift: pitch only, Ctrl: time only) &#183; right edge: resize &#183; Ctrl+drag: select many &#183; Shift+click: add to selection &#183; Del: delete &#183; +/&#8722;: zoom &#183; Alt+wheel: note height &#183; Ctrl+D: duplicate</span></div>
   <div id="prWrap"><canvas id="prCanvas"></canvas></div>
 </div>
 
@@ -928,11 +929,12 @@ function stopAllVoices(){if(!AC)return;const t=AC.currentTime;chans.forEach(ch=>
 /* ================= sequencer ================= */
 const SEQ={playing:false,songMode:false,ord:0,row:0,next:0,timer:null,q:[]};
 const rowDur=()=>60/song.bpm/song.lpb;
-function play(songMode){
+function play(songMode,fromRow){
   if(rendering)return;
   audio();if(AC.state==='suspended')AC.resume();
   stop(true);stopAllVoices();
-  SEQ.playing=true;SEQ.songMode=songMode;SEQ.row=0;SEQ.ord=0;SEQ.q=[];
+  SEQ.playing=true;SEQ.songMode=songMode;SEQ.ord=0;SEQ.q=[];
+  SEQ.row=!songMode&&fromRow?clamp(fromRow,0,song.patterns[curPat].rows-1):0;
   if(songMode&&song.order.length)curPatSet(song.order[0]);
   SEQ.next=AC.currentTime+.08;
   SEQ.timer=setInterval(pump,30);pump();
@@ -1181,6 +1183,32 @@ function rowInner(r){
 function renderRow(r){const el=grows.children[r];if(el)el.innerHTML=rowInner(r)}
 function trackAudible(t){const sol=song.trackset.some(s=>s.solo);const ts=song.trackset[t];return !ts.mute&&(!sol||ts.solo)}
 const mixStyle=document.createElement('style');document.head.appendChild(mixStyle);
+/* per-track colors: tint the column, its header, the beat-grid lane and the mixer name */
+const colStyle=document.createElement('style');document.head.appendChild(colStyle);
+function genColorCSS(){
+  let s='';
+  song.trackset.forEach((ts,t)=>{
+    if(ts.color==null)return;
+    const h=ts.color;
+    s+='#ghead .thead[data-t="'+t+'"]{box-shadow:inset 0 3px 0 hsl('+h+',75%,55%)}';
+    s+='#ghead .thead[data-t="'+t+'"] .tname{color:hsl('+h+',80%,72%)}';
+    s+='.prow .tcell[data-t="'+t+'"]{background:hsla('+h+',70%,55%,.05)}';
+    s+='.blane[data-t="'+t+'"] .bstep.on{background:hsl('+h+',75%,55%);border-color:hsl('+h+',75%,55%)}';
+    s+='.blane[data-t="'+t+'"] .bstep.on.acc{background:hsl('+h+',95%,72%);border-color:hsl('+h+',95%,72%)}';
+    s+='.blane[data-t="'+t+'"] .bl b{color:hsl('+h+',80%,72%)}';
+    s+='.mch[data-t="'+t+'"] .mname{color:hsl('+h+',80%,72%)}';
+  });
+  colStyle.textContent=s;
+}
+function randomColors(){
+  const base=Math.floor(Math.random()*360);
+  song.trackset.forEach((ts,t)=>{ts.color=Math.round(base+t*137.5)%360});
+  genColorCSS();saveSoon();status('tracks colored — right-click a header to reroll or clear');
+}
+function clearColors(){
+  song.trackset.forEach(ts=>{ts.color=null});
+  genColorCSS();saveSoon();status('track colors cleared');
+}
 function genMixCSS(){
   let s='';
   for(let t=0;t<TRACKS;t++)if(!trackAudible(t))s+='.prow .tcell[data-t="'+t+'"]{opacity:.3}';
@@ -1308,6 +1336,9 @@ ghead.addEventListener('contextmenu',e=>{
   openCtx(e.clientX,e.clientY,[
     {label:'Select '+nm,f:()=>selectTrack(t)},
     {label:'Rename',f:()=>renameTrack(t)},
+    {label:'🎨 Random colors (all tracks)',f:randomColors},
+    {label:'🎨 Reroll this track’s color',f:()=>{song.trackset[t].color=Math.floor(Math.random()*360);genColorCSS();saveSoon()}},
+    {label:'Clear colors',f:clearColors},
     {label:'Clear notes (this pattern)',f:()=>clearTrackNotes(t)},
     {label:'✕ Delete '+nm,f:()=>deleteTrack(t)}
   ]);
@@ -1345,7 +1376,7 @@ async function deleteTrack(t){
   cursor.t=Math.min(cursor.t,TRACKS-1);
   sel=null;
   document.getElementById('trkN').value=TRACKS;
-  genCtCSS();
+  genCtCSS();genColorCSS();
   if(AC){applyMix();applyFxAll()}
   renderGrid();trackPanel();if(!mixer.hidden)renderMixer();saveSoon();
   status('track deleted');
@@ -1362,7 +1393,10 @@ document.addEventListener('keydown',e=>{
   const tag=e.target.tagName;
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')return;
   const k=e.key;
-  if(k===' '){e.preventDefault();if(SEQ.playing)stop();else play(false);return}
+  if(k===' '){e.preventDefault();
+    if(SEQ.playing)stop();
+    else play(false,!prPan.hidden&&PR.cursorRow!=null?PR.cursorRow:0);
+    return}
   if(k==='Escape'){stop();return}
   /* mute/solo hotkeys: Alt+1..0 mute trk 1-10, +Shift solo, Alt+M/S current trk, Alt+X clear all */
   if(e.altKey&&!e.ctrlKey&&!e.metaKey){
@@ -2308,7 +2342,7 @@ async function setTracks(n){
   cursor.t=Math.min(cursor.t,TRACKS-1);
   sel=null;
   document.getElementById('trkN').value=TRACKS;
-  genCtCSS();
+  genCtCSS();genColorCSS();
   if(AC){ensureChans(TRACKS);applyMix();applyFxAll()}
   renderGrid();trackPanel();if(!mixer.hidden)renderMixer();saveSoon();
 }
@@ -2472,7 +2506,7 @@ function applyState(s){
   cursor.t=Math.min(cursor.t,TRACKS-1);
   sel=null;
   document.getElementById('trkN').value=TRACKS;
-  genCtCSS();
+  genCtCSS();genColorCSS();
   if(AC){ensureChans(TRACKS);applyMix();applyFxAll()}
   renderGrid();renderInstList();renderParams();trackPanel();if(!mixer.hidden)renderMixer();
   saveSoon();
@@ -2522,7 +2556,7 @@ async function loadSong(s){
   song.trackset.length=TRACKS;
   song.trackset.forEach(normTs);
   document.getElementById('trkN').value=TRACKS;
-  genCtCSS();
+  genCtCSS();genColorCSS();
   if(AC)ensureChans(TRACKS);
   sel=null;
   curPat=0;curInst=0;cursor.t=0;cursor.r=0;cursor.c=0;
@@ -3487,6 +3521,8 @@ const COMMANDS=[
   {n:'Mute current track',k:'Alt+M',kw:'silence channel',f:()=>toggleMS(cursor.t,'mute')},
   {n:'Solo current track',k:'Alt+S',kw:'isolate channel',f:()=>toggleMS(cursor.t,'solo')},
   {n:'All tracks audible',k:'Alt+X',kw:'unmute unsolo clear',f:clearMS},
+  {n:'Random track colors',kw:'color paint channels rainbow',f:randomColors},
+  {n:'Clear track colors',kw:'color reset plain',f:clearColors},
   {n:'Add track',k:'Alt+=',kw:'column new channel insert',f:()=>{if(TRACKS<MAXTRACKS){setTracks(TRACKS+1);status('track '+TRACKS+' added')}}},
   {n:'Remove last track',k:'Alt+-',kw:'column delete channel',f:()=>{if(TRACKS>2)setTracks(TRACKS-1)}},
   {n:'Delete current track',kw:'column remove this channel',f:()=>deleteTrack(cursor.t)},
@@ -3558,7 +3594,7 @@ function renderBeat(){
     const d=laneDefaults(t);
     const ins=song.instruments[d.i];
     const nm=song.trackset[t].name||(beatAuto(t)&&ins?ins.name:'Track '+(t+1));
-    h+='<div class="blane"><div class="bl"><b title="'+esc(nm)+'">'+esc(nm)+'</b>'
+    h+='<div class="blane" data-t="'+t+'"><div class="bl"><b title="'+esc(nm)+'">'+esc(nm)+'</b>'
       +'<span class="bnote" data-t="'+t+'" title="Scroll to change the note new steps use">'+noteName(d.n)+'</span></div>';
     for(let r=0;r<pat.rows;r++){
       const c=pat.data[t][r];
@@ -3672,7 +3708,7 @@ function beatPlayhead(r){
 
 /* ================= piano roll (F6) — FL-style note editor for the current track ================= */
 const prPan=document.getElementById('proll'),prWrap=document.getElementById('prWrap'),prCv=document.getElementById('prCanvas');
-const PR={base:36,NP:30,CW:18,CH:16,GUT:36,sel:[],drag:null,band:null,hover:null,lastLen:4,playRow:-1};
+const PR={base:36,NP:30,CW:18,CH:16,GUT:36,sel:[],drag:null,band:null,hover:null,lastLen:4,playRow:-1,cursorRow:null};
 try{PR.NP=clamp(+localStorage.getItem('volt.prNP')||30,16,90)}catch(e){}
 try{PR.CH=clamp(+localStorage.getItem('volt.prCH')||16,8,26)}catch(e){}
 const prIsSel=no=>PR.sel.some(s=>s.r===no.r&&s.n===no.n);
@@ -3727,6 +3763,13 @@ function prRender(){
   if(PR.playRow>=0){
     ctx.fillStyle='rgba(63,224,180,.16)';
     ctx.fillRect(PR.GUT+PR.playRow*PR.CW,0,PR.CW,H);
+  }
+  if(PR.cursorRow!=null){ /* play-from-here cursor */
+    ctx.fillStyle='#f0b24e';
+    ctx.fillRect(PR.GUT+PR.cursorRow*PR.CW,0,2,H);
+    ctx.globalAlpha=.25;
+    ctx.fillRect(PR.GUT+PR.cursorRow*PR.CW,0,PR.CW,H);
+    ctx.globalAlpha=1;
   }
   const ns=prNotes();
   ns.forEach(no=>{
@@ -3838,14 +3881,24 @@ prCv.addEventListener('mousedown',e=>{
     PR.drag={mode:h.edge&&notes.length===1?'resize':'move',
              notes,grabRow:h.row,grabN:h.n,dr:0,dn:0,len:notes[0].len};
   }else{
+    /* empty space: place the play cursor — Space starts from here (Ctrl+click adds a note) */
     PR.sel=[];
-    const pat=song.patterns[curPat];
-    const no={r:h.row,n:h.n,len:Math.min(PR.lastLen,pat.rows-h.row),i:null,v:null};
-    PR.drag={mode:'resize',notes:[no],grabRow:h.row,grabN:h.n,dr:0,dn:0,len:no.len,isNew:true};
-    if(!SEQ.playing)beatPreview(cursor.t,h.n,laneDefaults(cursor.t).i);
+    PR.cursorRow=h.row;
+    cursor.r=clamp(h.row,0,song.patterns[curPat].rows-1);
+    renderGrid();
+    status('cursor at row '+h.row+' — Space plays from here · Ctrl+click adds a note');
   }
   prRender();
 });
+function prCreateNote(row,n){
+  const pat=song.patterns[curPat];
+  const no={r:row,n,len:Math.min(PR.lastLen,pat.rows-row),i:null,v:null};
+  prWriteNote(cursor.t,no);
+  prChordExtras(no);
+  PR.sel=[{r:no.r,n:no.n}];
+  if(!SEQ.playing)beatPreview(cursor.t,n,laneDefaults(cursor.t).i);
+  renderGrid();saveSoon();prRender();
+}
 document.addEventListener('mousemove',e=>{
   if(PR.band){
     const rect=prCv.getBoundingClientRect();
@@ -3858,8 +3911,9 @@ document.addEventListener('mousemove',e=>{
   if(d.mode==='move'){
     let mnR=1e9,mxR=-1,mnN=99,mxN=-1;
     d.notes.forEach(x=>{mnR=Math.min(mnR,x.r);mxR=Math.max(mxR,x.r);mnN=Math.min(mnN,x.n);mxN=Math.max(mxN,x.n)});
-    const dr=clamp(h.row-d.grabRow,-mnR,rows-1-mxR);
-    const dn=clamp(h.n-d.grabN,-mnN,95-mxN);
+    /* FL-style axis locks: Shift = pitch only, Ctrl = time only */
+    const dr=e.shiftKey?0:clamp(h.row-d.grabRow,-mnR,rows-1-mxR);
+    const dn=e.ctrlKey||e.metaKey?0:clamp(h.n-d.grabN,-mnN,95-mxN);
     if(dn!==d.dn&&d.notes.length===1&&!SEQ.playing)
       beatPreview(cursor.t,d.notes[0].n+dn,d.notes[0].i!=null?d.notes[0].i:laneDefaults(cursor.t).i);
     d.dr=dr;d.dn=dn;
@@ -3871,6 +3925,13 @@ document.addEventListener('mousemove',e=>{
 document.addEventListener('mouseup',()=>{
   if(PR.band){
     const b=PR.band;PR.band=null;
+    /* Ctrl+click without dragging = add a note there */
+    if(Math.abs(b.x1-b.x0)<4&&Math.abs(b.y1-b.y0)<4){
+      const row=clamp(Math.floor((b.x0-PR.GUT)/PR.CW),0,song.patterns[curPat].rows-1);
+      const n=clamp(PR.base+PR.NP-1-Math.floor(b.y0/PR.CH),0,95);
+      if(b.x0>=PR.GUT)prCreateNote(row,n);else prRender();
+      return;
+    }
     const r1=Math.floor((Math.min(b.x0,b.x1)-PR.GUT)/PR.CW),r2=Math.floor((Math.max(b.x0,b.x1)-PR.GUT)/PR.CW);
     const nHi=PR.base+PR.NP-1-Math.floor(Math.min(b.y0,b.y1)/PR.CH);
     const nLo=PR.base+PR.NP-1-Math.floor(Math.max(b.y0,b.y1)/PR.CH);

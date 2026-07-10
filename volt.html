@@ -337,7 +337,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <div class="grp">
     <button id="expBtn" title="Save song as JSON">Export</button>
     <button id="impBtn" title="Load song from JSON">Import</button>
-    <button id="renderBtn" title="Render the whole song to a WAV audio file">&#11015; WAV</button>
+    <button id="renderBtn" title="Render the whole song to a WAV audio file (Alt+W)">&#11015; WAV</button>
     <input type="file" id="impFile" accept=".json" hidden>
   </div>
   <span class="sep"></span>
@@ -1313,6 +1313,7 @@ document.addEventListener('keydown',e=>{
     if(e.code==='KeyM'){e.preventDefault();toggleMS(cursor.t,'mute');return}
     if(e.code==='KeyS'){e.preventDefault();toggleMS(cursor.t,'solo');return}
     if(e.code==='KeyX'){e.preventDefault();clearMS();return}
+    if(e.code==='KeyW'){e.preventDefault();renderWav();return}
     /* Alt+= add a track · Alt+- remove the last one (asks if it has notes) */
     if(e.code==='Equal'||e.code==='NumpadAdd'){
       e.preventDefault();
@@ -3422,7 +3423,7 @@ const COMMANDS=[
   {n:'Transpose selection −1 octave',kw:'pitch down note',f:()=>transposeSel(-12)},
   {n:'Octave up',k:']',kw:'keyboard range',f:()=>{octave=clamp(octave+1,0,7);document.getElementById('oct').value=octave}},
   {n:'Octave down',k:'[',kw:'keyboard range',f:()=>{octave=clamp(octave-1,0,7);document.getElementById('oct').value=octave}},
-  {n:'Render song to WAV',kw:'export audio bounce record file',f:renderWav},
+  {n:'Render song to WAV',k:'Alt+W',kw:'export audio bounce record file',f:renderWav},
   {n:'Export song JSON',kw:'save file download',f:()=>document.getElementById('expBtn').click()},
   {n:'Import song JSON',kw:'load open file',f:()=>document.getElementById('impBtn').click()},
   {n:'Toggle beat grid',kw:'step sequencer fl drum machine beat f8',f:()=>beatToggle()},

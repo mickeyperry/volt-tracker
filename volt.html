@@ -219,7 +219,10 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 /* ---- piano roll ---- */
 #proll{background:var(--panel);border-top:1px solid var(--line);padding:6px 12px}
-#prHead{display:flex;gap:12px;align-items:baseline;margin-bottom:4px}
+#prGrip{height:6px;margin:-4px 0 2px;border-radius:3px;cursor:ns-resize}
+#prGrip:hover{background:var(--teal-dim)}
+#prChordL{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+#prHead{display:flex;gap:12px;align-items:center;margin-bottom:4px}
 #prHead b{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal)}
 #prHint{color:var(--dim);font-size:10px}
 #prWrap{overflow-x:auto;overflow-y:hidden}
@@ -421,7 +424,19 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 <div id="beat" hidden><div id="beatLanes"></div></div>
 
 <div id="proll" hidden>
-  <div id="prHead"><b id="prTitle"></b><span id="prHint">click: add &#183; drag: move &#183; right edge: resize (writes OFF) &#183; right-click: delete &#183; wheel: pitch &#183; Shift+wheel: scroll &#183; Ctrl+D: duplicate note</span></div>
+  <div id="prGrip" title="Drag to resize the piano roll"></div>
+  <div id="prHead"><b id="prTitle"></b>
+    <label id="prChordL">Chord <select id="prChord">
+      <option value="">off</option>
+      <option value="0,4,7">major</option>
+      <option value="0,3,7">minor</option>
+      <option value="0,3,7,10">min7</option>
+      <option value="0,4,7,11">maj7</option>
+      <option value="0,5,7">sus4</option>
+      <option value="0,7">5th</option>
+      <option value="0,12">octave</option>
+    </select></label>
+    <span id="prHint">click: add &#183; drag: move &#183; right edge: resize (writes OFF) &#183; Ctrl+drag: select many &#183; Shift+click: add to selection &#183; Del: delete &#183; right-click: delete one &#183; +/&#8722;: zoom &#183; wheel: pitch &#183; Ctrl+D: duplicate</span></div>
   <div id="prWrap"><canvas id="prCanvas"></canvas></div>
 </div>
 
@@ -3149,8 +3164,20 @@ document.addEventListener('keydown',e=>{
   }
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&low==='d'){
     e.preventDefault();e.stopImmediatePropagation();
-    if(!prPan.hidden&&PR.sel)prDuplicate();else dupPattern();
+    if(!prPan.hidden&&PR.sel.length)prDuplicate();else dupPattern();
     return;
+  }
+  /* piano roll: Del removes the selection, +/- zoom time */
+  if(!prPan.hidden&&(k==='Delete'||k==='Backspace')&&PR.sel.length){
+    e.preventDefault();e.stopImmediatePropagation();prDeleteSel();return;
+  }
+  if(!prPan.hidden&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&(k==='+'||k==='='||e.code==='NumpadAdd')){
+    e.preventDefault();e.stopImmediatePropagation();
+    PR.CW=clamp(PR.CW+3,8,48);prRender();return;
+  }
+  if(!prPan.hidden&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&(k==='-'||e.code==='NumpadSubtract')){
+    e.preventDefault();e.stopImmediatePropagation();
+    PR.CW=clamp(PR.CW-3,8,48);prRender();return;
   }
   if((e.ctrlKey||e.metaKey)&&low==='a'){
     e.preventDefault();e.stopImmediatePropagation();
@@ -3645,7 +3672,10 @@ function beatPlayhead(r){
 
 /* ================= piano roll (F6) — FL-style note editor for the current track ================= */
 const prPan=document.getElementById('proll'),prWrap=document.getElementById('prWrap'),prCv=document.getElementById('prCanvas');
-const PR={base:36,NP:30,CW:18,CH:11,GUT:36,sel:null,drag:null,lastLen:4,playRow:-1};
+const PR={base:36,NP:30,CW:18,CH:11,GUT:36,sel:[],drag:null,band:null,lastLen:4,playRow:-1};
+try{PR.NP=clamp(+localStorage.getItem('volt.prNP')||30,16,90)}catch(e){}
+const prIsSel=no=>PR.sel.some(s=>s.r===no.r&&s.n===no.n);
+const prSelNotes=()=>prNotes().filter(prIsSel);
 const isBlackKey=n=>{const m=n%12;return m===1||m===3||m===6||m===8||m===10};
 function prToggle(){
   prPan.hidden=!prPan.hidden;
@@ -3699,10 +3729,19 @@ function prRender(){
   }
   const ns=prNotes();
   ns.forEach(no=>{
-    if(PR.drag&&PR.drag.orig===no)return;
-    prDrawNote(ctx,no,PR.sel&&no.r===PR.sel.r&&no.n===PR.sel.n,false);
+    if(PR.drag&&!PR.drag.isNew&&PR.drag.notes.some(x=>x.r===no.r&&x.n===no.n))return;
+    prDrawNote(ctx,no,prIsSel(no),false);
   });
-  if(PR.drag)prDrawNote(ctx,PR.drag.cur,true,true);
+  if(PR.drag)PR.drag.notes.forEach(x=>prDrawNote(ctx,{
+    r:x.r+PR.drag.dr,n:x.n+PR.drag.dn,
+    len:PR.drag.mode==='resize'?(PR.drag.len||x.len):x.len,v:x.v
+  },true,true));
+  if(PR.band){
+    const b=PR.band;
+    ctx.strokeStyle='#3fe0b4';ctx.setLineDash([4,3]);
+    ctx.strokeRect(Math.min(b.x0,b.x1)+.5,Math.min(b.y0,b.y1)+.5,Math.abs(b.x1-b.x0),Math.abs(b.y1-b.y0));
+    ctx.setLineDash([]);
+  }
   /* keyboard gutter */
   ctx.fillStyle='#10141d';ctx.fillRect(0,0,PR.GUT,H);
   for(let n=PR.base;n<PR.base+PR.NP;n++){
@@ -3757,95 +3796,184 @@ prCv.addEventListener('mousedown',e=>{
   if(e.button!==0)return;
   const h=prHit(e);if(!h)return;
   e.preventDefault();
+  const rect=prCv.getBoundingClientRect();
+  if(e.ctrlKey||e.metaKey){ /* rubber-band select */
+    PR.band={x0:e.clientX-rect.left,y0:e.clientY-rect.top,
+             x1:e.clientX-rect.left,y1:e.clientY-rect.top,add:e.shiftKey};
+    prRender();return;
+  }
   if(h.hit){
-    PR.sel={r:h.hit.r,n:h.hit.n};
-    PR.drag={orig:h.hit,cur:{r:h.hit.r,n:h.hit.n,len:h.hit.len,i:h.hit.i,v:h.hit.v},mode:h.edge?'resize':'move',grab:h.row-h.hit.r};
+    if(e.shiftKey){ /* toggle membership */
+      if(prIsSel(h.hit))PR.sel=PR.sel.filter(s=>!(s.r===h.hit.r&&s.n===h.hit.n));
+      else PR.sel.push({r:h.hit.r,n:h.hit.n});
+      prRender();
+      status(PR.sel.length+' note'+(PR.sel.length!==1?'s':'')+' selected');
+      return;
+    }
+    if(!prIsSel(h.hit))PR.sel=[{r:h.hit.r,n:h.hit.n}];
+    const notes=prSelNotes().map(x=>({r:x.r,n:x.n,len:x.len,i:x.i,v:x.v}));
+    PR.drag={mode:h.edge&&notes.length===1?'resize':'move',
+             notes,grabRow:h.row,grabN:h.n,dr:0,dn:0,len:notes[0].len};
   }else{
+    PR.sel=[];
     const pat=song.patterns[curPat];
-    PR.sel=null;
-    PR.drag={orig:null,cur:{r:h.row,n:h.n,len:Math.min(PR.lastLen,pat.rows-h.row),i:null,v:null},mode:'resize',grab:0};
+    const no={r:h.row,n:h.n,len:Math.min(PR.lastLen,pat.rows-h.row),i:null,v:null};
+    PR.drag={mode:'resize',notes:[no],grabRow:h.row,grabN:h.n,dr:0,dn:0,len:no.len,isNew:true};
     if(!SEQ.playing)beatPreview(cursor.t,h.n,laneDefaults(cursor.t).i);
   }
   prRender();
 });
 document.addEventListener('mousemove',e=>{
+  if(PR.band){
+    const rect=prCv.getBoundingClientRect();
+    PR.band.x1=e.clientX-rect.left;PR.band.y1=e.clientY-rect.top;
+    prRender();return;
+  }
   if(!PR.drag)return;
   const h=prHit(e);if(!h)return;
   const d=PR.drag,rows=song.patterns[curPat].rows;
   if(d.mode==='move'){
-    const nr=clamp(h.row-d.grab,0,rows-1);
-    if(nr!==d.cur.r||h.n!==d.cur.n){
-      if(h.n!==d.cur.n&&!SEQ.playing)beatPreview(cursor.t,h.n,d.cur.i!=null?d.cur.i:laneDefaults(cursor.t).i);
-      d.cur.r=nr;d.cur.n=h.n;
-      d.cur.len=Math.min(d.cur.len,rows-d.cur.r);
-    }
+    let mnR=1e9,mxR=-1,mnN=99,mxN=-1;
+    d.notes.forEach(x=>{mnR=Math.min(mnR,x.r);mxR=Math.max(mxR,x.r);mnN=Math.min(mnN,x.n);mxN=Math.max(mxN,x.n)});
+    const dr=clamp(h.row-d.grabRow,-mnR,rows-1-mxR);
+    const dn=clamp(h.n-d.grabN,-mnN,95-mxN);
+    if(dn!==d.dn&&d.notes.length===1&&!SEQ.playing)
+      beatPreview(cursor.t,d.notes[0].n+dn,d.notes[0].i!=null?d.notes[0].i:laneDefaults(cursor.t).i);
+    d.dr=dr;d.dn=dn;
   }else{
-    d.cur.len=clamp(h.row-d.cur.r+1,1,rows-d.cur.r);
+    d.len=clamp(h.row-d.notes[0].r+1,1,rows-d.notes[0].r);
   }
   prRender();
 });
 document.addEventListener('mouseup',()=>{
+  if(PR.band){
+    const b=PR.band;PR.band=null;
+    const r1=Math.floor((Math.min(b.x0,b.x1)-PR.GUT)/PR.CW),r2=Math.floor((Math.max(b.x0,b.x1)-PR.GUT)/PR.CW);
+    const nHi=PR.base+PR.NP-1-Math.floor(Math.min(b.y0,b.y1)/PR.CH);
+    const nLo=PR.base+PR.NP-1-Math.floor(Math.max(b.y0,b.y1)/PR.CH);
+    const found=prNotes().filter(no=>no.n>=nLo&&no.n<=nHi&&no.r<=r2&&no.r+no.len-1>=r1)
+      .map(no=>({r:no.r,n:no.n}));
+    PR.sel=b.add?[...PR.sel.filter(s=>!found.some(f=>f.r===s.r&&f.n===s.n)),...found]:found;
+    prRender();
+    status(PR.sel.length+' note'+(PR.sel.length!==1?'s':'')+' selected');
+    return;
+  }
   if(!PR.drag)return;
   const d=PR.drag;PR.drag=null;
-  prApply(d);
+  prApplyDrag(d);
 });
-function prEraseNote(no){
-  const pat=song.patterns[curPat],dt=pat.data[cursor.t];
+function prEraseNote(t,no){
+  const pat=song.patterns[curPat],dt=pat.data[t];
   const c=dt[no.r];
-  if(c){c.n=null;c.i=null;c.v=null;pruneCell(cursor.t,no.r)}
+  if(c){c.n=null;c.i=null;c.v=null;pruneCell(t,no.r)}
   const end=no.r+no.len;
   if(end<pat.rows){
     const ec=dt[end];
-    if(ec&&ec.n===OFF){ec.n=null;pruneCell(cursor.t,end)}
+    if(ec&&ec.n===OFF){ec.n=null;pruneCell(t,end)}
   }
 }
-function prWriteNote(no){
+function prWriteNote(t,no){
   const pat=song.patterns[curPat];
-  const cell=ensureCell(cursor.t,no.r);
+  const cell=ensureCell(t,no.r);
   cell.n=no.n;
-  cell.i=no.i!=null?no.i:laneDefaults(cursor.t).i;
+  cell.i=no.i!=null?no.i:laneDefaults(t).i;
   if(no.v!=null)cell.v=no.v;
-  const end=no.r+no.len;
+  const end=Math.min(no.r+no.len,pat.rows);
   /* clear retriggering notes inside the span, then close with an OFF if needed */
-  for(let r=no.r+1;r<end&&r<pat.rows;r++){
-    const c=pat.data[cursor.t][r];
-    if(c&&c.n!=null){c.n=null;c.i=null;pruneCell(cursor.t,r)}
+  for(let r=no.r+1;r<end;r++){
+    const c=pat.data[t][r];
+    if(c&&c.n!=null){c.n=null;c.i=null;pruneCell(t,r)}
   }
   if(end<pat.rows){
-    const nc=pat.data[cursor.t][end];
-    if(!(nc&&nc.n!=null&&nc.n!==OFF)){const ec=ensureCell(cursor.t,end);if(ec.n==null)ec.n=OFF}
+    const nc=pat.data[t][end];
+    if(!(nc&&nc.n!=null&&nc.n!==OFF)){const ec=ensureCell(t,end);if(ec.n==null)ec.n=OFF}
   }
 }
-function prApply(d){
-  if(d.orig)prEraseNote(d.orig);
-  prWriteNote(d.cur);
-  PR.lastLen=d.cur.len;
-  PR.sel={r:d.cur.r,n:d.cur.n};
+function prApplyDrag(d){
+  if(d.mode==='move'&&!d.dr&&!d.dn&&!d.isNew){prRender();return}
+  if(!d.isNew)d.notes.forEach(x=>prEraseNote(cursor.t,x));
+  const outs=[];
+  d.notes.forEach(x=>{
+    const no={r:x.r+d.dr,n:x.n+d.dn,len:d.mode==='resize'?d.len:x.len,i:x.i,v:x.v};
+    prWriteNote(cursor.t,no);
+    outs.push({r:no.r,n:no.n});
+    if(d.isNew)prChordExtras(no);
+  });
+  if(d.mode==='resize')PR.lastLen=d.len;
+  PR.sel=outs;
   renderGrid();saveSoon();prRender();
+}
+/* chord stamp: extra intervals land on the following tracks (columns stay monophonic) */
+function prChordExtras(root){
+  const val=document.getElementById('prChord').value;
+  if(!val)return;
+  const ivs=val.split(',').map(Number).slice(1);
+  const placed=[];
+  ivs.forEach((iv,j)=>{
+    const tt=cursor.t+j+1;
+    if(tt>=TRACKS||root.n+iv>95)return;
+    prWriteNote(tt,{r:root.r,n:root.n+iv,len:root.len,i:laneDefaults(tt).i,v:root.v});
+    placed.push(tt+1);
+  });
+  if(placed.length)status('chord — extra notes on track'+(placed.length>1?'s':'')+' '+placed.join(', '));
+  else status('chord needs free tracks to the right');
+}
+function prDeleteSel(){
+  const sel=prSelNotes();if(!sel.length)return;
+  sel.forEach(x=>prEraseNote(cursor.t,x));
+  PR.sel=[];
+  renderGrid();saveSoon();prRender();
+  status(sel.length+' note'+(sel.length>1?'s':'')+' deleted');
 }
 prCv.addEventListener('contextmenu',e=>{
   e.preventDefault();
   const h=prHit(e);if(!h||!h.hit)return;
-  prEraseNote(h.hit);
-  PR.sel=null;
+  prEraseNote(cursor.t,h.hit);
+  PR.sel=PR.sel.filter(s=>!(s.r===h.hit.r&&s.n===h.hit.n));
   renderGrid();saveSoon();prRender();
   status('note deleted');
 });
 prCv.addEventListener('wheel',e=>{
   e.preventDefault();
   if(e.shiftKey){prWrap.scrollLeft+=e.deltaY;return}
+  if(e.ctrlKey){PR.CW=clamp(PR.CW+(e.deltaY<0?2:-2),8,48);prRender();return}
   PR.base=clamp(PR.base+(e.deltaY<0?2:-2),0,96-PR.NP);
   prRender();
 },{passive:false});
 function prDuplicate(){
-  const sel=PR.sel;if(!sel)return;
-  const no=prNotes().find(x=>x.r===sel.r&&x.n===sel.n);if(!no)return;
+  const sel=prSelNotes();if(!sel.length)return;
   const rows=song.patterns[curPat].rows;
-  const r=no.r+no.len;
-  if(r>=rows){status('no room to duplicate');return}
-  prApply({orig:null,cur:{r,n:no.n,len:Math.min(no.len,rows-r),i:no.i,v:no.v}});
-  status('note duplicated');
+  let mn=1e9,mx=-1;
+  sel.forEach(x=>{mn=Math.min(mn,x.r);mx=Math.max(mx,x.r+x.len)});
+  const span=Math.max(1,mx-mn);
+  const outs=[];
+  sel.forEach(x=>{
+    const r=x.r+span;
+    if(r>=rows)return;
+    const no={r,n:x.n,len:Math.min(x.len,rows-r),i:x.i,v:x.v};
+    prWriteNote(cursor.t,no);
+    outs.push({r:no.r,n:no.n});
+  });
+  if(!outs.length){status('no room to duplicate');return}
+  PR.sel=outs;
+  renderGrid();saveSoon();prRender();
+  status(outs.length+' note'+(outs.length>1?'s':'')+' duplicated');
 }
+/* drag the grip to grow / shrink the roll (more pitches visible) */
+(function(){
+  const grip=document.getElementById('prGrip');
+  let drag=false,sy=0,sn=30;
+  grip.addEventListener('mousedown',e=>{drag=true;sy=e.clientY;sn=PR.NP;e.preventDefault()});
+  document.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    PR.NP=clamp(sn+Math.round((sy-e.clientY)/PR.CH),16,90);
+    prRender();
+  });
+  document.addEventListener('mouseup',()=>{
+    if(!drag)return;drag=false;
+    try{localStorage.setItem('volt.prNP',PR.NP)}catch(e){}
+  });
+})();
 
 /* ================= automation lanes (per-pattern, FL-style right-click → automate) ================= */
 const AUTO_PARAMS={

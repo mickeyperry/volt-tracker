@@ -3279,18 +3279,17 @@ grows.addEventListener('mousedown',e=>{
   clearSel();
   dragSel={t:cursor.t,c:cursor.c,r:cursor.r};
 });
-/* dblclick a cell: select that row within the track; dblclick again: the row across all tracks */
+/* dblclick a cell: select it; dblclick the same cell again: the row across all tracks */
+let lastDbl=null;
 grows.addEventListener('dblclick',e=>{
   const cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
   if(!cell||!row)return;
   const t=+cell.dataset.t,r=+row.dataset.r;
-  const line={a:{t,c:0,r},b:{t,c:7,r}};
-  const full={a:{t:0,c:0,r},b:{t:TRACKS-1,c:7,r}};
-  const same=(x,y)=>x&&JSON.stringify(x)===JSON.stringify(y);
-  const wide=same(sel,line);
-  sel=wide?full:line;
+  const wide=lastDbl&&lastDbl.t===t&&lastDbl.r===r&&performance.now()-lastDbl.at<900;
+  sel=wide?{a:{t:0,c:0,r},b:{t:TRACKS-1,c:7,r}}:{a:{t,c:0,r},b:{t,c:7,r}};
+  lastDbl=wide?null:{t,r,at:performance.now()};
   renderRows(r,r);
-  status(wide?'row selected (all tracks)':'row selected (track '+(t+1)+')');
+  status(wide?'row selected (all tracks)':'cell selected');
 });
 grows.addEventListener('mouseover',e=>{
   if(!dragSel)return;

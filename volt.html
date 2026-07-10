@@ -436,7 +436,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       <option value="0,7">5th</option>
       <option value="0,12">octave</option>
     </select></label>
-    <span id="prHint">click: add &#183; drag: move &#183; right edge: resize (writes OFF) &#183; Ctrl+drag: select many &#183; Shift+click: add to selection &#183; Del: delete &#183; right-click: delete one &#183; +/&#8722;: zoom &#183; wheel: pitch &#183; Ctrl+D: duplicate</span></div>
+    <span id="prHint">click: add &#183; drag: move &#183; right edge: resize (writes OFF) &#183; Ctrl+drag: select many &#183; Shift+click: add to selection &#183; Del: delete &#183; +/&#8722;: time zoom &#183; Alt+wheel: note height &#183; wheel: pitch &#183; Ctrl+D: duplicate</span></div>
   <div id="prWrap"><canvas id="prCanvas"></canvas></div>
 </div>
 
@@ -3672,8 +3672,9 @@ function beatPlayhead(r){
 
 /* ================= piano roll (F6) — FL-style note editor for the current track ================= */
 const prPan=document.getElementById('proll'),prWrap=document.getElementById('prWrap'),prCv=document.getElementById('prCanvas');
-const PR={base:36,NP:30,CW:18,CH:11,GUT:36,sel:[],drag:null,band:null,lastLen:4,playRow:-1};
+const PR={base:36,NP:30,CW:18,CH:16,GUT:36,sel:[],drag:null,band:null,hover:null,lastLen:4,playRow:-1};
 try{PR.NP=clamp(+localStorage.getItem('volt.prNP')||30,16,90)}catch(e){}
+try{PR.CH=clamp(+localStorage.getItem('volt.prCH')||16,8,26)}catch(e){}
 const prIsSel=no=>PR.sel.some(s=>s.r===no.r&&s.n===no.n);
 const prSelNotes=()=>prNotes().filter(prIsSel);
 const isBlackKey=n=>{const m=n%12;return m===1||m===3||m===6||m===8||m===10};
@@ -3756,16 +3757,33 @@ function prRender(){
 }
 function prDrawNote(ctx,no,seld,ghost){
   if(no.n<PR.base||no.n>=PR.base+PR.NP)return;
-  const x=PR.GUT+no.r*PR.CW,y=(PR.base+PR.NP-1-no.n)*PR.CH;
-  const w=Math.max(5,no.len*PR.CW-2);
-  if(ghost)ctx.globalAlpha=.75;
+  const x=PR.GUT+no.r*PR.CW+1,y=(PR.base+PR.NP-1-no.n)*PR.CH+1;
+  const w=Math.max(6,no.len*PR.CW-3),h=PR.CH-2;
+  const hov=!ghost&&PR.hover&&PR.hover.r===no.r&&PR.hover.n===no.n;
   const vel=no.v==null?40:no.v;
-  ctx.fillStyle=seld?'#ff4d9d':'#3fe0b4';
-  ctx.globalAlpha*= .45+.55*clamp(vel/64,0,1);
-  ctx.fillRect(x+1,y+1,w,PR.CH-2);
-  ctx.globalAlpha=1;
-  ctx.fillStyle='rgba(0,0,0,.4)';
-  ctx.fillRect(x+w-3,y+1,3,PR.CH-2);
+  ctx.save();
+  ctx.globalAlpha=ghost?.8:.6+.4*clamp(vel/64,0,1);
+  if(seld||hov){ctx.shadowColor=seld?'#ff4d9d':'#3fe0b4';ctx.shadowBlur=seld?12:9}
+  const g=ctx.createLinearGradient(0,y,0,y+h);
+  if(seld){g.addColorStop(0,'#ff7ab8');g.addColorStop(1,'#c92777')}
+  else if(hov){g.addColorStop(0,'#8ffadf');g.addColorStop(1,'#22b489')}
+  else{g.addColorStop(0,'#54ecc2');g.addColorStop(1,'#1f9c78')}
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(x,y,w,h,3);else ctx.rect(x,y,w,h);
+  ctx.fill();
+  ctx.shadowBlur=0;
+  /* top gloss */
+  ctx.globalAlpha*=.3;
+  ctx.fillStyle='#fff';
+  ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(x+1,y+1,w-2,Math.max(2,h*.3),2);else ctx.rect(x+1,y+1,w-2,Math.max(2,h*.3));
+  ctx.fill();
+  ctx.restore();
+  /* resize handle + hover outline */
+  ctx.fillStyle=hov?'rgba(255,255,255,.55)':'rgba(0,0,0,.4)';
+  ctx.fillRect(x+w-3,y+1,3,h-2);
+  if(hov&&!ghost){ctx.strokeStyle='rgba(255,255,255,.8)';ctx.strokeRect(x+.5,y+.5,w-1,h-1)}
 }
 let prT=null;
 function prRenderIfOpen(){if(prPan.hidden||PR.drag)return;clearTimeout(prT);prT=setTimeout(prRender,150)}
@@ -3788,10 +3806,15 @@ function prHit(e){
   return{row,n,hit,edge};
 }
 prCv.addEventListener('mousemove',e=>{
-  if(PR.drag)return;
+  if(PR.drag||PR.band)return;
   const h=prHit(e);
   prCv.style.cursor=h&&h.hit?(h.edge?'ew-resize':'grab'):'crosshair';
+  const nh=h&&h.hit?{r:h.hit.r,n:h.hit.n}:null;
+  if(nh?(!PR.hover||PR.hover.r!==nh.r||PR.hover.n!==nh.n):!!PR.hover){
+    PR.hover=nh;prRender();
+  }
 });
+prCv.addEventListener('mouseleave',()=>{if(PR.hover){PR.hover=null;prRender()}});
 prCv.addEventListener('mousedown',e=>{
   if(e.button!==0)return;
   const h=prHit(e);if(!h)return;
@@ -3937,6 +3960,11 @@ prCv.addEventListener('wheel',e=>{
   e.preventDefault();
   if(e.shiftKey){prWrap.scrollLeft+=e.deltaY;return}
   if(e.ctrlKey){PR.CW=clamp(PR.CW+(e.deltaY<0?2:-2),8,48);prRender();return}
+  if(e.altKey){ /* vertical zoom: fatter / thinner note lanes */
+    PR.CH=clamp(PR.CH+(e.deltaY<0?1:-1),8,26);
+    try{localStorage.setItem('volt.prCH',PR.CH)}catch(err){}
+    prRender();return;
+  }
   PR.base=clamp(PR.base+(e.deltaY<0?2:-2),0,96-PR.NP);
   prRender();
 },{passive:false});

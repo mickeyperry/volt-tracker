@@ -1486,8 +1486,8 @@ document.addEventListener('keydown',e=>{
   if(k==='ArrowLeft'){e.preventDefault();moveCursor(0,0,-1);return}
   if(k==='ArrowRight'){e.preventDefault();moveCursor(0,0,1);return}
   if(k==='Tab'){e.preventDefault();cursor.c=0;moveCursor(e.shiftKey?-1:1,0,0);renderRow(cursor.r);return}
-  /* Ctrl+PgDn / PgUp: jump to the next / previous note on this track */
-  if((e.ctrlKey||e.metaKey)&&(k==='PageDown'||k==='PageUp')){
+  /* Alt+PgDn / PgUp (or Ctrl+ where the browser allows): next / previous note on this track */
+  if((e.altKey||e.ctrlKey||e.metaKey)&&(k==='PageDown'||k==='PageUp')){
     e.preventDefault();
     const d=song.patterns[curPat].data[cursor.t],rows=song.patterns[curPat].rows;
     let r=cursor.r;
@@ -4740,7 +4740,7 @@ const HELP=[
  ['Grid','The four columns','note·in·vol·fx','Each cell: note, instrument (hex), volume 00–40, effect. Park the cursor and type hex right over them.'],
  ['Grid','FX commands','R S U D G C','Rxx retrigger (fills!), Sxx sample offset, Uxx/Dxx pitch slide, Gxx glide to note, Cxx filter cutoff.'],
  ['Grid','Jump around','PgUp/PgDn Home End','±16 rows, first/last row. Tab hops a track. + / − switch patterns.'],
- ['Grid','Next / prev note','Ctrl+PgDn / PgUp','Cursor jumps to the next or previous note on this track. Great for walking a bassline.'],
+ ['Grid','Next / prev note','Alt+PgDn / PgUp','Cursor jumps to the next or previous note on this track. Great for walking a bassline. (Ctrl+ works too, but Firefox steals it for tab switching.)'],
  ['Selection','Select','Shift+arrows / drag','Frame a block, then Ctrl+C/X/V copy, cut, paste. Pasting into another project brings the instruments along.'],
  ['Selection','Cell / row / all','2×click · 3×click · Ctrl+A','Double-click selects the cell, triple-click the row. Ctrl+A cycles column → track → everything.'],
  ['Selection','Transpose','Alt+↑↓ (+Shift)','±semitone, with Shift ±octave. Works on the selection or the cursor cell.'],

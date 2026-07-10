@@ -90,6 +90,8 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 #instList .irow:hover{background:var(--raised)}
 #instList .irow.sel{background:var(--raised);color:var(--teal)}
 #instList .irow .no{color:var(--blue)}
+#instList .irow .uc{margin-left:auto;color:var(--faint);font-size:10px}
+#instList .irow .uc.uz{color:var(--mag);opacity:.7}
 .btnrow{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
 .btnrow button{padding:3px 8px;font-size:11px}
 .param{display:grid;grid-template-columns:64px 1fr 40px;align-items:center;gap:6px;margin-bottom:4px}
@@ -389,6 +391,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
         <button id="instRen">Rename</button>
         <button id="instDel" class="danger">Delete</button>
         <button id="instSavePre" title="Save the selected instrument as a reusable preset">Save preset</button>
+        <button id="instClean" class="danger" title="Delete every instrument no pattern uses">Clean unused</button>
       </div>
       <div id="userPresets" title="Your saved presets — click to add as a new instrument, drag onto an instrument to replace it"></div>
     </div>
@@ -588,14 +591,15 @@ function ensureChans(n){
     const cmp=AC.createDynamicsCompressor();
     const pan=AC.createStereoPanner();
     const an=AC.createAnalyser();an.fftSize=512;
-    g.connect(eqL);eqL.connect(eqM);eqM.connect(eqH);eqH.connect(flt);flt.connect(fxIn);fxIn.connect(fxOut);fxOut.connect(shp);shp.connect(cmp);cmp.connect(pan);pan.connect(duckG);
+    const vg=AC.createGain(); /* channel fader — post EQ/filter/FX/drive/comp so it only changes loudness */
+    g.connect(eqL);eqL.connect(eqM);eqM.connect(eqH);eqH.connect(flt);flt.connect(fxIn);fxIn.connect(fxOut);fxOut.connect(shp);shp.connect(cmp);cmp.connect(pan);pan.connect(vg);vg.connect(duckG);
     duckG.connect(master);duckG.connect(ds);duckG.connect(rs);duckG.connect(an);
     ds.connect(dlyIn);rs.connect(rvbIn);
-    chans.push({in:g,duckG,ds,rs,eqL,eqM,eqH,flt,fxIn,fxOut,shp,cmp,pan,an,_fxNodes:[],_drv:0,pk:0,voice:null,lastI:null});
+    chans.push({in:g,vg,duckG,ds,rs,eqL,eqM,eqH,flt,fxIn,fxOut,shp,cmp,pan,an,_fxNodes:[],_drv:0,pk:0,voice:null,lastI:null});
   }
 }
 function applyMix(){if(!AC)return;song.trackset.forEach((ts,t)=>{const ch=chans[t];if(!ch)return;
-  ch.in.gain.value=ts.vol;ch.ds.gain.value=ts.dly;ch.rs.gain.value=ts.rvb;
+  ch.vg.gain.value=ts.vol;ch.ds.gain.value=ts.dly;ch.rs.gain.value=ts.rvb;
   const eq=ts.eq||{l:0,m:0,h:0};
   ch.eqL.gain.value=eq.l;ch.eqM.gain.value=eq.m;ch.eqH.gain.value=eq.h;
   ch.flt.frequency.value=fltHz(ts.fltF==null?1:ts.fltF);ch.flt.Q.value=(ts.fltQ||0)*20;
@@ -974,7 +978,7 @@ function applyBaseAt(t){
   if(!AC)return;
   song.trackset.forEach((ts,tr)=>{
     const ch=chans[tr];if(!ch)return;
-    ch.in.gain.setTargetAtTime(ts.vol,t,.01);
+    ch.vg.gain.setTargetAtTime(ts.vol,t,.01);
     ch.ds.gain.setTargetAtTime(ts.dly,t,.01);
     ch.rs.gain.setTargetAtTime(ts.rvb,t,.01);
     ch.pan.pan.setTargetAtTime(ts.pan||0,t,.01);
@@ -1528,12 +1532,22 @@ function previewNote(n,key){
 }
 
 /* ================= instrument / mixer panels ================= */
+function instUseCounts(){
+  const counts=song.instruments.map(()=>0);
+  song.patterns.forEach(p=>p.data.forEach(tr=>tr.forEach(c=>{
+    if(c&&c.i!=null&&counts[c.i]!=null)counts[c.i]++;
+  })));
+  return counts;
+}
 function renderInstList(){
   const el=document.getElementById('instList');
+  const uses=instUseCounts();
   el.innerHTML=song.instruments.map((ins,i)=>
     '<div class="irow'+(i===curInst?' sel':'')+'" data-i="'+i+'" draggable="true"'
     +(ins.type==='sliced'?' title="Drag onto a grid column to lay the slices out, aligned to the BPM"':'')
-    +'><span class="no">'+hex2(i)+'</span><span>'+esc(ins.name)+'</span></div>'
+    +'><span class="no">'+hex2(i)+'</span><span>'+esc(ins.name)+'</span>'
+    +'<span class="uc'+(uses[i]?'':' uz')+'" title="'+(uses[i]?uses[i]+' notes use this instrument':'not used by any pattern')+'">'
+    +(uses[i]?'&#215;'+uses[i]:'unused')+'</span></div>'
   ).join('');
 }
 /* drag a sliced instrument onto the grid: its slices land as notes on the sample's
@@ -1591,21 +1605,25 @@ grows.addEventListener('drop',e=>{
   laySlices(ins,ii,t,r0);
 });
 function esc(s){return String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
+/* double-click rename is detected manually: the click re-renders the list,
+   which kills the native dblclick event mid-sequence */
+let instClk={i:-1,at:0};
 document.getElementById('instList').addEventListener('click',e=>{
   const r=e.target.closest('.irow');if(!r)return;
   curInst=+r.dataset.i;renderInstList();renderParams();
-});
-/* dblclick an instrument = rename it in place */
-document.getElementById('instList').addEventListener('dblclick',e=>{
-  const r=e.target.closest('.irow');if(!r)return;
-  curInst=+r.dataset.i;renderInstList();renderParams();
-  const ins=song.instruments[curInst];
-  const span=document.querySelector('#instList .irow.sel span:last-child');
-  if(!ins||!span)return;
-  inlineEdit(span,ins.name,v=>{
-    if(v)ins.name=v;
-    renderInstList();renderParams();saveSoon();
-  });
+  const now=performance.now();
+  if(instClk.i===curInst&&now-instClk.at<450){
+    instClk={i:-1,at:0};
+    const ins=song.instruments[curInst];
+    const span=document.querySelector('#instList .irow.sel span:nth-child(2)');
+    if(!ins||!span)return;
+    inlineEdit(span,ins.name,v=>{
+      if(v)ins.name=v;
+      renderInstList();renderParams();saveSoon();
+    });
+    return;
+  }
+  instClk={i:curInst,at:now};
 });
 function renderParams(){
   const ins=song.instruments[curInst],el=document.getElementById('params');
@@ -2187,6 +2205,26 @@ document.getElementById('instDel').onclick=async()=>{
   song.instruments.splice(curInst,1);
   curInst=clamp(curInst,0,song.instruments.length-1);
   renderInstList();renderParams();saveSoon();
+};
+document.getElementById('instClean').onclick=async()=>{
+  const uses=instUseCounts();
+  let unused=song.instruments.map((x,i)=>uses[i]?null:i).filter(x=>x!=null);
+  if(unused.length===song.instruments.length)unused=unused.slice(1); /* keep at least one */
+  if(!unused.length){status('no unused instruments');return}
+  const names=unused.map(i=>hex2(i)+' '+song.instruments[i].name).join(', ');
+  if(!await askConfirm('Delete '+unused.length+' unused instrument'+(unused.length>1?'s':'')+'?\n'+names+'\nNote slots in the patterns are renumbered to match.','Clean'))return;
+  const map={};let ni=0;
+  song.instruments=song.instruments.filter((ins,i)=>{
+    if(unused.includes(i))return false;
+    map[i]=ni++;return true;
+  });
+  song.patterns.forEach(p=>p.data.forEach(tr=>tr.forEach(c=>{
+    if(c&&c.i!=null)c.i=map[c.i]!=null?map[c.i]:null;
+  })));
+  curInst=clamp(map[curInst]!=null?map[curInst]:0,0,song.instruments.length-1);
+  chans.forEach(ch=>{ch.lastI=null});
+  renderInstList();renderParams();renderGrid();saveSoon();
+  status('removed '+unused.length+' unused instrument'+(unused.length>1?'s':''));
 };
 document.getElementById('instRen').onclick=()=>{
   const ins=song.instruments[curInst];if(!ins)return;
@@ -4167,7 +4205,7 @@ const AUTO_PARAMS={
     }}},
   vol:{label:'Volume',apply:(tr,v,t)=>{
     const ts=song.trackset[tr];
-    if(chans[tr])chans[tr].in.gain.setTargetAtTime(ts.vol*v,t,.02)}},
+    if(chans[tr])chans[tr].vg.gain.setTargetAtTime(ts.vol*v,t,.02)}},
   dly:{label:'Delay send',apply:(tr,v,t)=>{
     if(chans[tr])chans[tr].ds.gain.setTargetAtTime(v,t,.02)}},
   rvb:{label:'Reverb send',apply:(tr,v,t)=>{

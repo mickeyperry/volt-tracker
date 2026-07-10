@@ -1,7 +1,10 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src http: https:; img-src data:; media-src blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
-<meta name="referrer" content="no-referrer"></head><body>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src http: https:; img-src data: 'self'; media-src blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'; worker-src 'self'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0a0c12">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml"></head><body>
 <title>VOLT — DnB &amp; Trance Tracker</title>
 <style>
 :root{
@@ -288,6 +291,25 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 #esMsg.err{color:var(--mag)}
 #esDirName{color:var(--dim);font-size:10px;word-break:break-all}
 #esCfgBtn{float:right;padding:0 6px;font-size:10px}
+
+/* ---- touch / mobile (phase 1: usable, not yet redesigned) ---- */
+body{touch-action:manipulation} /* keep pan+pinch, kill double-tap zoom */
+.bstep,.astep,#prCanvas,#slCanvas,#smpCanvas,#dragbar,#autoGrip,#prGrip{touch-action:none}
+@media (pointer:coarse){
+  button{padding:8px 13px;font-size:13px}
+  .bstep{width:24px;height:30px}
+  .astep{width:24px}
+  #ghead .tbtn,.mch .msbtns .tbtn{padding:0 10px;line-height:24px;font-size:12px}
+  .chip,.upre{padding:6px 8px 6px 10px;font-size:13px}
+  #instList .irow{padding:8px 6px}
+  .tab{padding:8px 8px 8px 12px;font-size:13px}
+  input[type=range]{height:26px}
+  input[type=range]::-webkit-slider-thumb{width:19px;height:19px;margin-top:-8px}
+  input[type=range]::-moz-range-thumb{width:19px;height:19px}
+  #gridwrap,#beat,#proll,#autoPan,#mixer,#ghead{user-select:none;-webkit-user-select:none}
+  #gridwrap,#beat,#proll,#autoPan,#mixer,#side{-webkit-tap-highlight-color:transparent}
+  #foot{display:none} /* the hotkey legend is noise on touch */
+}
 
 /* ---- track FX chain ---- */
 #fxChain{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
@@ -1840,7 +1862,7 @@ function drawSmp(ins){
   if(info)info.textContent=(s0*bd*1000).toFixed(0)+'–'+(s1*bd*1000).toFixed(0)+'ms / '+(bd*1000).toFixed(0)+'ms';
 }
 let smpDrag=null,slDrag=null,slMoved=false;
-document.getElementById('params').addEventListener('mousedown',e=>{
+document.getElementById('params').addEventListener('pointerdown',e=>{
   /* slice markers: grab a boundary line to fine-tune it (Slicex-style) */
   if(e.target.id==='slCanvas'&&e.button===0){
     const ins=song.instruments[curInst];if(!ins||ins.type!=='sliced'||!ins.slices)return;
@@ -1863,7 +1885,7 @@ document.getElementById('params').addEventListener('mousedown',e=>{
   smpDrag=Math.abs(x-s0)<=Math.abs(x-s1)?'s0':'s1';
   setSmp(ins,x);e.preventDefault();
 });
-document.addEventListener('mousemove',e=>{
+document.addEventListener('pointermove',e=>{
   if(slDrag==null)return;
   const cv=document.getElementById('slCanvas'),ins=song.instruments[curInst];
   if(!cv||!ins||!ins.slices){slDrag=null;return}
@@ -1872,8 +1894,8 @@ document.addEventListener('mousemove',e=>{
   ins.slices[slDrag].s0=x;ins.slices[slDrag-1].s1=x;
   slMoved=true;drawSlices(ins);
 });
-document.addEventListener('mouseup',()=>{if(slDrag!=null){slDrag=null;saveSoon()}});
-document.addEventListener('mousemove',e=>{
+document.addEventListener('pointerup',()=>{if(slDrag!=null){slDrag=null;saveSoon()}});
+document.addEventListener('pointermove',e=>{
   if(!smpDrag)return;
   const cv=document.getElementById('smpCanvas');
   if(!cv){smpDrag=null;return}
@@ -1881,7 +1903,7 @@ document.addEventListener('mousemove',e=>{
   const r=cv.getBoundingClientRect();
   setSmp(ins,(e.clientX-r.left)/r.width);
 });
-document.addEventListener('mouseup',()=>{if(smpDrag){smpDrag=null;saveSoon()}});
+document.addEventListener('pointerup',()=>{if(smpDrag){smpDrag=null;saveSoon()}});
 function setSmp(ins,x){
   x=clamp(x,0,1);
   const s0=ins.s0||0,s1=ins.s1==null?1:ins.s1;
@@ -3615,17 +3637,17 @@ kv('get','projDir').then(h=>{if(h){projDir=h;$id('esDirName').textContent='→ '
 /* ================= side panel resize ================= */
 const sideEl=document.getElementById('side'),dragbar=document.getElementById('dragbar');
 try{const w=+localStorage.getItem('volt.sideW');if(w){const cw=clamp(w,200,520);sideEl.style.width=sideEl.style.minWidth=cw+'px'}}catch(e){}
-dragbar.addEventListener('mousedown',e=>{
+dragbar.addEventListener('pointerdown',e=>{
   e.preventDefault();dragbar.classList.add('on');
   const left=sideEl.getBoundingClientRect().left;
   const move=ev=>{const w=clamp(ev.clientX-left,200,520);sideEl.style.width=sideEl.style.minWidth=w+'px'};
   const up=()=>{
     dragbar.classList.remove('on');
-    document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);
+    document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
     try{localStorage.setItem('volt.sideW',parseInt(sideEl.style.width))}catch(e){}
     syncHeadWidths();
   };
-  document.addEventListener('mousemove',move);document.addEventListener('mouseup',up);
+  document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);
 });
 
 /* ================= collapsible side sections ================= */
@@ -3772,6 +3794,9 @@ function beatSet(t,r,on,acc){
   }
   renderRow(r);
 }
+/* touch implicitly captures the pointer to the start element, so mid-drag
+   targets must come from the finger's position, not e.target */
+const ptEl=e=>document.elementFromPoint(e.clientX,e.clientY)||e.target;
 function beatCellUI(el,on,acc){el.classList.toggle('on',on);el.classList.toggle('acc',!!(on&&acc));el.classList.remove('noff')}
 /* Ctrl+click: place / clear a note-off (cuts whatever the track is playing) */
 function beatSetOff(t,r,on){
@@ -3780,7 +3805,8 @@ function beatSetOff(t,r,on){
   renderRow(r);
 }
 function beatOffUI(el,on){el.classList.toggle('noff',on);el.classList.remove('on','acc')}
-beatLanes.addEventListener('mousedown',e=>{
+beatLanes.addEventListener('pointerdown',e=>{
+  if(e.button!==0&&e.pointerType==='mouse')return;
   const s=e.target.closest('.bstep');if(!s)return;
   e.preventDefault();
   const t=+s.dataset.t,r=+s.dataset.r;
@@ -3796,9 +3822,9 @@ beatLanes.addEventListener('mousedown',e=>{
   BEAT.paint={on,acc:e.shiftKey};
   beatSet(t,r,on,e.shiftKey);beatCellUI(s,on,e.shiftKey);saveSoon();
 });
-beatLanes.addEventListener('mouseover',e=>{
+beatLanes.addEventListener('pointermove',e=>{
   if(!BEAT.paint)return;
-  const s=e.target.closest('.bstep');if(!s)return;
+  const s=ptEl(e).closest('.bstep');if(!s)return;
   if(BEAT.paint.offNote){
     beatSetOff(+s.dataset.t,+s.dataset.r,BEAT.paint.on);
     beatOffUI(s,BEAT.paint.on);saveSoon();
@@ -3807,7 +3833,7 @@ beatLanes.addEventListener('mouseover',e=>{
   beatSet(+s.dataset.t,+s.dataset.r,BEAT.paint.on,BEAT.paint.acc);
   beatCellUI(s,BEAT.paint.on,BEAT.paint.acc);saveSoon();
 });
-document.addEventListener('mouseup',()=>{BEAT.paint=null});
+document.addEventListener('pointerup',()=>{BEAT.paint=null});
 beatLanes.addEventListener('wheel',e=>{
   const s=e.target.closest('.bstep');
   if(s){
@@ -3995,8 +4021,8 @@ prCv.addEventListener('mousemove',e=>{
   }
 });
 prCv.addEventListener('mouseleave',()=>{if(PR.hover){PR.hover=null;prRender()}});
-prCv.addEventListener('mousedown',e=>{
-  if(e.button!==0)return;
+prCv.addEventListener('pointerdown',e=>{
+  if(e.button!==0&&e.pointerType==='mouse')return;
   const h=prHit(e);if(!h)return;
   e.preventDefault();
   const rect=prCv.getBoundingClientRect();
@@ -4043,7 +4069,7 @@ function prCreateNote(row,n){
   if(!SEQ.playing)beatPreview(cursor.t,n,laneDefaults(cursor.t).i);
   renderGrid();saveSoon();prRender();
 }
-document.addEventListener('mousemove',e=>{
+document.addEventListener('pointermove',e=>{
   if(PR.band){
     const rect=prCv.getBoundingClientRect();
     PR.band.x1=e.clientX-rect.left;PR.band.y1=e.clientY-rect.top;
@@ -4066,7 +4092,7 @@ document.addEventListener('mousemove',e=>{
   }
   prRender();
 });
-document.addEventListener('mouseup',()=>{
+document.addEventListener('pointerup',()=>{
   if(PR.band){
     const b=PR.band;PR.band=null;
     /* Ctrl+click without dragging = add a note there */
@@ -4240,13 +4266,13 @@ function prDuplicate(){
 (function(){
   const grip=document.getElementById('prGrip');
   let drag=false,sy=0,sn=30;
-  grip.addEventListener('mousedown',e=>{drag=true;sy=e.clientY;sn=PR.NP;e.preventDefault()});
-  document.addEventListener('mousemove',e=>{
+  grip.addEventListener('pointerdown',e=>{drag=true;sy=e.clientY;sn=PR.NP;e.preventDefault()});
+  document.addEventListener('pointermove',e=>{
     if(!drag)return;
     PR.NP=clamp(sn+Math.round((sy-e.clientY)/PR.CH),16,90);
     prRender();
   });
-  document.addEventListener('mouseup',()=>{
+  document.addEventListener('pointerup',()=>{
     if(!drag)return;drag=false;
     try{localStorage.setItem('volt.prNP',PR.NP)}catch(e){}
   });
@@ -4356,7 +4382,7 @@ function updateLaneDOM(k){
     f.style.height=Math.round(v*100)+'%';
   });
 }
-autoLanes.addEventListener('mousedown',e=>{
+autoLanes.addEventListener('pointerdown',e=>{
   const x=e.target.closest('u[data-x]');
   if(x){
     const k=x.dataset.x,dot=k.indexOf('.');
@@ -4381,9 +4407,9 @@ autoLanes.addEventListener('mousedown',e=>{
   }
   autoPaint={mode:'draw'};autoSetFromEvent(s,e);saveSoon();
 });
-autoLanes.addEventListener('mousemove',e=>{
+autoLanes.addEventListener('pointermove',e=>{
   if(!autoPaint)return;
-  const s=e.target.closest('.astep');if(!s)return;
+  const s=ptEl(e).closest('.astep');if(!s)return;
   if(autoPaint.mode==='draw')autoSetFromEvent(s,e);
   else if(autoPaint.mode==='erase')autoErase(s);
   else{
@@ -4405,7 +4431,7 @@ autoLanes.addEventListener('mousemove',e=>{
   saveSoon();
 });
 autoLanes.addEventListener('contextmenu',e=>e.preventDefault());
-document.addEventListener('mouseup',()=>{autoPaint=null});
+document.addEventListener('pointerup',()=>{autoPaint=null});
 function autoPlayhead(r){
   if(autoPan.hidden)return;
   autoLanes.querySelectorAll('.astep.ph').forEach(x=>x.classList.remove('ph'));
@@ -4626,16 +4652,16 @@ document.getElementById('params').addEventListener('contextmenu',e=>{
   let drag=false,sy=0,sh=44;
   let saved=44;try{saved=+localStorage.getItem('volt.autoH')||44}catch(e){}
   document.documentElement.style.setProperty('--astepH',clamp(saved,28,120)+'px');
-  grip.addEventListener('mousedown',e=>{
+  grip.addEventListener('pointerdown',e=>{
     drag=true;sy=e.clientY;
     sh=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--astepH'))||44;
     e.preventDefault();
   });
-  document.addEventListener('mousemove',e=>{
+  document.addEventListener('pointermove',e=>{
     if(!drag)return;
     document.documentElement.style.setProperty('--astepH',clamp(sh-(e.clientY-sy),28,120)+'px');
   });
-  document.addEventListener('mouseup',()=>{
+  document.addEventListener('pointerup',()=>{
     if(!drag)return;drag=false;
     try{localStorage.setItem('volt.autoH',parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--astepH'))||44)}catch(e){}
   });
@@ -4907,6 +4933,10 @@ window.addEventListener('resize',()=>{syncHeadWidths();updateSelBox()});
     });
   }
   requestAnimationFrame(raf);
+  /* PWA: install-to-homescreen + offline (network-first, see sw.js) */
+  if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0){
+    try{navigator.serviceWorker.register('sw.js')}catch(e){}
+  }
 })();
 </script>
 

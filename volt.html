@@ -47,10 +47,9 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 #side{width:252px;min-width:252px;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:14px}
 #side h3{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;font-weight:600}
 #side h3::before{content:'';display:inline-block;width:3px;height:9px;background:var(--teal);margin-right:6px;border-radius:1px;opacity:.85;vertical-align:-1px}
-.sec-inst h3::before{background:#4ade80}
-.sec-par h3::before{background:var(--amber)}
-.sec-trk h3::before{background:var(--trkcol,var(--teal));box-shadow:0 0 6px var(--trkcol,transparent)}
-.sec-es h3::before{background:#ff9a3c}
+#side .sec-inst h3::before,#side .sec-par h3::before{background:#4ade80}
+#side .sec-trk h3::before{background:var(--trkcol,var(--teal));box-shadow:0 0 6px var(--trkcol,transparent)}
+#side .sec-es h3::before{background:#ff9a3c}
 #side .sec h3{cursor:pointer;user-select:none}
 #side .sec h3::after{content:'\25BE';float:right;color:var(--faint);font-size:9px}
 #side .sec.closed h3::after{content:'\25B8'}
@@ -516,9 +515,7 @@ if(top!==self){try{top.location=self.location}catch(e){document.body.textContent
 let TRACKS=8;
 const MAXTRACKS=16, OFF=-1;
 const NOTENAMES=['C-','C#','D-','D#','E-','F-','F#','G-','G#','A-','A#','B-'];
-/* per-track identity colors — used in the grid header, beat lanes, mixer and Track panel */
-const TRKCOLORS=['#3fe0b4','#6aaeff','#f0b24e','#ff4d9d','#4ade80','#b08cff','#ff9a3c','#5eead4'];
-const trkColor=t=>TRKCOLORS[t%TRKCOLORS.length];
+/* per-effect theme colors for the FX chain rows */
 const FX_COLORS={crush:'#ff9a3c',flanger:'#b08cff',chorus:'#5eead4',phaser:'#ff4d9d'};
 const hex2=n=>n.toString(16).toUpperCase().padStart(2,'0');
 const noteName=n=>n===OFF?'OFF':NOTENAMES[n%12]+Math.floor(n/12);
@@ -1200,7 +1197,7 @@ function genCtCSS(){
   let s='';
   for(let t=0;t<TRACKS;t++){
     s+='#gridwrap[data-ct="'+t+'"] .prow .tcell[data-t="'+t+'"]{background:var(--trkhl);border-left-color:var(--trkhlline)}';
-    s+='#gridwrap[data-ct="'+t+'"] #ghead .tcell[data-t="'+t+'"]{background:var(--raised);box-shadow:inset 0 -2px 0 '+trkColor(t)+'}';
+    s+='#gridwrap[data-ct="'+t+'"] #ghead .tcell[data-t="'+t+'"]{background:var(--raised);box-shadow:inset 0 -2px 0 var(--teal)}';
   }
   ctStyle.textContent=s;
 }
@@ -1252,6 +1249,10 @@ function genColorCSS(){
     s+='.mch[data-t="'+t+'"] .mname{color:hsl('+h+',80%,72%)}';
   });
   colStyle.textContent=s;
+  /* keep the Track panel's accent in sync with the current track's color */
+  const tsc=song&&song.trackset[cursor.t];
+  const secT=document.querySelector('.sec-trk');
+  if(secT&&tsc)secT.style.setProperty('--trkcol',tsc.color!=null?'hsl('+tsc.color+',75%,55%)':'var(--teal)');
 }
 function randomColors(){
   const base=Math.floor(Math.random()*360);
@@ -1275,7 +1276,7 @@ function renderHead(){
     const hint=hk!=null?' (Alt+'+hk+' mute · Alt+Shift+'+hk+' solo)':'';
     h+='<span class="tcell thead'+(t%2?' odd':'')+(trackAudible(t)?'':' hushed')+'" data-t="'+t+'" title="Double-click to rename'+hint+'">'
       +'<span class="tname'+(ts.name?'':' unnamed')+'">'+(ts.name?esc(ts.name):'&#183;&#183;&#183;')+'</span>'
-      +'<span class="thctl"><span class="tno" style="color:'+trkColor(t)+'">'+String(t+1).padStart(2,'0')+'</span>'
+      +'<span class="thctl"><span class="tno">'+String(t+1).padStart(2,'0')+'</span>'
       +'<button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'" title="Mute'+(hk!=null?' (Alt+'+hk+')':'')+'">M</button>'
       +'<button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'" title="Solo'+(hk!=null?' (Alt+Shift+'+hk+')':'')+'">S</button></span></span>';
   }
@@ -1950,7 +1951,7 @@ function trackPanel(){
   const t=cursor.t,ts=song.trackset[t];
   gridwrap.dataset.ct=t;
   const secT=document.querySelector('.sec-trk');
-  if(secT)secT.style.setProperty('--trkcol',trkColor(t));
+  if(secT)secT.style.setProperty('--trkcol',ts.color!=null?'hsl('+ts.color+',75%,55%)':'var(--teal)');
   updateMixerCur();prRenderIfOpen();
   document.getElementById('trkTitle').textContent='Track '+(t+1)+(ts.name?' · '+ts.name:'');
   const el=document.getElementById('trackMix');
@@ -2109,7 +2110,7 @@ function renderMixer(){
     const ts=song.trackset[t];normTs(ts);
     h+='<div class="mch'+(trackAudible(t)?'':' hushed')+(t===cursor.t?' cur':'')+'" data-t="'+t+'">'
       +'<span class="mname" title="Double-click to rename">'+(ts.name?esc(ts.name):'&#183;&#183;&#183;')+'</span>'
-      +'<span class="mno" style="color:'+trkColor(t)+'">'+String(t+1).padStart(2,'0')+'</span>'
+      +'<span class="mno">'+String(t+1).padStart(2,'0')+'</span>'
       +'<div class="mv"><input class="vert" type="range" min="0" max="100" value="'+Math.round(ts.vol*100)+'" data-mvol="1" title="Volume">'
       +'<div class="mmeter"><i></i></div></div>'
       +'<div class="mrow"><span class="l">PN</span><input type="range" min="-100" max="100" value="'+Math.round((ts.pan||0)*100)+'" data-mpan="1" title="Pan (dblclick = center)"></div>'
@@ -3748,7 +3749,7 @@ function renderBeat(){
     const d=laneDefaults(t);
     const ins=song.instruments[d.i];
     const nm=song.trackset[t].name||(beatAuto(t)&&ins?ins.name:'Track '+(t+1));
-    h+='<div class="blane" data-t="'+t+'"><div class="bl"><b title="'+esc(nm)+'" style="color:'+trkColor(t)+'">'+esc(nm)+'</b>'
+    h+='<div class="blane" data-t="'+t+'"><div class="bl"><b title="'+esc(nm)+'">'+esc(nm)+'</b>'
       +'<span class="bnote" data-t="'+t+'" title="Scroll to change the note new steps use">'+noteName(d.n)+'</span></div>';
     for(let r=0;r<pat.rows;r++){
       const c=pat.data[t][r];

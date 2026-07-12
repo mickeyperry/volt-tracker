@@ -1197,7 +1197,7 @@ function genCtCSS(){
   let s='';
   for(let t=0;t<TRACKS;t++){
     s+='#gridwrap[data-ct="'+t+'"] .prow .tcell[data-t="'+t+'"]{background:var(--trkhl);border-left-color:var(--trkhlline)}';
-    s+='#gridwrap[data-ct="'+t+'"] #ghead .tcell[data-t="'+t+'"]{background:var(--raised);box-shadow:inset 0 -2px 0 var(--teal)}';
+    s+='#gridwrap[data-ct="'+t+'"] #ghead .tcell[data-t="'+t+'"]{background:var(--raised)}';
   }
   ctStyle.textContent=s;
 }

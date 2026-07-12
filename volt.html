@@ -111,8 +111,10 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 .btnrow button{padding:3px 8px;font-size:11px}
 .param{display:grid;grid-template-columns:64px 1fr 40px;align-items:center;gap:6px;margin-bottom:4px}
 .param .pn{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
-.param.automated .pn{color:var(--amber)}
+.param.automated .pn{color:var(--amber);cursor:context-menu}
 .param.automated .pn::after{content:' \26A1';font-size:9px}
+@keyframes aflash{0%,60%{box-shadow:0 0 0 2px var(--amber)}100%{box-shadow:none}}
+.alane.flash{animation:aflash 1.3s;border-radius:3px}
 .param .pv{font-family:var(--mono);font-size:11px;color:var(--amber);text-align:right;font-variant-numeric:tabular-nums}
 input[type=range]{-webkit-appearance:none;appearance:none;height:16px;background:transparent;width:100%}
 input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--line);border-radius:2px}
@@ -1660,6 +1662,12 @@ let instClk={i:-1,at:0};
 document.getElementById('instList').addEventListener('click',e=>{
   const r=e.target.closest('.irow');if(!r)return;
   curInst=+r.dataset.i;renderInstList();renderParams();
+  if(e.ctrlKey){ /* ctrl+click = audition the instrument */
+    instClk={i:-1,at:0};
+    const ins=song.instruments[curInst];
+    if(ins)beatPreview(cursor.t,(ins.params&&ins.params.root)?Math.round(ins.params.root):48,curInst);
+    return;
+  }
   const now=performance.now();
   if(instClk.i===curInst&&now-instClk.at<450){
     instClk={i:-1,at:0};
@@ -4311,7 +4319,7 @@ function renderAuto(){
   for(const k of keys.sort()){
     const dot=k.indexOf('.');const tr=+k.slice(0,dot),p=k.slice(dot+1);
     const arr=pat.auto[k];
-    h+='<div class="alane"><div class="al"><b>T'+(tr+1)+' &#183; '+esc(autoLabel(p))+'</b><span><u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
+    h+='<div class="alane" data-k="'+k+'"><div class="al"><b>T'+(tr+1)+' &#183; '+esc(autoLabel(p))+'</b><span><u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
     for(let r=0;r<pat.rows;r++){
       let cls='astep';if(r%4===0)cls+=' b4';if(r%16===0&&r)cls+=' bar';
       const v=arr[r];
@@ -4565,6 +4573,10 @@ function markAuto(){
   });
 }
 document.getElementById('trackMix').addEventListener('contextmenu',e=>{
+  if(e.target.classList&&e.target.classList.contains('pn')){
+    const pk=paramKeyOf(e.target.closest('.param'));
+    if(pk&&autoLabelMenu(e,cursor.t,pk.key))return;
+  }
   let k=e.target.dataset&&e.target.dataset.tk;
   if(!k&&e.target.dataset&&e.target.dataset.teq)k='eq.'+e.target.dataset.teq;
   if(!k&&e.target.dataset&&e.target.dataset.fxp)k='fx'+e.target.dataset.fxi+'.'+e.target.dataset.fxp;
@@ -4579,6 +4591,36 @@ document.getElementById('trackMix').addEventListener('contextmenu',e=>{
 });
 /* instrument params belong to an instrument, not the cursor — automate the track
    that actually PLAYS this instrument (the cursor track only if it does) */
+function showAutoLane(t,p){
+  if(autoPan.hidden)autoToggle();else renderAuto();
+  const lane=autoLanes.querySelector('.alane[data-k="'+t+'.'+p+'"]');
+  if(lane){
+    lane.scrollIntoView({block:'nearest'});
+    lane.classList.add('flash');
+    setTimeout(()=>lane.classList.remove('flash'),1300);
+  }
+}
+/* right-click the ⚡'d label itself → quick menu: show / remove */
+function autoLabelMenu(e,t,key){
+  const pat=song.patterns[curPat];
+  if(!(pat.auto&&pat.auto[t+'.'+key]))return false;
+  e.preventDefault();
+  openCtx(e.clientX,e.clientY,[
+    {label:'👁 Show in Auto panel',f:()=>showAutoLane(t,key)},
+    {label:'✕ Remove '+autoLabel(key)+' automation',f:()=>autoDelete(t,key)}
+  ]);
+  return true;
+}
+function paramKeyOf(wrap){
+  if(!wrap)return null;
+  const inp=wrap.querySelector('input[data-k],input[data-tk],input[data-teq],input[data-fxp]');
+  if(!inp)return null;
+  if(inp.dataset.k)return{scope:'inst',key:inp.dataset.k};
+  if(inp.dataset.tk)return{scope:'track',key:inp.dataset.tk};
+  if(inp.dataset.teq)return{scope:'track',key:'eq.'+inp.dataset.teq};
+  if(inp.dataset.fxp)return{scope:'track',key:'fx'+inp.dataset.fxi+'.'+inp.dataset.fxp};
+  return null;
+}
 function trackForInst(ii){
   const uses=t=>song.patterns.some(p=>p.data[t]&&p.data[t].some(c=>c&&c.i===ii));
   if(uses(cursor.t))return cursor.t;
@@ -4602,6 +4644,14 @@ document.getElementById('params').addEventListener('contextmenu',e=>{
       }
     }
     return;
+  }
+  if(e.target.classList&&e.target.classList.contains('pn')){
+    const pk=paramKeyOf(e.target.closest('.param'));
+    if(pk){
+      const t2=trackForInst(curInst);
+      const key=pk.key==='cutoff'?'cutoff':'p.'+pk.key;
+      if(autoLabelMenu(e,t2,key))return;
+    }
   }
   const k=e.target.dataset&&e.target.dataset.k;
   if(!k)return;

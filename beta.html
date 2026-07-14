@@ -72,6 +72,7 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 #mmeter b{position:absolute;right:0;top:0;bottom:0;width:3px;background:var(--mag);opacity:0}
 #mmeter b.clip{opacity:1}
 #mmDb{font-family:var(--mono);font-size:10px;color:var(--dim);width:40px;text-align:right;font-variant-numeric:tabular-nums}
+#mmGr{font-family:var(--mono);font-size:9px;font-weight:700;font-variant-numeric:tabular-nums}
 
 /* ---- command palette ---- */
 #palWrap{position:fixed;inset:0;background:rgba(4,6,10,.55);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh}
@@ -263,6 +264,21 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 #dragbar{width:5px;cursor:ew-resize;background:transparent;flex:none}
 #dragbar:hover,#dragbar.on{background:var(--teal-dim)}
 
+/* ---- REC: recorder + sample editor ---- */
+#recPan{background:var(--panel);border-top:1px solid var(--line);padding:6px 12px 8px}
+#recBar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+#recBar b{font-size:10px;letter-spacing:.1em;color:var(--mag)}
+#recBar button{font-size:11px;padding:3px 9px}
+#recBar .rsep{width:1px;height:16px;background:var(--line)}
+#recGo.rec{background:var(--muteon);border-color:var(--mag);color:var(--mag);animation:recPulse 1s infinite}
+@keyframes recPulse{50%{box-shadow:0 0 10px 2px rgba(255,77,157,.5)}}
+#recPlay.on{border-color:var(--teal);color:var(--teal)}
+#recTime{font-family:var(--mono);font-size:11px;color:var(--amber);min-width:52px;font-variant-numeric:tabular-nums}
+#recMeter{position:relative;width:64px;height:8px;background:var(--well);border:1px solid var(--line);border-radius:2px;overflow:hidden}
+#recMeter i{position:absolute;left:0;top:0;bottom:0;width:100%;background:linear-gradient(90deg,var(--teal) 0 62%,var(--amber) 62% 85%,var(--mag) 85%);transform:scaleX(0);transform-origin:left}
+#recCv{width:100%;height:110px;display:block;background:var(--well);border:1px solid var(--line);border-radius:3px;cursor:text}
+#recHint{color:var(--faint);font-size:10px;margin-top:4px}
+#recClose{cursor:pointer;color:var(--faint);text-decoration:none;margin-left:auto;padding:0 4px}
 /* ---- mixer ---- */
 #mixer{background:var(--panel);border-top:1px solid var(--line);overflow-x:auto;padding:8px 12px}
 #mixch{display:flex;gap:8px}
@@ -459,6 +475,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
     <button id="rollBtn" title="Piano roll (F6) — FL-style note editing of the current track">Roll</button>
     <button id="autoBtn" title="Automation lanes (F7) — right-click a Cutoff/Volume/Delay/Reverb slider to add one">Auto</button>
     <button id="vaultBtn" title="Vault — your saved ideas &amp; phrases. Ctrl+Shift+G stashes the current selection.">Vault</button>
+    <button id="recBtn" title="Recorder / sample editor (F10) — record the master or an input, edit, drop it back in as an instrument">Rec</button>
     <button id="setBtn" title="Settings — library &amp; projects folders, auto-save">&#9881;</button>
     <label class="fld">Theme <select id="themeSel" title="Color theme — pick for your room lighting"></select></label>
   </div>
@@ -473,6 +490,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <div class="grp" id="mmWrap" title="Master output: teal = healthy, amber = hot, red edge flashes on clipping. Click for the per-channel summary.">
     <div id="mmeter"><i id="mmL" title="Left"></i><i id="mmR" title="Right"></i><b id="mmClip"></b></div>
     <span id="mmDb">-&#8734;</span>
+    <span id="mmGr" title="Safety limiter gain reduction — if this is lit, the limiter is squashing your mix. Back the faders off (or embrace it)." hidden></span>
   </div>
 </div>
 <div id="masterPan" hidden></div>
@@ -542,6 +560,35 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 </div>
 
 <div id="mixer" hidden><div id="mixch"></div></div>
+<div id="recPan" hidden>
+  <div id="recBar">
+    <b>REC</b>
+    <select id="recSrc" title="What to record"><option value="master">&#128266; Master bus</option></select>
+    <button id="recGo" title="Record (recording the master needs the song playing — hit Space)">&#9679;</button>
+    <button id="recPlay" title="Play the selection, or from the cursor">&#9654;</button>
+    <span id="recTime">0.0s</span>
+    <div id="recMeter" title="Live input level — if this moves, your mic works"><i></i></div>
+    <span class="rsep"></span>
+    <button data-rop="crop" title="Keep only the selection">Crop</button>
+    <button data-rop="cut" title="Delete the selection, join the rest">Cut</button>
+    <button data-rop="rev" title="Reverse the selection">Reverse</button>
+    <button data-rop="fadein">Fade&#8599;</button>
+    <button data-rop="fadeout">Fade&#8600;</button>
+    <button data-rop="gaind" title="Selection −3 dB">&#8722;3dB</button>
+    <button data-rop="gainu" title="Selection +3 dB">+3dB</button>
+    <button data-rop="norm" title="Normalize the selection to 0 dB">Norm</button>
+    <button data-rop="mono" title="Mix down to mono (whole take)">Mono</button>
+    <button data-rop="sil" title="Silence the selection">Sil</button>
+    <button data-rop="undo" title="Undo the last edit">Undo</button>
+    <span class="rsep"></span>
+    <button id="recToInst" title="Add the buffer as a new sampler instrument">&#8594; Instrument</button>
+    <button id="recWav" title="Download as WAV">&#11015; WAV</button>
+    <button id="recClear">Clear</button>
+    <u id="recClose" title="Close">&#215;</u>
+  </div>
+  <canvas id="recCv" height="110"></canvas>
+  <div id="recHint">F10 toggles &#183; &#9679; records the master or an input (meter shows the live level) &#183; drag: select &#183; click: cursor &#183; <b>drag the selection out</b> onto the grid (new sample + note) or onto an instrument (asks replace/add) &#183; hovering here: Ctrl+C/X/V copy/cut/paste at the cursor, Del deletes, Ctrl+Z undoes &#183; wheel zooms, dblclick selects all</div>
+</div>
 
 <div id="beat" hidden><div id="beatLanes"></div></div>
 
@@ -657,7 +704,7 @@ function ensureCell(t,r){const d=song.patterns[curPat].data;if(!d[t][r])d[t][r]=
 function pruneCell(t,r){const c=cellAt(t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null)song.patterns[curPat].data[t][r]=null}
 
 /* ================= audio engine ================= */
-let AC=null, master, chans=[], noiseBuf, dlyIn, dlyL, dlyR, rvbIn, masterAn=null, masterAnL=null, masterAnR=null, MCH=null;
+let AC=null, master, chans=[], noiseBuf, dlyIn, dlyL, dlyR, rvbIn, masterAn=null, masterAnL=null, masterAnR=null, MCH=null, masterComp=null;
 function audio(){
   if(AC)return AC;
   AC=new (window.AudioContext||window.webkitAudioContext)();
@@ -673,6 +720,7 @@ function buildGraph(){
      kick+snare don't pump each other — only true peaks get caught */
   const comp=AC.createDynamicsCompressor();
   comp.threshold.value=-3;comp.knee.value=2;comp.ratio.value=12;comp.attack.value=.0015;comp.release.value=.08;
+  masterComp=comp; /* exposed so the GR readout can show how hard the limiter is working */
   /* master insert FX chain sits between the master fader and the safety limiter */
   const mFxIn=AC.createGain(),mFxOut=AC.createGain();
   master.connect(mFxIn);mFxIn.connect(mFxOut);mFxOut.connect(comp);
@@ -931,7 +979,8 @@ function buildFx(ch,list){
 /* automation lane 'fxN.param' → live-tune the Nth effect on that channel */
 function applyFxAuto(tr,p,v,t){
   const m=/^fx(\d+)\.(.+)$/.exec(p);if(!m)return;
-  const ch=chans[tr];if(!ch||!ch._fxLive)return;
+  const ch=tr==='M'?MCH:chans[tr]; /* 'M' = the master insert chain */
+  if(!ch||!ch._fxLive)return;
   const live=ch._fxLive[+m[1]];if(!live)return;
   const ft=FX_TYPES[live.type],d=ft.p[m[2]];
   if(d&&ft.tune)ft.tune(live.refs,m[2],d[0]+(d[1]-d[0])*v,t);
@@ -1239,6 +1288,7 @@ function panic(){
     const t=AC.currentTime;
     stopAllVoices();
     if(typeof pvSrc!=='undefined'&&pvSrc){try{pvSrc.stop()}catch(e){}pvSrc=null;pvIdx=-1}
+    if(typeof REC!=='undefined'&&REC.playSrc){try{REC.playSrc.stop()}catch(e){}REC.playSrc=null;document.getElementById('recPlay').classList.remove('on')}
     if(typeof stopIdeaPreview==='function')stopIdeaPreview();
     chans.forEach(ch=>{if(ch&&ch.duckG){ch.duckG.gain.cancelScheduledValues(t);ch.duckG.gain.setValueAtTime(1,t)}});
   }
@@ -1338,6 +1388,15 @@ function applyBaseAt(t){
       }
     }
   });
+  /* master FX lanes are per-pattern too — snap the chain back to its stored values */
+  if(MCH&&MCH._fxLive&&song.masterFx)for(const fi in MCH._fxLive){
+    const fx=song.masterFx[fi];if(!fx)continue;
+    const ft=FX_TYPES[fx.type];if(!ft||!ft.tune)continue;
+    for(const k in ft.p){
+      const val=fx.p&&fx.p[k]!=null?fx.p[k]:ft.p[k][2];
+      ft.tune(MCH._fxLive[fi].refs,k,val,t);
+    }
+  }
 }
 function schedRow(pi,row,t){
   const pat=song.patterns[pi];
@@ -1349,8 +1408,13 @@ function schedRow(pi,row,t){
   if(pat.auto)for(const k in pat.auto){
     const arr=pat.auto[k];if(!arr)continue;
     const v=arr[row];if(v==null)continue;
-    const dot=k.indexOf('.');const tr2=+k.slice(0,dot),p2=k.slice(dot+1);
-    if(tr2>=TRACKS)continue;
+    const dot=k.indexOf('.');const p2=k.slice(dot+1);
+    if(k.indexOf('M.')===0){ /* master FX lanes */
+      if(/^fx\d+\./.test(p2))(autoPost=autoPost||[]).push(['M',p2,v]);
+      continue;
+    }
+    const tr2=+k.slice(0,dot);
+    if(isNaN(tr2)||tr2>=TRACKS)continue;
     const ts2=song.trackset[tr2];
     if(ts2.mute||(soloed&&!ts2.solo))continue;
     if(p2.indexOf('p.')===0){(autoPre=autoPre||{});(autoPre[tr2]=autoPre[tr2]||{})[p2.slice(2)]=v}
@@ -1399,6 +1463,7 @@ function schedRow(pi,row,t){
     }
   }
   if(autoPost)for(const[tr,p,v]of autoPost){
+    if(tr==='M'){applyFxAuto('M',p,v,t);continue}
     const ap=AUTO_PARAMS[p];
     if(ap)ap.apply(tr,v,t);
     else if(p.indexOf('fx')===0)applyFxAuto(tr,p,v,t);
@@ -1522,7 +1587,32 @@ function raf(){
     const clipEl=document.getElementById('mmClip');
     if(pk>=.985){clipEl.classList.add('clip');mmClipT=performance.now()}
     else if(mmClipT&&performance.now()-mmClipT>1200){clipEl.classList.remove('clip');mmClipT=0}
-    if(!(rafN=(rafN+1)%8))document.getElementById('mmDb').textContent=db<=-59?'-∞':db.toFixed(1);
+    if(!(rafN=(rafN+1)%8)){
+      document.getElementById('mmDb').textContent=db<=-59?'-∞':db.toFixed(1);
+      /* limiter gain reduction: the invisible part of the loudness picture */
+      const grEl=document.getElementById('mmGr');
+      const gr=masterComp?masterComp.reduction:0;
+      if(gr<-.3){
+        grEl.hidden=false;
+        grEl.textContent='GR '+(-gr).toFixed(1);
+        grEl.style.color=gr<-6?'var(--mag)':'var(--amber)';
+      }else grEl.hidden=true;
+    }
+    if(!recPan.hidden){
+      if(REC.recording&&!(rafN%4))
+        document.getElementById('recTime').textContent=(AC.currentTime-REC.t0).toFixed(1)+'s ●';
+      /* live input meter: recording chunks feed it, otherwise the monitor stream */
+      let rpk=0;
+      if(REC.recording)rpk=REC.pk||0;
+      else if(REC.monAn){
+        REC.monAn.getByteTimeDomainData(meterBuf);
+        for(let i=0;i<512;i+=4){const d2=Math.abs(meterBuf[i]-128);if(d2>rpk)rpk=d2}
+        rpk/=128;
+      }
+      REC.mpk=Math.max(rpk,(REC.mpk||0)*.9);
+      const rm=document.getElementById('recMeter');
+      if(rm)rm.firstElementChild.style.transform='scaleX('+clamp(REC.mpk,0,1).toFixed(3)+')';
+    }
   }
   requestAnimationFrame(raf);
 }
@@ -1546,12 +1636,12 @@ function genCtCSS(){
 function cellHTML(t,r){
   const c=cellAt(t,r)||{};
   const isCur=(cursor.t===t&&cursor.r===r);
-  const sp=(ci,txt,set,extra)=>{
+  const sp=(ci,txt,set,extra,attr)=>{
     let cls=set?'set':'';
     if(extra)cls+=' '+extra;
     if(inSel(t,ci,r))cls+=' ssel';
     if(isCur&&cursor.c===ci)cls+=' cur';
-    return '<i data-c="'+ci+'" class="'+cls+'">'+txt+'</i>';
+    return '<i data-c="'+ci+'"'+(attr||'')+' class="'+cls+'">'+txt+'</i>';
   };
   let nT='···',nSet=false,nOff='';
   if(c.n===OFF){nT='OFF';nSet=true;nOff='off'}
@@ -1559,8 +1649,10 @@ function cellHTML(t,r){
   const i2=c.i!=null?hex2(c.i):'··';
   const v2=c.v!=null?hex2(c.v):'··';
   const fx=c.c?c.c+hex2(c.x||0):'···';
+  /* Shift+G group ribbon under the note, hue per group */
+  const ga=c.g!=null?' style="box-shadow:inset 0 -2px 0 hsl('+(c.g*67%360)+',75%,60%)"':'';
   return '<span class="tcell'+(t%2?' odd':'')+'" data-t="'+t+'">'
-    +sp(0,nT,nSet,nOff)+' '
+    +sp(0,nT,nSet,nOff,ga)+' '
     +sp(1,i2[0],c.i!=null)+sp(2,i2[1],c.i!=null)+' '
     +sp(3,v2[0],c.v!=null)+sp(4,v2[1],c.v!=null)+' '
     +sp(5,fx[0],!!c.c)+sp(6,fx[1],!!c.c)+sp(7,fx[2],!!c.c)
@@ -1766,6 +1858,7 @@ function remapKeysUp(obj,pos){ /* shift t.param keys for tracks >= pos one to th
   const out={};
   for(const k in obj){
     const dot=k.indexOf('.');const tr=+k.slice(0,dot);
+    if(isNaN(tr)){out[k]=obj[k];continue} /* 'M.' master lanes stay put */
     out[(tr>=pos?tr+1:tr)+'.'+k.slice(dot+1)]=obj[k];
   }
   return out;
@@ -1820,8 +1913,9 @@ function moveTrack(a,b){
     if(p.auto){
       const na={};
       for(const k in p.auto){
-        const dot=k.indexOf('.');
-        na[remap(+k.slice(0,dot))+'.'+k.slice(dot+1)]=p.auto[k];
+        const dot=k.indexOf('.');const tr=+k.slice(0,dot);
+        if(isNaN(tr)){na[k]=p.auto[k];continue}
+        na[remap(tr)+'.'+k.slice(dot+1)]=p.auto[k];
       }
       p.auto=na;
     }
@@ -1857,8 +1951,8 @@ ghead.addEventListener('dragover',e=>{
     if(cell!==dropCellEl){clearDropRow();cell.classList.add('dropCell');dropCellEl=cell}
     return;
   }
-  /* dragging a Vault idea onto the + button = new track with the idea in it */
-  if(typeof vaultDrag!=='undefined'&&vaultDrag&&(add||cell)){e.preventDefault();
+  /* dragging a Vault idea (or a recorder selection) onto the + button = new track with it */
+  if(((typeof vaultDrag!=='undefined'&&vaultDrag)||(typeof recDrag!=='undefined'&&recDrag))&&(add||cell)){e.preventDefault();
     const tgt=add||cell;
     if(tgt!==dropCellEl){clearDropRow();tgt.classList.add('dropCell');dropCellEl=tgt}
   }
@@ -1871,6 +1965,29 @@ ghead.addEventListener('drop',e=>{
     if(!cell)return;
     e.preventDefault();
     moveTrack(from,+cell.dataset.t);
+    return;
+  }
+  if(typeof recDrag!=='undefined'&&recDrag){ /* recorder selection → its own new track (or the top of one) */
+    e.preventDefault();
+    const rd=recDrag;recDrag=null;
+    const add=e.target.closest('.thAdd'),cell=e.target.closest('.thead');
+    if(!add&&!cell)return;
+    (async()=>{
+      let t;
+      if(add){
+        if(TRACKS>=MAXTRACKS){status('max '+MAXTRACKS+' tracks');return}
+        await setTracks(TRACKS+1);
+        t=TRACKS-1;
+      }else t=+cell.dataset.t;
+      const ins=recMakeInst(rd.fa,rd.fb);
+      song.instruments.push(ins);
+      const ci=song.instruments.length-1;
+      if(add)song.trackset[t].name=ins.name;
+      const c2=ensureCell(t,0);c2.n=48;c2.i=ci;
+      curInst=ci;cursor.t=t;cursor.r=0;
+      renderGrid();renderInstList();renderParams();saveSoon();
+      status('“'+ins.name+'” '+(add?'landed on its own new track '+(t+1):'dropped at the top of track '+(t+1))+' — C-4 note written');
+    })();
     return;
   }
   if(typeof vaultDrag!=='undefined'&&vaultDrag){
@@ -2020,6 +2137,7 @@ async function deleteTrack(t){
       const na={};
       for(const k in p.auto){
         const dot=k.indexOf('.');const tr=+k.slice(0,dot),pp=k.slice(dot+1);
+        if(isNaN(tr)){na[k]=p.auto[k];continue} /* master lanes are track-agnostic */
         if(tr===t)continue;
         na[(tr>t?tr-1:tr)+'.'+pp]=p.auto[k];
       }
@@ -2291,9 +2409,9 @@ function estBpm(buf){
 let dropCellEl=null;
 function clearDropRow(){if(dropCellEl){dropCellEl.classList.remove('dropCell');dropCellEl=null}}
 grows.addEventListener('dragover',e=>{
-  if(instDrag==null&&!(typeof vaultDrag!=='undefined'&&vaultDrag))return;
+  if(instDrag==null&&!(typeof vaultDrag!=='undefined'&&vaultDrag)&&!(typeof recDrag!=='undefined'&&recDrag))return;
   e.preventDefault();
-  /* light the exact slot (track+row) where the slices / idea will land */
+  /* light the exact slot (track+row) where the slices / idea / recording will land */
   const cell=e.target.closest('.tcell');
   if(cell!==dropCellEl){clearDropRow();if(cell){cell.classList.add('dropCell');dropCellEl=cell}}
 });
@@ -2301,6 +2419,20 @@ grows.addEventListener('dragleave',e=>{if(e.target===grows)clearDropRow()});
 document.addEventListener('dragend',clearDropRow);
 grows.addEventListener('drop',e=>{
   clearDropRow();
+  if(typeof recDrag!=='undefined'&&recDrag){ /* a recorder selection lands as a fresh sample + note */
+    e.preventDefault();e.stopPropagation();
+    const rd=recDrag;recDrag=null;
+    const cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
+    const t=cell?+cell.dataset.t:cursor.t,r=row?+row.dataset.r:0;
+    const ins=recMakeInst(rd.fa,rd.fb);
+    song.instruments.push(ins);
+    const ci=song.instruments.length-1;
+    const c2=ensureCell(t,r);c2.n=48;c2.i=ci;
+    curInst=ci;cursor.t=t;cursor.r=r;
+    renderGrid();renderInstList();renderParams();saveSoon();
+    status('“'+ins.name+'” dropped — C-4 note at track '+(t+1)+', row '+r);
+    return;
+  }
   if(typeof vaultDrag!=='undefined'&&vaultDrag){ /* a Vault idea lands where you drop it */
     e.preventDefault();e.stopPropagation();
     const vd=vaultDrag;vaultDrag=null;
@@ -3441,6 +3573,416 @@ async function vaultAutoSave(){
   }catch(e){}
   vaultASbusy=false;
 }
+
+/* ================= REC: record the master (or an input) + Edison-style sample editor ================= */
+const recPan=document.getElementById('recPan'),recCv=document.getElementById('recCv');
+const REC={buf:null,sel:null,cur:null,clip:null,z:1,o:0,undo:[],chunks:null,recording:false,node:null,input:null,sink:null,micStream:null,monStream:null,monAn:null,pk:0,mpk:0,t0:0,playSrc:null,drag:null,pendClick:null,dragOut:false};
+function recToggle(){
+  recPan.hidden=!recPan.hidden;
+  document.getElementById('recBtn').classList.toggle('on',!recPan.hidden);
+  if(!recPan.hidden){audio();recFillSrc();drawRec();recMonitor()}
+  else recMonStop();
+}
+document.getElementById('recBtn').onclick=recToggle;
+document.getElementById('recClose').onclick=recToggle;
+/* live input monitor: as soon as a mic source is picked, its level shows on the meter */
+async function recMonitor(){
+  recMonStop();
+  const src=document.getElementById('recSrc').value;
+  if(src==='master'||recPan.hidden||REC.recording)return;
+  try{
+    audio();
+    const stream=await navigator.mediaDevices.getUserMedia({audio:src?{deviceId:{ideal:src}}:true});
+    REC.monStream=stream;
+    const ms=AC.createMediaStreamSource(stream);
+    const an=AC.createAnalyser();an.fftSize=512;
+    ms.connect(an);
+    REC.monAn=an;
+    recFillSrc();
+  }catch(e){}
+}
+function recMonStop(){
+  if(REC.monStream){REC.monStream.getTracks().forEach(t=>t.stop());REC.monStream=null}
+  REC.monAn=null;REC.mpk=0;
+}
+document.getElementById('recSrc').addEventListener('change',recMonitor);
+async function recFillSrc(){
+  const sel=document.getElementById('recSrc'),cur=sel.value;
+  let h='<option value="master">&#128266; Master bus</option>';
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    devs.filter(d=>d.kind==='audioinput').forEach((d,i)=>{
+      h+='<option value="'+esc(d.deviceId)+'">&#127908; '+esc(d.label||('Input '+(i+1)))+'</option>';
+    });
+  }catch(e){}
+  sel.innerHTML=h;
+  if([...sel.options].some(o=>o.value===cur))sel.value=cur;
+}
+async function recStart(){
+  if(REC.recording){recStop();return}
+  audio();if(AC.state==='suspended')AC.resume();
+  recMonStop(); /* the recording stream takes over from the monitor */
+  const src=document.getElementById('recSrc').value;
+  let input;
+  try{
+    if(src==='master')input=masterComp;
+    else{
+      const base={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
+      let stream;
+      try{
+        stream=await navigator.mediaDevices.getUserMedia({audio:src?Object.assign({deviceId:{exact:src}},base):base});
+      }catch(err1){
+        /* device ids are blank/stale until the first permission grant — fall back to the default input */
+        if(err1.name==='OverconstrainedError'||err1.name==='ConstraintNotSatisfiedError'||err1.name==='NotFoundError'){
+          stream=await navigator.mediaDevices.getUserMedia({audio:base});
+          status('that exact input wasn’t available — recording the default microphone (the list is refreshed now)');
+        }else throw err1;
+      }
+      REC.micStream=stream;
+      input=AC.createMediaStreamSource(stream);
+      recFillSrc(); /* permission granted → real device ids + labels appear */
+    }
+  }catch(err){status('cannot open that input: '+(err.name==='NotAllowedError'?'microphone permission denied':err.message));return}
+  const node=AC.createScriptProcessor(4096,2,2);
+  REC.chunks=[];REC.recording=true;REC.t0=AC.currentTime;
+  node.onaudioprocess=e=>{
+    if(!REC.recording)return;
+    const c0=e.inputBuffer.getChannelData(0);
+    let pk=0;for(let i=0;i<c0.length;i+=8){const v=Math.abs(c0[i]);if(v>pk)pk=v}
+    REC.pk=pk; /* feeds the live meter */
+    REC.chunks.push([c0.slice(),e.inputBuffer.getChannelData(1).slice()]);
+    if(REC.chunks.length*4096>AC.sampleRate*300){recStop();status('recording capped at 5 minutes')}
+  };
+  const sink=AC.createGain();sink.gain.value=0;
+  input.connect(node);node.connect(sink);sink.connect(AC.destination);
+  REC.node=node;REC.input=input;REC.sink=sink;
+  document.getElementById('recGo').classList.add('rec');
+  status(src==='master'?'recording the master bus — play something (Space), ● again to stop':'recording input — ● again to stop');
+}
+function recStop(){
+  if(!REC.recording)return;
+  REC.recording=false;
+  try{REC.input.disconnect(REC.node)}catch(e){}
+  try{REC.node.disconnect()}catch(e){}
+  try{REC.sink.disconnect()}catch(e){}
+  if(REC.micStream){REC.micStream.getTracks().forEach(t=>t.stop());REC.micStream=null}
+  document.getElementById('recGo').classList.remove('rec');
+  REC.pk=0;recMonitor(); /* back to monitoring the picked input */
+  const chunks=REC.chunks;REC.chunks=null;
+  const n=(chunks||[]).length*4096;
+  if(!n){status('nothing recorded');return}
+  const buf=AC.createBuffer(2,n,AC.sampleRate);
+  for(let c=0;c<2;c++){
+    const d=buf.getChannelData(c);let o=0;
+    for(const ch of chunks){d.set(ch[c],o);o+=4096}
+  }
+  recSetBuf(buf,true);
+  status('recorded '+buf.duration.toFixed(2)+'s — select with the mouse, then edit');
+}
+document.getElementById('recGo').onclick=recStart;
+function recSetBuf(buf,fresh){
+  if(REC.buf&&!fresh){REC.undo.push(REC.buf);if(REC.undo.length>12)REC.undo.shift()}
+  if(fresh)REC.undo=[];
+  REC.buf=buf;REC.sel=null;REC.cur=null;REC.z=1;REC.o=0;
+  drawRec();
+  document.getElementById('recTime').textContent=buf?buf.duration.toFixed(2)+'s':'0.0s';
+}
+function recSelRange(){ /* ordered selection as fractions, whole buffer when none */
+  if(!REC.sel)return[0,1];
+  return[Math.min(REC.sel.a,REC.sel.b),Math.max(REC.sel.a,REC.sel.b)];
+}
+function recView(){const z=REC.z||1;return{z,o:clamp(REC.o||0,0,1-1/z)}}
+function recFrac(e){
+  const r=recCv.getBoundingClientRect(),v=recView();
+  return clamp(v.o+((e.clientX-r.left)/r.width)/v.z,0,1);
+}
+function drawRec(){
+  const w=recCv.clientWidth||800;if(recCv.width!==w)recCv.width=w;
+  const h=recCv.height,ctx=recCv.getContext('2d');
+  ctx.fillStyle='#0a0e16';ctx.fillRect(0,0,w,h);
+  if(!REC.buf){
+    ctx.fillStyle='#3a4358';ctx.font='11px monospace';
+    ctx.fillText('nothing recorded yet — pick a source and hit ●  (master bus records whatever plays)',12,h/2+4);
+    return;
+  }
+  const{z,o}=recView();REC.o=o;
+  const buf=REC.buf,n=buf.length;
+  const d0=buf.getChannelData(0),d1=buf.numberOfChannels>1?buf.getChannelData(1):d0;
+  /* selection shading first */
+  const[fa,fb]=recSelRange();
+  const fx=f=>(f-o)*z*w;
+  if(REC.sel){
+    ctx.fillStyle='rgba(63,224,180,.14)';
+    const a=Math.max(0,fx(fa)),b=Math.min(w,fx(fb));
+    if(b>a)ctx.fillRect(a,0,b-a,h);
+  }
+  ctx.fillStyle='#2b8f76';
+  const spp=n/(z*w); /* samples per pixel */
+  for(let x=0;x<w;x++){
+    const s0=Math.floor((o+x/(z*w))*n);if(s0>=n)break;
+    const s1=Math.min(n,Math.ceil(s0+spp));
+    let mn=1,mx=-1;
+    const stride=Math.max(1,Math.floor((s1-s0)/60));
+    for(let i=s0;i<s1;i+=stride){
+      const v=(d0[i]+d1[i])*.5;
+      if(v<mn)mn=v;if(v>mx)mx=v;
+    }
+    ctx.fillRect(x,h/2-mx*h/2*.92,1,Math.max(1,(mx-mn)*h/2*.92));
+  }
+  ctx.fillStyle='rgba(255,255,255,.12)';ctx.fillRect(0,h/2,w,1);
+  if(REC.sel){
+    ctx.fillStyle='#3fe0b4';ctx.fillRect(fx(fa)-1,0,2,h);
+    ctx.fillRect(fx(fb)-1,0,2,h);
+  }
+  if(REC.cur!=null&&!REC.sel){ /* paste/play cursor */
+    ctx.fillStyle='#f0b24e';ctx.fillRect(fx(REC.cur)-1,0,2,h);
+  }
+  const bd=buf.duration;
+  document.getElementById('recTime').textContent=REC.sel
+    ?((fb-fa)*bd).toFixed(2)+'s / '+bd.toFixed(2)+'s'
+    :bd.toFixed(2)+'s'+(z>1?' · '+(z>=10?Math.round(z):z.toFixed(1))+'×':'');
+}
+recCv.addEventListener('mousedown',e=>{
+  if(!REC.buf||e.button!==0)return;
+  const f=recFrac(e);
+  const[a,b]=recSelRange();
+  if(REC.sel&&f>=a&&f<=b){ /* pressing inside the selection: may become a drag-OUT to the session */
+    recCv.draggable=true;
+    REC.pendClick=f;
+    return;
+  }
+  recCv.draggable=false;
+  e.preventDefault();
+  REC.drag=f;
+  REC.cur=f;
+  REC.sel={a:f,b:f};
+  drawRec();
+});
+document.addEventListener('mousemove',e=>{
+  if(REC.drag==null)return;
+  REC.sel={a:REC.drag,b:recFrac(e)};
+  drawRec();
+});
+document.addEventListener('mouseup',e=>{
+  if(REC.pendClick!=null){ /* pressed inside the selection but never dragged out → place the cursor */
+    if(!REC.dragOut){REC.cur=REC.pendClick;REC.sel=null;drawRec()}
+    REC.pendClick=null;REC.dragOut=false;recCv.draggable=false;
+  }
+  if(REC.drag==null)return;
+  REC.drag=null;
+  if(REC.sel&&Math.abs(REC.sel.a-REC.sel.b)<.0005){REC.sel=null;drawRec()} /* a click = just the cursor */
+});
+/* drag the selection out of the recorder — onto the grid or an instrument row */
+let recDrag=null;
+recCv.addEventListener('dragstart',e=>{
+  if(!REC.buf||!REC.sel){e.preventDefault();return}
+  REC.dragOut=true;
+  const[fa,fb]=recSelRange();
+  recDrag={fa,fb};
+  e.dataTransfer.effectAllowed='copy';
+  e.dataTransfer.setData('text/plain','volt-rec');
+});
+document.addEventListener('dragend',()=>{recDrag=null;recCv.draggable=false});
+function recMakeInst(fa,fb){
+  const buf=REC.buf,n=buf.length;
+  const a=Math.floor(fa*n),b=Math.max(a+1,Math.ceil(fb*n));
+  const nb=AC.createBuffer(buf.numberOfChannels,b-a,buf.sampleRate);
+  for(let c=0;c<buf.numberOfChannels;c++)nb.getChannelData(c).set(buf.getChannelData(c).subarray(a,b));
+  const name='rec '+String(song.instruments.length).padStart(2,'0');
+  const ins=mkInst('sampler',name);
+  ins.sampleB64=abToB64(bufToWav(nb,0));
+  ins.sampleName=name+'.wav';
+  ins.buffer=nb;
+  return ins;
+}
+instListEl.addEventListener('dragover',e=>{
+  if(!recDrag)return;
+  e.preventDefault();
+  const r=e.target.closest('.irow');
+  if(r!==dropRowEl){clearDropHl();if(r){r.classList.add('drophl');dropRowEl=r}}
+});
+instListEl.addEventListener('drop',async e=>{
+  if(!recDrag)return;
+  e.preventDefault();e.stopPropagation();
+  const rd=recDrag;recDrag=null;
+  const rowEl=e.target.closest('.irow');clearDropHl();
+  const ins=recMakeInst(rd.fa,rd.fb);
+  if(rowEl){
+    const idx=+rowEl.dataset.i,cur=song.instruments[idx];
+    const pick=await askDialog('Drop the recording on '+hex2(idx)+' “'+cur.name+'”\n\nReplace it (pattern notes keep the slot), or add as a new instrument?',[
+      {label:'Replace',value:'rep',cls:'primary'},{label:'Add new',value:'add'},{label:'Cancel',value:''}
+    ]);
+    if(!pick)return;
+    if(pick==='rep'){ins.name=cur.name;song.instruments[idx]=ins;curInst=idx}
+    else{song.instruments.push(ins);curInst=song.instruments.length-1}
+  }else{song.instruments.push(ins);curInst=song.instruments.length-1}
+  renderInstList();renderParams();saveSoon();
+  status('recording → instrument '+hex2(curInst)+' “'+song.instruments[curInst].name+'”');
+});
+/* recorder clipboard: Ctrl+C/X/V while hovering the panel, paste at the cursor */
+function recCopy(cut){
+  if(!REC.buf){status('nothing to copy');return}
+  const buf=REC.buf,n=buf.length;
+  const[fa,fb]=recSelRange();
+  const a=Math.floor(fa*n),b=Math.max(a+1,Math.ceil(fb*n));
+  REC.clip={sr:buf.sampleRate,ch:[]};
+  for(let c=0;c<buf.numberOfChannels;c++)REC.clip.ch.push(buf.getChannelData(c).slice(a,b));
+  if(cut&&REC.sel){const cur=fa;recOp('cut');REC.cur=cur;drawRec();status('cut '+((b-a)/buf.sampleRate).toFixed(2)+'s — Ctrl+V pastes at the cursor')}
+  else status('copied '+((b-a)/buf.sampleRate).toFixed(2)+'s — click to place the cursor, Ctrl+V pastes there');
+}
+function recPaste(){
+  if(!REC.clip){status('recorder clipboard is empty — Ctrl+C a selection first');return}
+  const clip2=REC.clip;
+  if(!REC.buf){
+    const nb=AC.createBuffer(Math.max(1,clip2.ch.length),clip2.ch[0].length,clip2.sr);
+    for(let c=0;c<nb.numberOfChannels;c++)nb.getChannelData(c).set(clip2.ch[Math.min(c,clip2.ch.length-1)]);
+    recSetBuf(nb,true);status('pasted into the empty recorder');return;
+  }
+  const buf=REC.buf,n=buf.length,nc=buf.numberOfChannels,sr=buf.sampleRate;
+  let a,b;
+  if(REC.sel){const[fa,fb]=recSelRange();a=Math.floor(fa*n);b=Math.ceil(fb*n)} /* replace the selection */
+  else{a=b=Math.floor(clamp(REC.cur!=null?REC.cur:1,0,1)*n)}                   /* insert at the cursor */
+  const cl=clip2.ch[0].length;
+  const out=AC.createBuffer(nc,n-(b-a)+cl,sr);
+  for(let c=0;c<nc;c++){
+    const d=out.getChannelData(c),s=buf.getChannelData(c);
+    d.set(s.subarray(0,a),0);
+    d.set(clip2.ch[Math.min(c,clip2.ch.length-1)],a);
+    d.set(s.subarray(b),a+cl);
+  }
+  const curAfter=(a+cl)/out.length;
+  recSetBuf(out);
+  REC.cur=curAfter;drawRec();
+  status('pasted '+(cl/sr).toFixed(2)+'s — cursor sits right after it');
+}
+recCv.addEventListener('dblclick',()=>{
+  if(!REC.buf)return;
+  REC.sel=REC.sel?null:{a:0,b:1};
+  drawRec();
+});
+recCv.addEventListener('wheel',e=>{
+  if(!REC.buf)return;
+  e.preventDefault();
+  const r=recCv.getBoundingClientRect(),xN=(e.clientX-r.left)/r.width;
+  let{z,o}=recView();
+  if(e.shiftKey)o+=(e.deltaY>0?1:-1)*.2/z;
+  else{const f=o+xN/z;z=clamp(z*(e.deltaY<0?1.25:.8),1,256);o=f-xN/z}
+  REC.z=z;REC.o=clamp(o,0,1-1/z);
+  drawRec();
+},{passive:false});
+function recPlayToggle(){
+  if(!REC.buf)return;
+  audio();if(AC.state==='suspended')AC.resume();
+  const btn=document.getElementById('recPlay');
+  if(REC.playSrc){try{REC.playSrc.stop()}catch(e){}REC.playSrc=null;btn.classList.remove('on');return}
+  const s=AC.createBufferSource();s.buffer=REC.buf;
+  const g=AC.createGain();g.gain.value=.9;s.connect(g);g.connect(master);
+  /* selection wins; otherwise play from the cursor to the end; otherwise everything */
+  let fa,fb;
+  if(REC.sel)[fa,fb]=recSelRange();
+  else if(REC.cur!=null){fa=REC.cur;fb=1}
+  else{fa=0;fb=1}
+  const bd=REC.buf.duration;
+  s.start(AC.currentTime,fa*bd,Math.max(.01,(fb-fa)*bd));
+  s.onended=()=>{if(REC.playSrc===s){REC.playSrc=null;btn.classList.remove('on')}};
+  REC.playSrc=s;btn.classList.add('on');
+}
+document.getElementById('recPlay').onclick=recPlayToggle;
+function recClone(){
+  const b=REC.buf,nb=AC.createBuffer(b.numberOfChannels,b.length,b.sampleRate);
+  for(let c=0;c<b.numberOfChannels;c++)nb.getChannelData(c).set(b.getChannelData(c));
+  return nb;
+}
+function recOp(op){
+  if(op==='undo'){
+    if(!REC.undo.length){status('nothing to undo here');return}
+    REC.buf=REC.undo.pop();REC.sel=null;drawRec();
+    document.getElementById('recTime').textContent=REC.buf.duration.toFixed(2)+'s';
+    status('edit undone');return;
+  }
+  if(!REC.buf){status('record something first');return}
+  const buf=REC.buf,n=buf.length,nc=buf.numberOfChannels,sr=buf.sampleRate;
+  const[fa,fb]=recSelRange();
+  const a=Math.floor(fa*n),b=Math.max(a+1,Math.ceil(fb*n));
+  let out=null,msg='';
+  if(op==='crop'){
+    out=AC.createBuffer(nc,b-a,sr);
+    for(let c=0;c<nc;c++)out.getChannelData(c).set(buf.getChannelData(c).subarray(a,b));
+    msg='cropped to '+out.duration.toFixed(2)+'s';
+  }else if(op==='cut'){
+    if(b-a>=n){status('that would cut everything — use Clear');return}
+    out=AC.createBuffer(nc,n-(b-a),sr);
+    for(let c=0;c<nc;c++){
+      const d=out.getChannelData(c),s0=buf.getChannelData(c);
+      d.set(s0.subarray(0,a),0);d.set(s0.subarray(b),a);
+    }
+    msg='cut '+((b-a)/sr).toFixed(2)+'s';
+  }else if(op==='mono'){
+    if(nc===1){status('already mono');return}
+    out=AC.createBuffer(1,n,sr);
+    const d=out.getChannelData(0),l=buf.getChannelData(0),r2=buf.getChannelData(1);
+    for(let i=0;i<n;i++)d[i]=(l[i]+r2[i])*.5;
+    msg='mixed down to mono';
+  }else{
+    out=recClone();
+    for(let c=0;c<nc;c++){
+      const d=out.getChannelData(c),src=buf.getChannelData(c);
+      if(op==='rev'){for(let i=a;i<b;i++)d[i]=src[b-1-(i-a)];msg='reversed'}
+      else if(op==='fadein'){for(let i=a;i<b;i++)d[i]*=(i-a)/(b-a);msg='faded in'}
+      else if(op==='fadeout'){for(let i=a;i<b;i++)d[i]*=1-(i-a)/(b-a);msg='faded out'}
+      else if(op==='gainu'||op==='gaind'){const m=Math.pow(10,(op==='gainu'?3:-3)/20);for(let i=a;i<b;i++)d[i]=clamp(d[i]*m,-1,1);msg=(op==='gainu'?'+':'−')+'3 dB'}
+      else if(op==='sil'){for(let i=a;i<b;i++)d[i]=0;msg='silenced'}
+      else if(op==='norm'){
+        if(c===0){let pk=0;for(let cc=0;cc<nc;cc++){const s2=buf.getChannelData(cc);for(let i=a;i<b;i++){const v=Math.abs(s2[i]);if(v>pk)pk=v}}
+          out._nm=pk>.0001?1/pk:1;msg=pk>.0001?'normalized (was '+(20*Math.log10(pk)).toFixed(1)+' dB)':'silence — untouched'}
+        const m=out._nm;for(let i=a;i<b;i++)d[i]=clamp(src[i]*m,-1,1);
+      }
+    }
+    delete out._nm;
+  }
+  const keepSel=REC.sel&&op!=='crop'&&op!=='cut'?{...REC.sel}:null;
+  recSetBuf(out);
+  REC.sel=keepSel;drawRec();
+  status('REC: '+msg+(REC.sel?' (selection kept)':''));
+}
+document.getElementById('recBar').addEventListener('click',e=>{
+  const op=e.target.dataset.rop;
+  if(op)recOp(op);
+});
+document.getElementById('recToInst').onclick=()=>{
+  if(!REC.buf){status('record something first');return}
+  const[fa,fb]=recSelRange();
+  let buf=REC.buf;
+  if(REC.sel){ /* only the selection becomes the instrument */
+    const n=buf.length,a=Math.floor(fa*n),b=Math.max(a+1,Math.ceil(fb*n));
+    const nb=AC.createBuffer(buf.numberOfChannels,b-a,buf.sampleRate);
+    for(let c=0;c<buf.numberOfChannels;c++)nb.getChannelData(c).set(buf.getChannelData(c).subarray(a,b));
+    buf=nb;
+  }
+  const name='rec '+String(song.instruments.length).padStart(2,'0');
+  const ins=mkInst('sampler',name);
+  ins.sampleB64=abToB64(bufToWav(buf,0));
+  ins.sampleName=name+'.wav';
+  ins.buffer=buf;
+  song.instruments.push(ins);curInst=song.instruments.length-1;
+  renderInstList();renderParams();saveSoon();
+  status('added '+hex2(curInst)+' “'+name+'” — trim, slice or Norm it in the sampler');
+};
+document.getElementById('recWav').onclick=()=>{
+  if(!REC.buf){status('record something first');return}
+  const blob=new Blob([bufToWav(REC.buf,0)],{type:'audio/wav'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(song.name||'volt')+'-rec.wav';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  status('WAV downloaded');
+};
+document.getElementById('recClear').onclick=()=>{
+  if(REC.playSrc){try{REC.playSrc.stop()}catch(e){}REC.playSrc=null}
+  recSetBuf(null,true);
+  status('recorder cleared');
+};
 /* non-blocking inline rename: prompt() would freeze the sequencer's setInterval, killing playback */
 function inlineEdit(span,val,commit){
   const inp=document.createElement('input');
@@ -4067,7 +4609,7 @@ async function renderWav(){
   const btn=document.getElementById('renderBtn');btn.disabled=true;const bt=btn.innerHTML;btn.textContent='Rendering…';
   stop();if(AC)stopAllVoices();
   audio();
-  const S={AC,master,chans,noiseBuf,dlyIn,dlyL,dlyR,rvbIn,masterAn,masterAnL,masterAnR,MCH};
+  const S={AC,master,chans,noiseBuf,dlyIn,dlyL,dlyR,rvbIn,masterAn,masterAnL,masterAnR,MCH,masterComp};
   try{
     const order=song.order.length?song.order:[curPat];
     const rd=60/song.bpm/song.lpb;
@@ -4097,7 +4639,7 @@ async function renderWav(){
   }catch(err){status('render failed: '+err.message)}
   finally{
     AC=S.AC;master=S.master;chans=S.chans;noiseBuf=S.noiseBuf;
-    dlyIn=S.dlyIn;dlyL=S.dlyL;dlyR=S.dlyR;rvbIn=S.rvbIn;masterAn=S.masterAn;masterAnL=S.masterAnL;masterAnR=S.masterAnR;MCH=S.MCH;
+    dlyIn=S.dlyIn;dlyL=S.dlyL;dlyR=S.dlyR;rvbIn=S.rvbIn;masterAn=S.masterAn;masterAnL=S.masterAnL;masterAnR=S.masterAnR;MCH=S.MCH;masterComp=S.masterComp;
     chans.forEach(ch=>{ch.voice=null;ch.lastI=null});
     rendering=false;btn.disabled=false;btn.innerHTML=bt;
   }
@@ -4504,7 +5046,8 @@ function copySel(cut){
                 i:f.i?(c.i!=null?c.i:null):undefined,
                 v:f.v?(c.v!=null?c.v:null):undefined,
                 c:f.fx?(c.c||null):undefined,
-                x:f.fx?(c.x||0):undefined});
+                x:f.fx?(c.x||0):undefined,
+                g:f.n?(c.g!=null?c.g:null):undefined});
     }
     data.push(row);
   }
@@ -4528,6 +5071,55 @@ function eraseRect(s){
     }
   }
   renderRows(s.r1,s.r2);
+}
+/* ---- note groups (Shift+G): grouped notes travel together in the piano roll ---- */
+function nextGroupId(){
+  let m=0;
+  song.patterns[curPat].data.forEach(tr=>tr.forEach(c=>{if(c&&c.g>m)m=c.g}));
+  return m+1;
+}
+function groupCells(){ /* the note cells the current selection (roll or grid) points at */
+  const cells=[];
+  if(!prPan.hidden&&PR.sel.length){
+    prSelNotes().forEach(x=>{const c=cellAt(cursor.t,x.r);if(c&&c.n!=null&&c.n!==OFF)cells.push(c)});
+  }else{
+    const s=selRect();
+    if(s){
+      const t1=Math.floor(s.l1/8),t2=Math.floor(s.l2/8);
+      for(let t=t1;t<=t2;t++){
+        const f=fieldsFor(t,s);if(!f||!f.n)continue;
+        for(let r=s.r1;r<=s.r2;r++){
+          const c=cellAt(t,r);
+          if(c&&c.n!=null&&c.n!==OFF)cells.push(c);
+        }
+      }
+    }else{
+      const c=cellAt(cursor.t,cursor.r);
+      if(c&&c.n!=null&&c.n!==OFF)cells.push(c);
+    }
+  }
+  return cells;
+}
+function ungroupSel(){ /* Alt+G — force-remove groups from whatever is selected, mixed or not */
+  const cells=groupCells().filter(c=>c.g!=null);
+  if(!cells.length){status('nothing grouped in the selection');return}
+  cells.forEach(c=>delete c.g);
+  renderGrid();prRenderIfOpen();saveSoon();
+  status(cells.length+' note'+(cells.length>1?'s':'')+' ungrouped');
+}
+function toggleGroup(){
+  const cells=groupCells();
+  if(!cells.length){status('no notes to group — select some (grid or roll) and hit Shift+G');return}
+  const g0=cells[0].g;
+  if(g0!=null&&cells.every(c=>c.g===g0)){
+    cells.forEach(c=>delete c.g);
+    status(cells.length+' note'+(cells.length>1?'s':'')+' ungrouped');
+  }else{
+    const g=nextGroupId();
+    cells.forEach(c=>c.g=g);
+    status(cells.length+' note'+(cells.length>1?'s':'')+' grouped — clicking one in the roll grabs them all · Shift+G again ungroups');
+  }
+  renderGrid();prRenderIfOpen();saveSoon();
 }
 /* Ctrl+B — FL-style paste-duplicate: clone the selected block right below itself,
    pushing what was there further down. Gaps inside the block are cloned too. */
@@ -4662,6 +5254,7 @@ function pasteClip(){
       if(src.i!==undefined)cell.i=src.i!=null&&map&&map[src.i]!=null?map[src.i]:src.i;
       if(src.v!==undefined)cell.v=src.v;
       if(src.c!==undefined){cell.c=src.c;cell.x=src.x||0}
+      if(src.g!==undefined){if(src.g!=null)cell.g=src.g;else delete cell.g}
       pruneCell(t,r);
     }
   }
@@ -4684,6 +5277,12 @@ document.addEventListener('keydown',e=>{
   if(k==='Escape'&&!palWrap.hidden){e.stopImmediatePropagation();palClose();return}
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&low==='g'){ /* stash selection to the Vault */
     e.preventDefault();e.stopImmediatePropagation();ideaSaveDlg();return;
+  }
+  if(e.shiftKey&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&low==='g'){ /* group / ungroup notes */
+    e.preventDefault();e.stopImmediatePropagation();toggleGroup();return;
+  }
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&low==='g'){ /* force-ungroup */
+    e.preventDefault();e.stopImmediatePropagation();ungroupSel();return;
   }
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&k==='Enter'){ /* loop the selected rows */
     e.preventDefault();e.stopImmediatePropagation();toggleLoopSel();return;
@@ -4723,10 +5322,24 @@ document.addEventListener('keydown',e=>{
     status('exported “'+(song.name||'untitled')+'.json”');
     return;
   }
-  /* F-row transport: F5 = play/stop SONG (refresh is blocked), F4 = play/stop pattern, F3 = Vault */
+  /* F-row transport: F5 = play/stop SONG (refresh is blocked), F4 = play/stop pattern, F3 = Vault, F10 = recorder */
   if(k==='F5'){e.preventDefault();e.stopImmediatePropagation();SEQ.playing&&SEQ.songMode?stop():play(true);return}
   if(k==='F4'){e.preventDefault();e.stopImmediatePropagation();SEQ.playing&&!SEQ.songMode?stop():play(false);return}
   if(k==='F3'){e.preventDefault();e.stopImmediatePropagation();toggleVault();return}
+  if(k==='F10'){e.preventDefault();e.stopImmediatePropagation();recToggle();return}
+  if(!recPan.hidden&&recPan.matches(':hover')){ /* hovering the recorder: its own clipboard + undo */
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&low==='z'){
+      e.preventDefault();e.stopImmediatePropagation();recOp('undo');return;
+    }
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(low==='c'||low==='x'||low==='v')){
+      e.preventDefault();e.stopImmediatePropagation();
+      if(low==='v')recPaste();else recCopy(low==='x');
+      return;
+    }
+    if((k==='Delete'||k==='Backspace')&&REC.sel){
+      e.preventDefault();e.stopImmediatePropagation();recOp('cut');return;
+    }
+  }
   if(k==='Escape'){ /* close Vault-family popups before anything else grabs Escape */
     if(!vaultSaveEl.hidden){e.stopImmediatePropagation();vaultSaveEl.hidden=true;pendingIdea=null;return}
     if(!vaultPan.hidden){e.stopImmediatePropagation();stopIdeaPreview();toggleVault();return}
@@ -5395,6 +6008,9 @@ const COMMANDS=[
   {n:'Deselect all',k:'Alt+D',kw:'clear selection none',f:()=>{clearSel();if(!prPan.hidden&&PR.sel.length){PR.sel=[];prRender()}status('selection cleared')}},
   {n:'Duplicate selection below',k:'Ctrl+B',kw:'clone paste push insert block',f:()=>dupSelBelow()},
   {n:'Panic — cut all voices',k:'Alt+P',kw:'stuck notes silence stop kill audio',f:()=>panic()},
+  {n:'Toggle recorder / sample editor',k:'F10',kw:'rec record edison capture mic input resample edit wav',f:()=>recToggle()},
+  {n:'Group selected notes',k:'Shift+G',kw:'link notes together gang',f:()=>toggleGroup()},
+  {n:'Ungroup selected notes',k:'Alt+G',kw:'unlink notes separate ungang',f:()=>ungroupSel()},
   {n:'Toggle sticky drag selection',kw:'snap select channels whole columns slivers',f:()=>{SNAP_SEL=!SNAP_SEL;try{localStorage.setItem('volt.snapSel',SNAP_SEL?'1':'0')}catch(e){}status(SNAP_SEL?'sticky selection ON — crossing channels grabs them whole':'sticky selection off — free sub-column drags')}},
   {n:'Duplicate current track',kw:'clone column channel copy',f:()=>duplicateTrack(cursor.t)},
   {n:'Insert empty track after current',kw:'new column channel add',f:()=>insertTrackAt(cursor.t+1)},
@@ -5700,6 +6316,11 @@ function prDrawNote(ctx,no,seld,ghost){
   ctx.fillStyle=hov?'rgba(255,255,255,.55)':'rgba(0,0,0,.4)';
   ctx.fillRect(x+w-3,y+1,3,h-2);
   if(hov&&!ghost){ctx.strokeStyle='rgba(255,255,255,.8)';ctx.strokeRect(x+.5,y+.5,w-1,h-1)}
+  /* group ribbon: same hue = same Shift+G group */
+  if(!ghost){
+    const gg=(cellAt(cursor.t,no.r)||{}).g;
+    if(gg!=null){ctx.fillStyle='hsl('+(gg*67%360)+',85%,65%)';ctx.fillRect(x,y+h-2,w,2)}
+  }
 }
 let prT=null;
 function prRenderIfOpen(){if(prPan.hidden||PR.drag)return;clearTimeout(prT);prT=setTimeout(prRender,150)}
@@ -5753,13 +6374,19 @@ prCv.addEventListener('mousedown',e=>{
     if(e.shiftKey&&!h.edge){
       /* Shift+DRAG duplicates the note(s), FL-style — a plain Shift+click still toggles selection */
       const src=prIsSel(h.hit)?prSelNotes():[h.hit];
-      const notes=src.map(x=>({r:x.r,n:x.n,len:x.len,i:x.i,v:x.v}));
+      const notes=src.map(x=>({r:x.r,n:x.n,len:x.len,i:x.i,v:x.v,g:(cellAt(cursor.t,x.r)||{}).g}));
       PR.drag={mode:'move',dup:true,pendingToggle:{r:h.hit.r,n:h.hit.n},
                notes,grabRow:h.row,grabN:h.n,dr:0,dn:0,grabIdx:0,dlen:0,len:notes[0].len};
       prRender();return;
     }
-    if(!prIsSel(h.hit))PR.sel=[{r:h.hit.r,n:h.hit.n}];
-    const notes=prSelNotes().map(x=>({r:x.r,n:x.n,len:x.len,i:x.i,v:x.v}));
+    if(!prIsSel(h.hit)){
+      /* grouped note (Shift+G): grabbing one grabs the whole group on this track */
+      const cg=(cellAt(cursor.t,h.hit.r)||{}).g;
+      PR.sel=cg!=null
+        ?prNotes().filter(x=>(cellAt(cursor.t,x.r)||{}).g===cg).map(x=>({r:x.r,n:x.n}))
+        :[{r:h.hit.r,n:h.hit.n}];
+    }
+    const notes=prSelNotes().map(x=>({r:x.r,n:x.n,len:x.len,i:x.i,v:x.v,g:(cellAt(cursor.t,x.r)||{}).g}));
     /* FL-style: grabbing the edge of any selected note resizes ALL of them by the same delta */
     const gi=Math.max(0,notes.findIndex(x=>x.r===h.hit.r&&x.n===h.hit.n));
     PR.drag={mode:h.edge?'resize':'move',
@@ -5890,6 +6517,7 @@ function prApplyDrag(d){
   d.notes.forEach(x=>{
     const no={r:x.r+d.dr,n:x.n+d.dn,len:d.mode==='resize'?Math.max(1,x.len+(d.dlen||0)):x.len,i:x.i,v:x.v};
     prWriteNote(cursor.t,no);
+    if(x.g!=null){const c2=cellAt(cursor.t,no.r);if(c2)c2.g=x.g} /* groups survive moves/dups */
     outs.push({r:no.r,n:no.n});
     if(d.isNew)prChordExtras(no);
   });
@@ -6094,6 +6722,12 @@ function ensureLane(t,p){
   if(!pat.auto[k])pat.auto[k]=new Array(pat.rows).fill(null);
   return pat.auto[k];
 }
+function laneByKey(k){ /* raw-key access — handles both numeric and 'M.' master keys */
+  const pat=song.patterns[curPat];
+  pat.auto=pat.auto||{};
+  if(!pat.auto[k])pat.auto[k]=new Array(pat.rows).fill(null);
+  return pat.auto[k];
+}
 const autoPan=document.getElementById('autoPan'),autoLanes=document.getElementById('autoLanes');
 let autoPaint=null,autoT2=null;
 function renderAuto(){
@@ -6106,10 +6740,11 @@ function renderAuto(){
   }
   let h='<div id="autoBar"><label title="When on, painting only lands on rows where that track plays a note — the rest stay untouched"><input type="checkbox" id="autoLockN"'+(AUTO_LOCK?' checked':'')+'> lock to notes</label><span class="abhint">teal tick above a step = the track has a note there</span></div>';
   for(const k of keys.sort()){
-    const dot=k.indexOf('.');const tr=+k.slice(0,dot),p=k.slice(dot+1);
+    const dot=k.indexOf('.');const isM=k.indexOf('M.')===0;
+    const tr=isM?-1:+k.slice(0,dot),p=k.slice(dot+1);
     const arr=pat.auto[k];
-    const td=pat.data[tr]||[];
-    h+='<div class="alane" data-k="'+k+'"><div class="al"><b>T'+(tr+1)+' &#183; '+esc(autoLabel(p))+'</b><span><u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
+    const td=(!isM&&pat.data[tr])||[];
+    h+='<div class="alane" data-k="'+k+'"><div class="al"><b>'+(isM?'MASTER':'T'+(tr+1))+' &#183; '+esc(autoLabel(p))+'</b><span><u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
     for(let r=0;r<pat.rows;r++){
       let cls='astep';if(r%4===0)cls+=' b4';if(r%16===0&&r)cls+=' bar';
       const c=td[r];
@@ -6141,8 +6776,7 @@ function autoSetFromEvent(el,e){
   if(AUTO_LOCK&&!laneNoteAt(k,r))return; /* lock to notes: skip empty rows */
   const rect=el.getBoundingClientRect();
   const v=Math.round(clamp(1-(e.clientY-rect.top)/rect.height,0,1)*100)/100;
-  const dot=k.indexOf('.');
-  const lane=ensureLane(+k.slice(0,dot),k.slice(dot+1));
+  const lane=laneByKey(k);
   lane[r]=v;
   let f=el.querySelector('i');
   if(!f){f=document.createElement('i');el.appendChild(f)}
@@ -6169,8 +6803,9 @@ autoLanes.addEventListener('mousedown',e=>{
   const x=e.target.closest('u[data-x]');
   if(x){
     const k=x.dataset.x,dot=k.indexOf('.');
+    const tp=k.slice(0,dot);
     askConfirm('Remove this automation lane?','Remove').then(ok=>{
-      if(ok)autoDelete(+k.slice(0,dot),k.slice(dot+1));
+      if(ok)autoDelete(tp==='M'?'M':+tp,k.slice(dot+1));
     });
     return;
   }
@@ -6186,8 +6821,7 @@ autoLanes.addEventListener('mousedown',e=>{
   if(e.shiftKey){ /* FL-style line tool: anchor here, ramp to wherever the drag ends */
     const rect=s.getBoundingClientRect();
     const v=Math.round(clamp(1-(e.clientY-rect.top)/rect.height,0,1)*100)/100;
-    const dot=k.indexOf('.');
-    const lane=ensureLane(+k.slice(0,dot),k.slice(dot+1));
+    const lane=laneByKey(k);
     autoPaint={mode:'line',k,r0:r,v0:v,backup:lane.slice()};
     lane[r]=v;updateLaneDOM(k);saveSoon();
     return;
@@ -6204,8 +6838,7 @@ autoLanes.addEventListener('mousemove',e=>{
     const rect=s.getBoundingClientRect();
     const v1=clamp(1-(e.clientY-rect.top)/rect.height,0,1);
     const r1=+s.dataset.r;
-    const dot=autoPaint.k.indexOf('.');
-    const lane=ensureLane(+autoPaint.k.slice(0,dot),autoPaint.k.slice(dot+1));
+    const lane=laneByKey(autoPaint.k);
     for(let i=0;i<lane.length;i++)lane[i]=autoPaint.backup[i];
     const a=Math.min(autoPaint.r0,r1),b=Math.max(autoPaint.r0,r1);
     const vA=autoPaint.r0<=r1?autoPaint.v0:v1,vB=autoPaint.r0<=r1?v1:autoPaint.v0;
@@ -6245,7 +6878,7 @@ function openCtx(x,y,items){
 document.addEventListener('mousedown',e=>{if(!ctxMenu.hidden&&!e.target.closest('#ctxMenu'))ctxMenu.hidden=true});
 /* current value of a target, normalized 0..1 — used to prefill new lanes */
 function autoCurrent(t,p){
-  const ts=song.trackset[t];
+  const ts=t==='M'?MHOST:song.trackset[t]; /* master chain reads through MHOST */
   if(p==='vol')return 1;
   if(p==='dly')return ts.dly;
   if(p==='rvb')return ts.rvb;
@@ -6394,13 +7027,24 @@ function markAuto(){
   document.querySelectorAll('#trackMix .param').forEach(el=>{
     const inp=el.querySelector('input[data-tk],input[data-teq],input[data-fxp]');if(!inp)return;
     const key=inp.dataset.tk||(inp.dataset.teq?'eq.'+inp.dataset.teq:'fx'+inp.dataset.fxi+'.'+inp.dataset.fxp);
-    el.classList.toggle('automated',has(key));
+    el.classList.toggle('automated',masterView?!!(pat.auto&&pat.auto['M.'+key]):has(key));
     if(key==='vol'&&!masterView)markLfo(el,lfoOn(cursor.t,'vol'));
   });
   updateHeadAuto();
 }
 document.getElementById('trackMix').addEventListener('contextmenu',e=>{
-  if(masterView)return; /* master params aren't automatable yet */
+  if(masterView){ /* master FX params ARE automatable — lanes keyed M.fxN.param */
+    if(e.target.dataset&&e.target.dataset.fxp){
+      const k2='fx'+e.target.dataset.fxi+'.'+e.target.dataset.fxp;
+      e.preventDefault();
+      const items=[{label:'⚡ Automate MASTER '+autoLabel(k2),f:()=>autoCreate('M',k2)}];
+      const pat=song.patterns[curPat];
+      if(pat.auto&&pat.auto['M.'+k2])
+        items.push({label:'✕ Delete MASTER '+autoLabel(k2)+' automation',f:()=>autoDelete('M',k2)});
+      openCtx(e.clientX,e.clientY,items);
+    }
+    return;
+  }
   if(e.target.classList&&e.target.classList.contains('pn')){
     const pk=paramKeyOf(e.target.closest('.param'));
     if(pk&&autoLabelMenu(e,cursor.t,pk.key))return;
@@ -6703,6 +7347,12 @@ const HELP=[
  ['Slicer','Fades','FIN / FOUT sliders','Fade-in and fade-out on the sample region, drawn as amber diagonals on the waveform. FIN 0 = instant attack (transients play clean from 0).'],
  ['Patterns','Reverse a sample','Bxx','Type B in the FX column (or right-click → Reverse) and that note plays the sample backwards — same trim region, flipped.'],
  ['Meta','Panic','Alt+P','Stuck note? Cuts every voice, preview and ducker instantly without touching playback.'],
+ ['Recorder','Record','F10 → ●','Records the master bus (whatever you hear — hit Space and jam) or any mic/line input. 5-minute cap.'],
+ ['Recorder','Edit','drag to select','Crop, Cut, Reverse, fades, ±3dB, Normalize, Silence — on the selection, or everything when nothing is selected. Wheel zooms. Own undo: the Undo button, or Ctrl+Z while hovering the panel (song undo stays separate).'],
+ ['Recorder','Use it','drag the selection out','Drop it on the grid: new sample + a C-4 note right there. Drop it on an instrument row: asks replace-or-add. → Instrument and ⬇ WAV still work too.'],
+ ['Recorder','Cursor & clipboard','click · Ctrl+C/X/V','Click places the amber cursor; hovering the panel, Ctrl+C/X copy/cut the selection and Ctrl+V pastes at the cursor (or replaces the selection). Del deletes. Mono mixes the take down.'],
+ ['Selection','Group notes','Shift+G / Alt+G','Shift+G groups the selected notes (grid or roll) — colored ribbon, clicking one in the roll grabs the whole group. Shift+G on a group toggles it off; Alt+G force-ungroups anything selected, mixed groups included.'],
+ ['Automation','Master FX too','right-click in MASTER view','Every master-chain FX slider (Auto-Filter cut, PHATNER pump…) automates like channel FX — the lane shows as MASTER in the panel.'],
  ['Instruments','Mutant synth','preset browser → Bass','FM + wavefolder + screaming resonant filter with a shaped LFO. Growl / Screech / Psy Stab presets — then automate cutoff or add LFOs like anything else.'],
  ['Mixer & FX','Auto-Filter','+ FX','Steep resonant LP/BP/HP insert with its own LFO (rate + amount). Right-click any of its sliders to automate; drop it on a channel or the master.'],
  ['Instruments','Sample search','drag a result','Drag a search hit onto an instrument row (or the waveform editor) to replace it in place — no dialogs. Esc stops the preview.'],

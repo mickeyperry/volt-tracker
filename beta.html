@@ -1797,12 +1797,26 @@ function colFromEvent(cell,e){
   });
   return best;
 }
+/* eyedropper: grab the instrument a note uses without touching what you're entering */
+function pickupInst(t,r){
+  const c=cellAt(t,r);
+  if(!c||c.i==null||!song.instruments[c.i])return false;
+  if(curInst!==c.i){curInst=c.i;renderInstList();renderParams()}
+  status('picked up '+hex2(c.i)+' '+song.instruments[c.i].name);
+  return true;
+}
 let clkSeq={t:-1,r:-1,at:0,n:0},dblPick=false;
 grows.addEventListener('mousedown',e=>{
   const i=e.target.closest('i[data-c]'),cell=e.target.closest('.tcell'),row=e.target.closest('.prow');
   if(!cell||!row)return;
   const oldR=cursor.r;
   cursor.t=+cell.dataset.t;cursor.r=+row.dataset.r;cursor.c=i?+i.dataset.c:colFromEvent(cell,e);
+  if(e.altKey){ /* Alt+click = pick up this note's instrument */
+    e.preventDefault();
+    if(!pickupInst(cursor.t,cursor.r))status('no instrument on this cell');
+    renderRow(oldR);renderRow(cursor.r);trackPanel();
+    return;
+  }
   /* manual double / triple click: dbl = select the cell, triple = the whole row */
   const now=performance.now();
   if(clkSeq.t===cursor.t&&clkSeq.r===cursor.r&&now-clkSeq.at<450)clkSeq.n++;
@@ -1811,7 +1825,8 @@ grows.addEventListener('mousedown',e=>{
   dblPick=clkSeq.n>=2;
   if(clkSeq.n===2){
     sel={a:{t:cursor.t,c:0,r:cursor.r},b:{t:cursor.t,c:7,r:cursor.r}};
-    status('cell selected — click again for the whole row');
+    const picked=pickupInst(cursor.t,cursor.r); /* dblclick also grabs the note's instrument */
+    if(!picked)status('cell selected — click again for the whole row');
   }else if(clkSeq.n>=3){
     sel={a:{t:0,c:0,r:cursor.r},b:{t:TRACKS-1,c:7,r:cursor.r}};
     status('row selected (all tracks)');
@@ -5627,7 +5642,7 @@ grows.addEventListener('contextmenu',e=>{
   openCtx(e.clientX,e.clientY,items);
 });
 grows.addEventListener('mousedown',e=>{
-  if(e.button!==0)return;
+  if(e.button!==0||e.altKey)return; /* Alt+click is the instrument eyedropper, not a drag */
   if(!e.target.closest('.tcell'))return;
   e.preventDefault();
   if(dblPick){dragSel=null;return} /* multi-click selection just happened — keep it */
@@ -7355,6 +7370,7 @@ const HELP=[
  ['Automation','Master FX too','right-click in MASTER view','Every master-chain FX slider (Auto-Filter cut, PHATNER pump…) automates like channel FX — the lane shows as MASTER in the panel.'],
  ['Instruments','Mutant synth','preset browser → Bass','FM + wavefolder + screaming resonant filter with a shaped LFO. Growl / Screech / Psy Stab presets — then automate cutoff or add LFOs like anything else.'],
  ['Mixer & FX','Auto-Filter','+ FX','Steep resonant LP/BP/HP insert with its own LFO (rate + amount). Right-click any of its sliders to automate; drop it on a channel or the master.'],
+ ['Instruments','Pick up from a note','Alt+click / dblclick','Alt+click any note (or double-click it) and its instrument becomes the selected one — an eyedropper. Plain cursor moves never switch it, so what you type stays what you chose.'],
  ['Instruments','Sample search','drag a result','Drag a search hit onto an instrument row (or the waveform editor) to replace it in place — no dialogs. Esc stops the preview.'],
  ['Tracks','Reorder','drag a header / Shift+wheel','Drag a track header onto another to move it there — notes, mixer, automation, LFOs and colors all travel. Shift+wheel over a header nudges it left/right, FL-style.'],
  ['Vault','New track from an idea','drag onto the + button','Drop an idea on the header-row + and it lands on a fresh track named after it.'],

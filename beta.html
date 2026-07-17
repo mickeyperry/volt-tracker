@@ -125,7 +125,11 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 .param.automated .pn::after{content:' \26A1';font-size:9px}
 @keyframes aflash{0%,60%{box-shadow:0 0 0 2px var(--amber)}100%{box-shadow:none}}
 .alane.flash{animation:aflash 1.3s;border-radius:3px}
-.param .pv{font-family:var(--mono);font-size:11px;color:var(--amber);text-align:right;font-variant-numeric:tabular-nums}
+.param .pv{font-family:var(--mono);font-size:11px;color:var(--amber);text-align:right;font-variant-numeric:tabular-nums;cursor:text}
+.param .pv:hover{text-decoration:underline dotted var(--faint);text-underline-offset:2px}
+.param .pv input.pvedit{font-family:var(--mono);font-size:11px;color:var(--amber);background:var(--well);border:1px solid var(--teal-dim);border-radius:3px;width:100%;min-width:44px;padding:0 2px;text-align:right;outline:none;box-sizing:border-box}
+input[type=range].fine::-webkit-slider-thumb{background:var(--amber);transform:scale(1.15)}
+input[type=range].fine::-moz-range-thumb{background:var(--amber);transform:scale(1.15)}
 input[type=range]{-webkit-appearance:none;appearance:none;height:16px;background:transparent;width:100%}
 input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--line);border-radius:2px}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:var(--teal);margin-top:-4px}
@@ -188,6 +192,8 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #ghead .thead{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 4px 5px;cursor:default}
 #ghead .tname{font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--txt);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:11px;line-height:11px}
 #ghead .tname.unnamed{color:var(--faint);font-weight:400}
+#ghead .tnum{color:var(--dim);font-family:var(--mono);font-weight:400;margin-right:4px}
+#ghead .thead:hover .tnum{color:var(--teal)}
 #ghead .thctl{display:flex;align-items:center;gap:5px}
 #ghead .tno{color:var(--dim);font-size:10px}
 #ghead .tbtn{font-size:10px;font-weight:600;padding:0 6px;line-height:16px;border-radius:2px;border:1px solid var(--line);background:transparent;color:var(--faint);cursor:pointer}
@@ -254,6 +260,9 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 /* selection: only actual VALUES light up — empty cells stay dark, no solid green slab */
 .tcell i.ssel{background:transparent}
 .tcell i.ssel.set{background:var(--selbg);color:var(--seltxt);border-radius:2px;box-shadow:0 0 0 2px var(--selbg)}
+/* cursor inside a selection: a teal ring instead of the solid block — the filled cursor
+   painted the note black-on-teal the moment you selected its cell, which read as a glitch */
+.tcell i.cur.ssel{background:var(--selbg);color:var(--seltxt) !important;border-radius:2px;box-shadow:0 0 0 2px var(--teal)}
 
 /* ---- song strip / pattern loop progress ---- */
 #orderRow .hint{color:var(--faint);font-size:10px;margin-left:4px}
@@ -427,6 +436,12 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 /* ---- selection outline frame ---- */
 #selBox{position:absolute;display:none;border:1px solid var(--teal);border-radius:3px;box-shadow:0 0 0 1px var(--glowb),0 0 12px var(--glowb);pointer-events:none;z-index:1}
+/* time-scale grip: drag the bottom edge of the selection to squeeze / stretch it in time */
+#selGrip{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);pointer-events:auto;cursor:ns-resize;
+  background:var(--teal);color:var(--curtxt);font:bold 9px var(--mono);line-height:1;padding:2px 7px;border-radius:7px;
+  box-shadow:0 1px 6px rgba(0,0,0,.6);user-select:none;white-space:nowrap;opacity:.75;transition:opacity .12s,transform .12s}
+#selGrip:hover,#selGrip.on{opacity:1;transform:translateX(-50%) scale(1.14)}
+#selBox.scaling{border-style:dashed;border-color:var(--amber);box-shadow:0 0 0 1px rgba(240,178,78,.3),0 0 14px rgba(240,178,78,.25)}
 
 /* ---- track-header selection ---- */
 #ghead .thead{cursor:pointer}
@@ -605,7 +620,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       <option value="0,7">5th</option>
       <option value="0,12">octave</option>
     </select></label>
-    <span id="prHint">click: cursor (Space plays from it, Home resets) &#183; Ctrl/Shift+click empty: add note &#183; drag: move (Shift: pitch lock, Ctrl: time lock) &#183; Ctrl+drag: select &#183; Ctrl+A/C/X/V: all/copy/cut/paste &#183; Shift+arrows: nudge &#189;tone/row &#183; Ctrl+&#8593;&#8595;: octave &#183; Del &#183; +/&#8722; zoom &#183; Ctrl+D dup</span></div>
+    <span id="prHint">click: cursor (Space plays from it, Home resets) &#183; Ctrl/Shift+click empty: add note &#183; drag: move (Shift: pitch lock, Ctrl: time lock) &#183; Ctrl+drag: select &#183; Ctrl+A/C/X/V: all/copy/cut/paste &#183; Shift+arrows: nudge &#189;tone/row &#183; Ctrl+&#8593;&#8595;: octave &#183; Del &#183; +/&#8722; zoom &#183; Ctrl+D dup &#183; <b>drag the &#8596; grip: squeeze/stretch in time</b> &#183; Ctrl+right-click: reset view</span></div>
   <div id="prWrap"><canvas id="prCanvas"></canvas></div>
 </div>
 
@@ -658,7 +673,7 @@ let TRACKS=8;
 const MAXTRACKS=32, OFF=-1; /* was 16 — an old guardrail; 32 channel strips are still cheap for Web Audio */
 const NOTENAMES=['C-','C#','D-','D#','E-','F-','F#','G-','G#','A-','A#','B-'];
 /* per-effect theme colors for the FX chain rows */
-const FX_COLORS={crush:'#ff9a3c',flanger:'#b08cff',chorus:'#5eead4',phaser:'#ff4d9d',widen:'#6aaeff',superdrive:'#ff4d4d',sausage:'#ffb84d',autofilter:'#3fe0b4'};
+const FX_COLORS={crush:'#ff9a3c',flanger:'#b08cff',chorus:'#5eead4',phaser:'#ff4d9d',widen:'#6aaeff',superdrive:'#ff4d4d',sausage:'#ffb84d',autofilter:'#3fe0b4',verb:'#8fd3ff',echo:'#ffd166',comp:'#7dff9a',pitch:'#ff8cf0'};
 const hex2=n=>n.toString(16).toUpperCase().padStart(2,'0');
 const noteName=n=>n===OFF?'OFF':NOTENAMES[n%12]+Math.floor(n/12);
 const nfreq=n=>440*Math.pow(2,(n-57)/12);
@@ -801,7 +816,144 @@ function crushCurve(bits){
   for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.round(x*steps)/steps}
   return c;
 }
+/* Impulse response for the insert reverb: stereo decorrelated noise with an exponential
+   tail and progressive damping (the lowpass tightens as the tail decays, like air and
+   walls do). Energy-normalized so every size sits at the same loudness. */
+function mkIR(sec,damp){
+  const sr=AC.sampleRate,n=Math.max(Math.floor(sr*.05),Math.floor(sr*sec)),buf=AC.createBuffer(2,n,sr);
+  for(let ch=0;ch<2;ch++){
+    const d=buf.getChannelData(ch);
+    let lp=0,sum=0;
+    for(let i=0;i<n;i++){
+      const t=i/n;
+      const a=Math.max(.03,1-damp*(.25+.72*t)); /* damping deepens along the tail */
+      lp+=((Math.random()*2-1)-lp)*a;
+      const v=lp*Math.exp(-6.9*t); /* -60dB at the end of the tail */
+      d[i]=v;sum+=v*v;
+    }
+    const g=Math.sqrt(1.6/Math.max(sum,1e-9));
+    for(let i=0;i<n;i++)d[i]*=g;
+  }
+  return buf;
+}
 const FX_TYPES={
+  verb:{label:'Reverb',p:{size:[.4,8,2.2],damp:[0,1,.45],pre:[0,.12,.02],mix:[0,1,.3]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const pre=AC.createDelay(.15);pre.delayTime.value=p.pre;
+      const cv=AC.createConvolver();cv.buffer=mkIR(p.size,p.damp);
+      const hp=AC.createBiquadFilter();hp.type='highpass';hp.frequency.value=110;hp.Q.value=.5; /* keep the low end dry — mud lives there */
+      dry.gain.value=1-p.mix*.6;wet.gain.value=p.mix;
+      inG.connect(pre);pre.connect(cv);cv.connect(hp);hp.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      const refs={pre,cv,hp,dry,wet,size:p.size,damp:p.damp,irT:null};
+      return{in:inG,out,nodes:[inG,out,dry,wet,pre,cv,hp],refs};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='pre')r.pre.delayTime.setTargetAtTime(v,t,.02);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v*.6,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+      else if(k==='size'||k==='damp'){ /* IR rebuilds are heavy — debounce behind the slider */
+        r[k]=v;clearTimeout(r.irT);
+        r.irT=setTimeout(()=>{try{r.cv.buffer=mkIR(r.size,r.damp)}catch(e){}},180);
+      }
+    }},
+  echo:{label:'Delay',p:{time:[.03,1,.28],fb:[0,.9,.42],tone:[500,12000,4200],width:[0,1,1],mix:[0,1,.3]},
+    build:p=>{
+      /* stereo ping-pong: L and R delays cross-feed through a damping lowpass and a
+         high-pass, so repeats darken as they fade instead of piling up mud or fizz */
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const dlL=AC.createDelay(2),dlR=AC.createDelay(2);
+      dlL.delayTime.value=p.time;dlR.delayTime.value=p.time;
+      const fbL=AC.createGain(),fbR=AC.createGain();fbL.gain.value=fbR.gain.value=p.fb;
+      const lpL=AC.createBiquadFilter(),lpR=AC.createBiquadFilter();
+      lpL.type=lpR.type='lowpass';lpL.frequency.value=lpR.frequency.value=p.tone;
+      const hpL=AC.createBiquadFilter(),hpR=AC.createBiquadFilter();
+      hpL.type=hpR.type='highpass';hpL.frequency.value=hpR.frequency.value=130;
+      const panL=AC.createStereoPanner(),panR=AC.createStereoPanner();
+      panL.pan.value=-p.width;panR.pan.value=p.width;
+      inG.connect(dlL);
+      dlL.connect(lpL);lpL.connect(hpL);hpL.connect(fbL);fbL.connect(dlR); /* L bounces to R */
+      dlR.connect(lpR);lpR.connect(hpR);hpR.connect(fbR);fbR.connect(dlL); /* and back */
+      dlL.connect(panL);panL.connect(wet);dlR.connect(panR);panR.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      dry.gain.value=1-p.mix*.5;wet.gain.value=p.mix;
+      return{in:inG,out,nodes:[inG,out,dry,wet,dlL,dlR,fbL,fbR,lpL,lpR,hpL,hpR,panL,panR],
+             refs:{dlL,dlR,fbL,fbR,lpL,lpR,panL,panR,dry,wet}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='time'){r.dlL.delayTime.setTargetAtTime(v,t,.05);r.dlR.delayTime.setTargetAtTime(v,t,.05)}
+      else if(k==='fb'){r.fbL.gain.setTargetAtTime(v,t,.02);r.fbR.gain.setTargetAtTime(v,t,.02)}
+      else if(k==='tone'){r.lpL.frequency.setTargetAtTime(v,t,.02);r.lpR.frequency.setTargetAtTime(v,t,.02)}
+      else if(k==='width'){r.panL.pan.setTargetAtTime(-v,t,.02);r.panR.pan.setTargetAtTime(v,t,.02)}
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v*.5,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }},
+  comp:{label:'Compressor',p:{thresh:[-60,0,-24],ratio:[1,20,4],att:[.001,.3,.01],rel:[.03,1,.18],makeup:[0,24,6],mix:[0,1,1]},
+    build:p=>{
+      /* mix < 1 = parallel (New York) compression: squash hard, blend under the dry */
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const cmp=AC.createDynamicsCompressor();
+      cmp.threshold.value=p.thresh;cmp.ratio.value=p.ratio;cmp.knee.value=6;
+      cmp.attack.value=p.att;cmp.release.value=p.rel;
+      const mk=AC.createGain();mk.gain.value=Math.pow(10,p.makeup/20);
+      dry.gain.value=1-p.mix;wet.gain.value=p.mix;
+      inG.connect(cmp);cmp.connect(mk);mk.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      return{in:inG,out,nodes:[inG,out,dry,wet,cmp,mk],refs:{cmp,mk,dry,wet}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='thresh')r.cmp.threshold.setTargetAtTime(v,t,.02);
+      else if(k==='ratio')r.cmp.ratio.setTargetAtTime(v,t,.02);
+      else if(k==='att')r.cmp.attack.setTargetAtTime(v,t,.02);
+      else if(k==='rel')r.cmp.release.setTargetAtTime(v,t,.02);
+      else if(k==='makeup')r.mk.gain.setTargetAtTime(Math.pow(10,v/20),t,.02);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }},
+  pitch:{label:'Pitch Shift',p:{semi:[-12,12,0],mix:[0,1,1]},
+    build:p=>{
+      /* realtime pitch shifter, all native nodes: two delay lines whose delay time RAMPS
+         (a moving read head = Doppler shift), crossfaded by phase-opposed sin²/cos²
+         windows so each line's ramp-wrap happens while it is silent. The ramps run at a
+         fixed 10Hz; pitch is set purely by the ramp DEPTH (slope = pitch ratio - 1), so
+         semi=0 collapses to a clean constant delay. ~110ms latency, as pitch shifters have. */
+      const T=.04; /* grain period: shorter = less latency, more shimmer; 25Hz is the sweet spot */
+      if(!AC._psRamp){
+        const sr=AC.sampleRate,n=Math.floor(sr*T);
+        const rb=AC.createBuffer(1,n,sr),fb=AC.createBuffer(1,n,sr);
+        const rd=rb.getChannelData(0),fd=fb.getChannelData(0);
+        for(let i=0;i<n;i++){rd[i]=i/n;const s=Math.sin(Math.PI*i/n);fd[i]=s*s}
+        AC._psRamp=rb;AC._psFade=fb;
+      }
+      /* base delay = only the headroom the current shift direction needs: up-shifts ramp
+         the delay DOWN from base (need dep of headroom), down-shifts ramp UP from ~zero.
+         Keeps latency at ~6ms (down) to ~46ms (+12 up) instead of a fixed worst case. */
+      const dep0=T*(1-Math.pow(2,p.semi/12));
+      const base0=.006+Math.max(0,-dep0);
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const mkLine=off=>{
+        const dl=AC.createDelay(1);dl.delayTime.value=base0;
+        const g=AC.createGain();g.gain.value=0;
+        const ramp=AC.createBufferSource();ramp.buffer=AC._psRamp;ramp.loop=true;
+        const dep=AC.createGain();dep.gain.value=dep0;
+        ramp.connect(dep);dep.connect(dl.delayTime);
+        const fade=AC.createBufferSource();fade.buffer=AC._psFade;fade.loop=true;
+        fade.connect(g.gain);
+        const t0=AC.currentTime+.02;
+        ramp.start(t0,off);fade.start(t0,off);
+        inG.connect(dl);dl.connect(g);g.connect(wet);
+        return{dl,g,ramp,fade,dep};
+      };
+      const A=mkLine(0),B=mkLine(T/2);
+      wet.connect(out);inG.connect(dry);dry.connect(out);
+      dry.gain.value=1-p.mix;wet.gain.value=p.mix;
+      return{in:inG,out,nodes:[inG,out,dry,wet,A.dl,A.g,A.ramp,A.fade,A.dep,B.dl,B.g,B.ramp,B.fade,B.dep],
+             refs:{A,B,dry,wet}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='semi'){const d=.04*(1-Math.pow(2,v/12)),b=.006+Math.max(0,-d);
+        r.A.dep.gain.setTargetAtTime(d,t,.03);r.B.dep.gain.setTargetAtTime(d,t,.03);
+        r.A.dl.delayTime.setTargetAtTime(b,t,.03);r.B.dl.delayTime.setTargetAtTime(b,t,.03)}
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+    }},
   crush:{label:'Bitcrush',p:{bits:[1,16,8],mix:[0,1,1]},
     build:p=>{
       const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
@@ -1708,7 +1860,7 @@ function renderHead(){
     const hk=t<10?(t+1)%10:null;
     const hint=hk!=null?' (Alt+'+hk+' mute · Alt+Shift+'+hk+' solo)':'';
     h+='<span class="tcell thead'+(t%2?' odd':'')+(trackAudible(t)?'':' hushed')+'" data-t="'+t+'" draggable="true" title="Double-click to rename &#183; drag (or Shift+wheel) to reorder tracks'+hint+'">'
-      +'<span class="tname'+(ts.name?'':' unnamed')+'">'+(ts.name?esc(ts.name):'&#183;&#183;&#183;')+'</span>'
+      +'<span class="tname'+(ts.name?'':' unnamed')+'"><b class="tnum">'+(t+1)+'</b>'+(ts.name?esc(ts.name):'&#183;&#183;&#183;')+'</span>'
       +'<span class="thctl"><span class="tno">'+String(t+1).padStart(2,'0')+'</span>'
       +'<button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'" title="Mute'+(hk!=null?' (Alt+'+hk+')':'')+'">M</button>'
       +'<button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'" title="Solo'+(hk!=null?' (Alt+Shift+'+hk+')':'')+'">S</button></span>'
@@ -1782,7 +1934,8 @@ function moveCursor(dt,dr,dc){
   const el=grows.children[cursor.r];
   if(el&&!SEQ.playing){
     const gw=gridwrap,top=el.offsetTop-40,bot=el.offsetTop+el.offsetHeight+40;
-    if(top<gw.scrollTop)gw.scrollTop=top;
+    if(cursor.r===0)gw.scrollTop=0; /* row 0 sits below the header — the padded math left it half-hidden after Home */
+    else if(top<gw.scrollTop)gw.scrollTop=top;
     else if(bot>gw.scrollTop+gw.clientHeight)gw.scrollTop=bot-gw.clientHeight;
   }
 }
@@ -2182,7 +2335,10 @@ document.addEventListener('keydown',e=>{
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA')return;
   const k=e.key;
   if(k===' '){e.preventDefault();
-    if(SEQ.playing)stop();
+    /* Shift+Space: play from the cursor row — even mid-playback it restarts there
+       instead of stopping wherever the playhead happened to be */
+    if(e.shiftKey){if(SEQ.playing)stop();play(false,cursor.r)}
+    else if(SEQ.playing)stop();
     else play(false,!prPan.hidden&&PR.cursorRow!=null?PR.cursorRow:0);
     return}
   if(k==='Escape'){stop();return}
@@ -2194,6 +2350,9 @@ document.addEventListener('keydown',e=>{
     if(e.code==='KeyS'){e.preventDefault();toggleMS(cursor.t,'solo');return}
     if(e.code==='KeyX'){e.preventDefault();clearMS();return}
     if(e.code==='KeyW'){e.preventDefault();renderWav();return}
+    /* Alt+C closes the PROJECT tab (with the save prompt) — Ctrl+W is browser-owned
+       and can never reach the page, so it gets this stand-in */
+    if(e.code==='KeyC'){e.preventDefault();closeTab(PM.active);return}
     /* Alt+= add a track · Alt+- remove the last one (asks if it has notes) */
     if(e.code==='Equal'||e.code==='NumpadAdd'){
       e.preventDefault();
@@ -2210,6 +2369,19 @@ document.addEventListener('keydown',e=>{
   if(k==='F9'){e.preventDefault();toggleMixer();return}
   if(k==='+'||e.code==='NumpadAdd'){e.preventDefault();curPatSet(curPat+1);status('pattern '+hex2(curPat));return}
   if(k==='-'||e.code==='NumpadSubtract'){e.preventDefault();curPatSet(curPat-1);status('pattern '+hex2(curPat));return}
+  /* Numpad / and *: walk the SONG order (positions can repeat patterns), unlike +/- which
+     walks raw pattern numbers */
+  if(e.code==='NumpadDivide'||e.code==='NumpadMultiply'){
+    e.preventDefault();
+    const ord=song.order||[];
+    if(!ord.length){curPatSet(curPat+(e.code==='NumpadMultiply'?1:-1));status('pattern '+hex2(curPat)+' (song order is empty)');return}
+    let pos=ord.indexOf(curPat); /* nearest song position showing this pattern */
+    if(pos<0)pos=e.code==='NumpadMultiply'?-1:0;
+    pos=(pos+(e.code==='NumpadMultiply'?1:-1)+ord.length)%ord.length;
+    curPatSet(ord[pos]);
+    status('song position '+(pos+1)+'/'+ord.length+' — pattern '+hex2(curPat));
+    return;
+  }
   if(k==='ArrowUp'){e.preventDefault();moveCursor(0,-1,0);return}
   if(k==='ArrowDown'){e.preventDefault();moveCursor(0,1,0);return}
   if(k==='ArrowLeft'){e.preventDefault();moveCursor(0,0,-1);return}
@@ -2955,8 +3127,31 @@ function fxRebuildCur(){
   if(masterView){if(MCH)buildFx(MCH,song.masterFx);return}
   if(chans[cursor.t])buildFx(chans[cursor.t],song.trackset[cursor.t].fx);
 }
+/* Automation lanes and LFOs address FX params by SLOT ("3.fx0.mix"), not by effect —
+   so reordering or deleting an effect silently retargeted them to whatever effect fell
+   into that slot. Remap the keys so automation follows its effect around the chain. */
+function remapFxAuto(trKey,map){
+  const rx=/^fx(\d+)\.(.+)$/;
+  const remapObj=o=>{
+    const out={};
+    for(const k in o){
+      const dot=k.indexOf('.');
+      const t=k.slice(0,dot),rest=k.slice(dot+1);
+      const m=t===String(trKey)?rx.exec(rest):null;
+      if(!m){out[k]=o[k];continue}
+      const ni=map(+m[1]);
+      if(ni==null)continue; /* its effect was deleted — the lane goes with it */
+      out[t+'.fx'+ni+'.'+m[2]]=o[k];
+    }
+    return out;
+  };
+  song.patterns.forEach(p=>{if(p.auto)p.auto=remapObj(p.auto)});
+  if(song.lfos)song.lfos=remapObj(song.lfos);
+  renderAuto();markAuto();
+}
 document.getElementById('trackMix').addEventListener('click',e=>{
   const ts=masterView?MHOST:song.trackset[cursor.t];
+  const trKey=masterView?'M':cursor.t;
   if(e.target.id==='fxAdd'){
     const type=document.getElementById('fxSel').value;
     const ft=FX_TYPES[type];if(!ft)return;
@@ -2974,7 +3169,9 @@ document.getElementById('trackMix').addEventListener('click',e=>{
     return;
   }
   if(del!=null&&ts.fx){
-    ts.fx.splice(+del,1);
+    const di=+del;
+    ts.fx.splice(di,1);
+    remapFxAuto(trKey,x=>x===di?null:x>di?x-1:x);
     trackPanel();fxRebuildCur();saveSoon();
     return;
   }
@@ -2982,6 +3179,7 @@ document.getElementById('trackMix').addEventListener('click',e=>{
     const i=+(up!=null?up:dn),j=up!=null?i-1:i+1;
     if(j<0||j>=ts.fx.length)return;
     [ts.fx[i],ts.fx[j]]=[ts.fx[j],ts.fx[i]];
+    remapFxAuto(trKey,x=>x===i?j:x===j?i:x);
     trackPanel();fxRebuildCur();saveSoon();
     status('fx order: '+ts.fx.map(f=>FX_TYPES[f.type].label).join(' → '));
   }
@@ -3241,8 +3439,56 @@ function idbGet(k){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.
 function idbSet(k,v){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction('h','readwrite').objectStore('h').put(v,k);t.onsuccess=()=>res();t.onerror=()=>rej(t.error)}))}
 function idbDel(k){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction('h','readwrite').objectStore('h').delete(k);t.onsuccess=()=>res();t.onerror=()=>rej(t.error)}))}
 if(VAULT.fsOk){
-  idbGet('lib').then(h=>{if(h){VAULT.lib=h;if(!setPan.hidden)renderSettings()}}).catch(()=>{});
-  idbGet('proj').then(h=>{if(h){VAULT.proj=h;if(!setPan.hidden)renderSettings()}}).catch(()=>{});
+  Promise.all([idbGet('lib').catch(()=>null),idbGet('proj').catch(()=>null)]).then(([lh,ph])=>{
+    if(lh)VAULT.lib=lh;
+    if(ph)VAULT.proj=ph;
+    if(!setPan.hidden)renderSettings();
+    vaultReconnect();
+  });
+}
+/* startup reconnect: folder handles survive reloads, but the browser may downgrade
+   permission to 'prompt' — and requestPermission() only works inside a user gesture.
+   So: silently re-check each stored handle, auto-connect when still granted
+   ("Allow on every visit" in Chrome), otherwise offer a one-click Reconnect toast. */
+async function vaultHandleAlive(h){
+  try{await h.values().next();return true}catch(e){return false}
+}
+async function vaultReconnect(){
+  const pairs=[['library',VAULT.lib],['projects',VAULT.proj]].filter(x=>x[1]);
+  if(!pairs.length){status('no library connected — pick a folder in Settings (⚙) to keep ideas as real files');return}
+  const need=[];
+  for(const [label,h] of pairs){
+    let p='prompt';
+    try{p=await h.queryPermission({mode:'readwrite'})}catch(e){}
+    if(p==='granted'){
+      if(!(await vaultHandleAlive(h)))status(label+' folder “'+(h.name||'?')+'” seems gone — re-pick it in Settings (⚙)');
+    }else need.push([label,h]);
+  }
+  if(!need.length){
+    status('reconnected: '+pairs.map(x=>'“'+(x[1].name||x[0])+'”').join(' + '));
+    if(!vaultPan.hidden)renderVault();
+    if(!setPan.hidden)renderSettings();
+    return;
+  }
+  vaultToast('Found '+need.map(x=>x[0]+' “'+esc(x[1].name||'?')+'”').join(' and ')+' from last session — reconnect?',async()=>{
+    const ok=[],bad=[];
+    for(const [label,h] of need){
+      if(await fsPerm(h,true)&&await vaultHandleAlive(h))ok.push(h.name||label);else bad.push(label);
+    }
+    if(ok.length){if(!vaultPan.hidden)renderVault();if(!setPan.hidden)renderSettings()}
+    status(ok.length
+      ?'reconnected: '+ok.map(n=>'“'+n+'”').join(' + ')+(bad.length?' · '+bad.join(', ')+' failed — re-pick in Settings (⚙)':'')
+      :'could not reconnect — re-pick the folder in Settings (⚙)');
+  });
+}
+function vaultToast(msg,onConnect){
+  const old=document.getElementById('vToast');if(old)old.remove();
+  const d=document.createElement('div');d.id='vToast';
+  d.style.cssText='position:fixed;right:14px;bottom:34px;z-index:99;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12px var(--sans);color:var(--txt);box-shadow:0 6px 24px rgba(0,0,0,.5);display:flex;gap:10px;align-items:center;max-width:360px';
+  d.innerHTML='<span>'+msg+'</span><button id="vtGo" style="font-size:11px;padding:3px 10px;white-space:nowrap">Reconnect</button><u id="vtX" style="cursor:pointer;color:var(--faint);text-decoration:none">&#215;</u>';
+  document.body.appendChild(d);
+  d.querySelector('#vtX').onclick=()=>d.remove();
+  d.querySelector('#vtGo').onclick=async()=>{d.remove();await onConnect()};
 }
 async function fsPerm(h,rw){
   if(!h)return false;
@@ -3570,6 +3816,56 @@ function toggleSettings(){
   if(!setPan.hidden)renderSettings();
 }
 document.getElementById('setBtn').onclick=toggleSettings;
+/* Ctrl+S — write "<song name>.json" straight into the configured projects folder.
+   Keydown is a user gesture, so this may prompt for access; the Export button
+   still does a plain download, and so does this when no folder is set up. */
+async function songSave(){
+  const nm=song.name||'untitled';
+  const tab=PM.tabs.find(x=>x.id===PM.active);
+  if(!VAULT.fsOk||!VAULT.proj){
+    downloadSong(serialize(true),song.name);
+    markClean();
+    status('exported “'+nm+'.json”'+(VAULT.fsOk?' — set a projects folder in ⚙ to save there instead':''));
+    return;
+  }
+  try{
+    if(!(await fsPerm(VAULT.proj,true))){status('the projects folder needs access again — open ⚙ and pick it once');return}
+    let fn=safeFile(nm)+'.json';
+    /* First Ctrl+S onto a file this tab hasn't claimed yet: ask before clobbering it.
+       Once answered, the choice sticks for the session (tab.savedAs) — after that
+       Ctrl+S overwrites silently, like every other DAW. */
+    let exists=false;try{await VAULT.proj.getFileHandle(fn);exists=true}catch(e){}
+    if(exists&&(!tab||tab.savedAs!==fn)){
+      const c=await askDialog('“'+fn+'” already exists in '+(VAULT.proj.name||'the projects folder')+'.',[
+        {label:'Overwrite',value:'ow',cls:'primary'},
+        {label:'Save as new…',value:'new'},
+        {label:'Cancel',value:''}
+      ]);
+      if(!c)return;
+      if(c==='new'){
+        let i=2;while(true){try{await VAULT.proj.getFileHandle(safeFile(nm+' '+i)+'.json');i++}catch(e){break}}
+        const newName=await askText('Save as:',nm+' '+i);
+        if(newName==null||!newName)return;
+        fn=safeFile(newName)+'.json';
+        let taken=false;try{await VAULT.proj.getFileHandle(fn);taken=true}catch(e){}
+        if(taken){status('“'+fn+'” also exists — pick another name (Ctrl+S to retry)');return}
+        song.name=newName;
+        if(tab){tab.name=newName;saveTabs()}
+        flushSave();
+      }
+    }
+    const fh=await VAULT.proj.getFileHandle(fn,{create:true});
+    const w=await fh.createWritable();
+    await w.write(serialize(true));
+    await w.close();
+    if(tab)tab.savedAs=fn;
+    markClean();
+    status('saved “'+fn+'” → '+(VAULT.proj.name||'projects folder'));
+  }catch(err){
+    downloadSong(serialize(true),song.name);
+    status('couldn’t write to the projects folder ('+(err.message||err)+') — exported instead');
+  }
+}
 /* auto-save the whole project (samples included) to the projects folder */
 let vaultASbusy=false;
 async function vaultAutoSave(){
@@ -3581,6 +3877,7 @@ async function vaultAutoSave(){
       const w=await fh.createWritable();
       await w.write(serialize(true));
       await w.close();
+      markClean(); /* the file on disk now matches the project */
     }else if(!VAULT._permHint){
       VAULT._permHint=true;
       status('auto-save needs access again — open ⚙ and click into the projects folder once');
@@ -4495,7 +4792,18 @@ function redo(){
 }
 
 let saveT=null;
+/* dirty = edited since the last save to a real file (Ctrl+S / auto-save) — browser-storage
+   autosave still runs regardless, this only drives the tab marker and the leave-page guard */
+function markDirty(){
+  const t=PM.tabs.find(x=>x.id===PM.active);
+  if(t&&!t.dirty){t.dirty=true;renderTabs()}
+}
+function markClean(id){
+  const t=PM.tabs.find(x=>x.id===(id||PM.active));
+  if(t&&t.dirty){t.dirty=false;renderTabs()}
+}
 function saveSoon(){
+  markDirty();
   pushUndoSoon();
   renderBeatIfOpen();
   clearTimeout(saveT);
@@ -4505,11 +4813,12 @@ function saveSoon(){
     if(t&&song&&t.name!==(song.name||'untitled')){t.name=song.name||'untitled';saveTabs();renderTabs()}
   },700);
 }
+let saveLossy=false; /* autosave had to drop the samples (localStorage quota) — closing the browser tab would lose them */
 function flushSave(){
   clearTimeout(saveT);
   if(!song||!PM.active)return;
-  try{localStorage.setItem('volt.proj.'+PM.active,serialize(true))}
-  catch(e){try{localStorage.setItem('volt.proj.'+PM.active,serialize(false));status('samples too big for autosave — use Export')}catch(e2){}}
+  try{localStorage.setItem('volt.proj.'+PM.active,serialize(true));saveLossy=false}
+  catch(e){try{localStorage.setItem('volt.proj.'+PM.active,serialize(false));saveLossy=true;status('samples too big for autosave — Ctrl+S or Export to keep them')}catch(e2){saveLossy=true}}
   vaultAutoSave(); /* mirror to the projects folder when enabled in ⚙ */
 }
 async function loadSong(s){
@@ -5042,6 +5351,137 @@ function updateSelBox(){
   selBox.style.width=(x2-x1+6)+'px';selBox.style.height=(y2-y1+2)+'px';
   selBox.style.display='block';
 }
+/* ---- time-scale: squeeze / stretch the selection like FL's shift-drag or AE's alt-drag ----
+   Rows are time here, so the grip lives on the bottom edge: drag it up to pull the notes
+   together (half the rows = twice as fast), down to spread them out. Row offsets are scaled
+   proportionally, so the groove survives — only the span changes. */
+/* Time-scaling has to survive a discrete row grid. An arbitrary ratio can't: notes 2 rows
+   apart at ×1.3 want to land 2.6 rows apart, so they alternate 3,2,3,2 and the groove goes
+   lopsided — and a squeeze tight enough can drop an OFF onto its own note and erase it.
+   Which ratios are safe depends on the content, so we measure it: G is the finest grid the
+   events actually use (the gcd of their row offsets). Snapping the ratio to steps of 1/G
+   makes every offset map to an exact integer — no rounding at all, so spacing and note
+   widths stay proportional, and no two events can ever collide. */
+const gcd2=(a,b)=>{while(b){const t=a%b;a=b;b=t}return a};
+function rectGrid(s){
+  const t1=Math.floor(s.l1/8),t2=Math.floor(s.l2/8);
+  let g=0;
+  for(let t=t1;t<=t2;t++){
+    const f=fieldsFor(t,s);if(!f)continue;
+    for(let r=s.r1;r<=s.r2;r++){
+      const c=cellAt(t,r);if(!c)continue;
+      if(!((f.n&&c.n!=null)||(f.i&&c.i!=null)||(f.v&&c.v!=null)||(f.fx&&c.c)))continue;
+      g=gcd2(g,r-s.r1);
+    }
+  }
+  return g||1;
+}
+function snapQ(raw,G,maxQ){
+  const kMax=Math.max(1,Math.floor(maxQ*G+1e-9));
+  const k=clamp(Math.round(raw*G),1,kMax);
+  return k/G;
+}
+const qRows=(S,q,r1)=>clamp(Math.max(1,Math.round(S*q)),1,song.patterns[curPat].rows-r1);
+function ratioTxt(q){
+  if(q===1)return 'unchanged';
+  const f=q<1?1/q:q;
+  const n=Math.abs(f-Math.round(f))<.01?String(Math.round(f)):f.toFixed(2).replace(/0+$/,'');
+  return n+'× '+(q<1?'faster':'slower');
+}
+function scaleRect(s,q){
+  const pat=song.patterns[curPat];
+  const S=s.r2-s.r1+1;
+  const T=qRows(S,q,s.r1);
+  if(T===S&&q===1)return null;
+  const t1=Math.floor(s.l1/8),t2=Math.floor(s.l2/8);
+  const src=[];
+  for(let t=t1;t<=t2;t++){
+    const f=fieldsFor(t,s);if(!f)continue;
+    const col=[];
+    for(let r=s.r1;r<=s.r2;r++){
+      const c=cellAt(t,r);
+      col.push(c?{n:c.n,i:c.i,v:c.v,c:c.c,x:c.x,g:c.g}:null);
+    }
+    src.push({t,f,col});
+  }
+  const clearTo=Math.max(s.r2,s.r1+T-1);
+  eraseRect({l1:s.l1,l2:s.l2,r1:s.r1,r2:clearTo});
+  let dropped=0;
+  const taken=Object.create(null);
+  src.forEach(({t,f,col})=>{
+    col.forEach((c,i)=>{
+      if(!c||(c.n==null&&c.i==null&&c.v==null&&!c.c))return;
+      const tr=s.r1+Math.min(T-1,Math.round(i*q)); /* exact ratio — T/S would re-introduce drift */
+      const key=t+':'+tr;
+      if(taken[key]){dropped++;return} /* squeezed onto an occupied row — first one wins */
+      taken[key]=1;
+      const d=ensureCell(t,tr);
+      if(f.n){d.n=c.n;d.g=c.g}
+      if(f.i)d.i=c.i;
+      if(f.v)d.v=c.v;
+      if(f.fx){d.c=c.c;d.x=c.x}
+      pruneCell(t,tr);
+    });
+  });
+  renderRows(s.r1,clearTo);
+  pushUndoSoon();saveSoon();
+  return{S,T,dropped};
+}
+function scaleMsg(S,T,q,dropped,tail){
+  return 'time-scale '+ratioTxt(q)+' — '+S+' rows → '+T
+    +(dropped?' · '+dropped+' event'+(dropped>1?'s':'')+' landed on a taken row and were dropped':'')
+    +(tail||'');
+}
+function scaleSel(q){
+  const s=selRect();if(!s)return false;
+  const t1=Math.floor(s.l1/8),t2=Math.floor(s.l2/8);
+  const res=scaleRect(s,q);if(!res)return false;
+  sel={a:{t:t1,c:s.l1%8,r:s.r1},b:{t:t2,c:s.l2%8,r:s.r1+res.T-1}};
+  updateSelBox();prRenderIfOpen();
+  status(scaleMsg(res.S,res.T,q,res.dropped));
+  return true;
+}
+const selGrip=document.createElement('div');
+selGrip.id='selGrip';selGrip.textContent='⇕';
+selGrip.title='Drag up: squeeze the selection in time (half the rows = twice as fast) · down: stretch it out · Esc cancels';
+selBox.appendChild(selGrip);
+let gripDrag=null;
+selGrip.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  e.preventDefault();e.stopPropagation();
+  const s=selRect();if(!s)return;
+  const row=grows.children[s.r1];
+  const rh=(row&&row.offsetHeight)||14;
+  gripDrag={y:e.clientY,S:s.r2-s.r1+1,r1:s.r1,rh,T:s.r2-s.r1+1,q:1,G:rectGrid(s)};
+  selGrip.classList.add('on');selBox.classList.add('scaling');
+  document.body.style.cursor='ns-resize';
+});
+document.addEventListener('mousemove',e=>{
+  if(!gripDrag)return;
+  const g=gripDrag;
+  const rawT=Math.max(1,g.S+Math.round((e.clientY-g.y)/g.rh));
+  const maxQ=(song.patterns[curPat].rows-g.r1)/g.S;
+  const q=snapQ(rawT/g.S,g.G,maxQ);
+  const T=qRows(g.S,q,g.r1);
+  const capped=rawT/g.S>maxQ; /* dragging past the last step that fits — say so rather than just refusing */
+  if(q===g.q&&capped===g.capped)return;
+  g.q=q;g.T=T;g.capped=capped;
+  selBox.style.height=(T*g.rh+2)+'px'; /* live preview — the real rows are rewritten on release */
+  status(scaleMsg(g.S,T,q,0,(capped?' · biggest step that fits the pattern':'')+' · release to apply, Esc cancels'));
+});
+function gripCancel(){
+  if(!gripDrag)return;
+  gripDrag=null;
+  selGrip.classList.remove('on');selBox.classList.remove('scaling');
+  document.body.style.cursor='';
+  updateSelBox();
+}
+document.addEventListener('mouseup',()=>{
+  if(!gripDrag)return;
+  const g=gripDrag;
+  gripCancel();
+  if(g.q!==1)scaleSel(g.q);
+});
 /* which cell fields a track's covered display-columns touch: note=0, inst=1-2, vol=3-4, fx=5-7 */
 function fieldsFor(t,s){
   const lo=Math.max(s.l1,t*8),hi=Math.min(s.l2,t*8+7);
@@ -5072,11 +5512,18 @@ function copySel(cut){
   for(const row of data)for(const c of row)
     if(c&&c.i!=null&&song.instruments[c.i])insts[c.i]=song.instruments[c.i];
   clip={data,song,insts};
-  if(cut){eraseRect(s);saveSoon()}
+  if(cut){eraseRect(s,true);saveSoon()}
   status((cut?'cut ':'copied ')+(s.r2-s.r1+1)+' row'+(s.r2>s.r1?'s':''));
 }
-function eraseRect(s){
+/* guard=true keeps the tail of a note that starts above the block (see noteOpenBefore).
+   The time-scaler leaves it off: it snapshots the terminator and rewrites it scaled. */
+function eraseRect(s,guard){
   const t1=Math.floor(s.l1/8),t2=Math.floor(s.l2/8);
+  const tails=[];
+  if(guard)for(let t=t1;t<=t2;t++){
+    const f=fieldsFor(t,s);
+    tails[t]=(f&&f.n&&noteOpenBefore(t,s.r1))?noteEndFrom(t,s.r1):-1;
+  }
   for(let t=t1;t<=t2;t++){
     const f=fieldsFor(t,s);if(!f)continue;
     for(let r=s.r1;r<=s.r2;r++){
@@ -5084,6 +5531,10 @@ function eraseRect(s){
       if(f.n)c.n=null;if(f.i)c.i=null;if(f.v)c.v=null;if(f.fx){c.c=null;c.x=0}
       pruneCell(t,r);
     }
+  }
+  if(guard)for(let t=t1;t<=t2;t++){
+    const e=tails[t];
+    if(e>=s.r1&&e<=s.r2){const c=ensureCell(t,e);c.n=OFF;c.i=null;c.v=null} /* terminator was wiped — put one back */
   }
   renderRows(s.r1,s.r2);
 }
@@ -5331,10 +5782,9 @@ document.addEventListener('keydown',e=>{
     status(had?'selection cleared':'nothing was selected');
     return;
   }
-  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&low==='s'){ /* Ctrl+S = export JSON */
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&low==='s'){ /* Ctrl+S = save into the projects folder (falls back to a download) */
     e.preventDefault();e.stopImmediatePropagation();
-    document.getElementById('expBtn').click();
-    status('exported “'+(song.name||'untitled')+'.json”');
+    songSave();
     return;
   }
   /* F-row transport: F5 = play/stop SONG (refresh is blocked), F4 = play/stop pattern, F3 = Vault, F10 = recorder */
@@ -5354,6 +5804,12 @@ document.addEventListener('keydown',e=>{
     if((k==='Delete'||k==='Backspace')&&REC.sel){
       e.preventDefault();e.stopImmediatePropagation();recOp('cut');return;
     }
+  }
+  if(k==='Escape'&&(gripDrag||PR.scale)){ /* bail out of a time-scale drag before anything else sees Esc */
+    e.preventDefault();e.stopImmediatePropagation();
+    if(gripDrag)gripCancel();
+    if(PR.scale){PR.scale=null;prRender()}
+    status('time-scale cancelled');return;
   }
   if(k==='Escape'){ /* close Vault-family popups before anything else grabs Escape */
     if(!vaultSaveEl.hidden){e.stopImmediatePropagation();vaultSaveEl.hidden=true;pendingIdea=null;return}
@@ -5405,10 +5861,10 @@ document.addEventListener('keydown',e=>{
     transposeSel((k==='ArrowUp'?1:-1)*(e.shiftKey?12:1));
     return;
   }
-  if(e.shiftKey&&!e.altKey&&ARROWS[k]){
+  if(e.shiftKey&&!e.altKey&&(ARROWS[k]||k==='PageUp'||k==='PageDown')){ /* IT-style: Shift+PgUp/PgDn extends by a 16-row jump */
     e.preventDefault();e.stopImmediatePropagation();
     if(!sel)sel={a:{t:cursor.t,c:cursor.c,r:cursor.r},b:{t:cursor.t,c:cursor.c,r:cursor.r}};
-    const[dr,dc]=ARROWS[k],pat=song.patterns[curPat],old=selRect(),oldR=cursor.r;
+    const[dr,dc]=ARROWS[k]||[k==='PageDown'?16:-16,0],pat=song.patterns[curPat],old=selRect(),oldR=cursor.r;
     let{t,c,r}=sel.b;
     if(dr)r=clamp(r+dr,0,pat.rows-1);
     if(dc){const l=clamp(LIN(t,c)+dc,0,TRACKS*8-1);t=Math.floor(l/8);c=l%8}
@@ -5460,15 +5916,29 @@ document.addEventListener('keydown',e=>{
     e.preventDefault();e.stopImmediatePropagation();
     const pat=song.patterns[curPat];
     /* first step hugs the whole FIELD under the cursor (note / instrument / volume / fx),
-       not a single hex digit — a one-digit box just looked broken */
+       not a single hex digit — a one-digit box just looked broken.
+       Row-wise every step hugs the CONTENT: first event to last event, not the whole
+       column — an empty pattern tail in the box is just noise to drag around. */
     const F=cursor.c===0?[0,0]:cursor.c<=2?[1,2]:cursor.c<=4?[3,4]:[5,7];
-    const col={a:{t:cursor.t,c:F[0],r:0},b:{t:cursor.t,c:F[1],r:pat.rows-1}};
-    const trk={a:{t:cursor.t,c:0,r:0},b:{t:cursor.t,c:7,r:pat.rows-1}};
+    const has={n:c=>c.n!=null,i:c=>c.i!=null,v:c=>c.v!=null,fx:c=>!!c.c};
+    const fk=cursor.c===0?'n':cursor.c<=2?'i':cursor.c<=4?'v':'fx';
+    const hug=(t1,t2,test)=>{ /* content row range across tracks t1..t2, null if empty */
+      let a=-1,b=-1;
+      for(let r=0;r<pat.rows;r++)for(let t=t1;t<=t2;t++){
+        const c=pat.data[t][r];
+        if(c&&test(c)){if(a<0)a=r;b=r;break}
+      }
+      return a<0?null:[a,b];
+    };
+    const cr=hug(cursor.t,cursor.t,has[fk])||[0,pat.rows-1];
+    const tr=hug(cursor.t,cursor.t,c=>has.n(c)||has.i(c)||has.v(c)||has.fx(c))||[0,pat.rows-1];
+    const col={a:{t:cursor.t,c:F[0],r:cr[0]},b:{t:cursor.t,c:F[1],r:cr[1]}};
+    const trk={a:{t:cursor.t,c:0,r:tr[0]},b:{t:cursor.t,c:7,r:tr[1]}};
     const all={a:{t:0,c:0,r:0},b:{t:TRACKS-1,c:7,r:pat.rows-1}};
     const same=(x,y)=>x&&JSON.stringify(x)===JSON.stringify(y);
     sel=same(sel,col)?trk:same(sel,trk)?all:col;
     renderRows(0,pat.rows-1);
-    status(same(sel,col)?'field column selected — Ctrl+A again for the track':same(sel,trk)?'track selected — Ctrl+A again for everything':'all selected');
+    status(same(sel,col)?'field selected around its notes — Ctrl+A again for the track':same(sel,trk)?'track selected around its notes — Ctrl+A again for everything':'all selected');
     return;
   }
   if((e.ctrlKey||e.metaKey)&&(low==='c'||low==='x')){
@@ -5480,7 +5950,7 @@ document.addEventListener('keydown',e=>{
   if(k==='Escape'&&sel){e.stopImmediatePropagation();clearSel();return}
   if((k==='Delete'||k==='Backspace')&&sel){
     e.preventDefault();e.stopImmediatePropagation();
-    eraseRect(selRect());clearSel();saveSoon();return;
+    eraseRect(selRect(),true);clearSel();saveSoon();return;
   }
   if(ARROWS[k]&&sel)clearSel();
 },true);
@@ -5670,7 +6140,13 @@ grows.addEventListener('mouseover',e=>{
   updateSelBox();
 });
 document.addEventListener('mouseup',()=>{
-  if(dragSel&&sel){const s=selRect();renderRows(s.r1,s.r2)}
+  /* a click on the note field (no drag) selects that whole cell — same as the old
+     dblclick, just without the second click */
+  if(dragSel&&!sel&&dragSel.c===0){
+    sel={a:{t:dragSel.t,c:0,r:dragSel.r},b:{t:dragSel.t,c:7,r:dragSel.r}};
+    renderRows(dragSel.r,dragSel.r);
+  }
+  else if(dragSel&&sel){const s=selRect();renderRows(s.r1,s.r2)}
   dragSel=null;
 });
 
@@ -5974,7 +6450,7 @@ const palWrap=document.getElementById('palWrap'),palQ=document.getElementById('p
 const COMMANDS=[
   {n:'Note OFF at cursor',k:'A',kw:'note off cut stop silence',f:()=>setNote(OFF,null)},
   {n:'Clear cell / selection',k:'Del',kw:'delete erase remove note',f:()=>{
-    if(sel){eraseRect(selRect());clearSel();saveSoon()}
+    if(sel){eraseRect(selRect(),true);clearSel();saveSoon()}
     else{song.patterns[curPat].data[cursor.t][cursor.r]=null;renderRow(cursor.r);saveSoon()}}},
   {n:'Play pattern',k:'Space',kw:'start loop',f:()=>play(false)},
   {n:'Play song',kw:'start all order',f:()=>play(true)},
@@ -6202,7 +6678,7 @@ function beatPlayhead(r){
 
 /* ================= piano roll (F6) — FL-style note editor for the current track ================= */
 const prPan=document.getElementById('proll'),prWrap=document.getElementById('prWrap'),prCv=document.getElementById('prCanvas');
-const PR={base:36,NP:30,CW:18,CH:16,GUT:36,sel:[],drag:null,band:null,hover:null,lastLen:4,playRow:-1,cursorRow:null};
+const PR={base:36,NP:30,CW:18,CH:16,GUT:36,sel:[],drag:null,band:null,scale:null,hover:null,lastLen:4,playRow:-1,cursorRow:null};
 try{PR.NP=clamp(+localStorage.getItem('volt.prNP')||30,16,90)}catch(e){}
 try{PR.CH=clamp(+localStorage.getItem('volt.prCH')||16,8,26)}catch(e){}
 const prIsSel=no=>PR.sel.some(s=>s.r===no.r&&s.n===no.n);
@@ -6280,6 +6756,31 @@ function prRender(){
     ctx.strokeRect(Math.min(b.x0,b.x1)+.5,Math.min(b.y0,b.y1)+.5,Math.abs(b.x1-b.x0),Math.abs(b.y1-b.y0));
     ctx.setLineDash([]);
   }
+  /* time-scale grip — time runs left→right here, so it rides the right edge of the selection */
+  const gr=prGripRect();
+  if(gr&&!PR.drag&&!PR.band){
+    const live=!!PR.scale;
+    if(live){ /* preview: where the block will end up */
+      ctx.strokeStyle='#f0b24e';ctx.setLineDash([5,3]);
+      ctx.strokeRect(PR.GUT+gr.b.r1*PR.CW+.5,gr.top+.5,gr.x-(PR.GUT+gr.b.r1*PR.CW),gr.bot-gr.top);
+      ctx.setLineDash([]);
+    }
+    ctx.save();
+    ctx.beginPath();
+    const gx=gr.x,gy=gr.y;
+    if(ctx.roundRect)ctx.roundRect(gx-8,gy-10,16,20,5);else ctx.rect(gx-8,gy-10,16,20);
+    ctx.fillStyle=live?'#f0b24e':'#3fe0b4';ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.55)';ctx.lineWidth=1;ctx.stroke();
+    /* ↔ drawn by hand: canvas font fallbacks for arrow glyphs are unreliable */
+    ctx.strokeStyle='#062019';ctx.lineWidth=1.4;ctx.beginPath();
+    ctx.moveTo(gx-4.5,gy);ctx.lineTo(gx+4.5,gy);
+    ctx.moveTo(gx-4.5,gy);ctx.lineTo(gx-2,gy-2.5);
+    ctx.moveTo(gx-4.5,gy);ctx.lineTo(gx-2,gy+2.5);
+    ctx.moveTo(gx+4.5,gy);ctx.lineTo(gx+2,gy-2.5);
+    ctx.moveTo(gx+4.5,gy);ctx.lineTo(gx+2,gy+2.5);
+    ctx.stroke();
+    ctx.restore();
+  }
   /* keyboard gutter */
   ctx.fillStyle='#10141d';ctx.fillRect(0,0,PR.GUT,H);
   for(let n=PR.base;n<PR.base+PR.NP;n++){
@@ -6340,6 +6841,87 @@ function prDrawNote(ctx,no,seld,ghost){
 let prT=null;
 function prRenderIfOpen(){if(prPan.hidden||PR.drag)return;clearTimeout(prT);prT=setTimeout(prRender,150)}
 function prPlayhead(r){if(prPan.hidden)return;PR.playRow=r;if(!PR.drag)prRender()}
+/* row span + pitch range the selected notes cover (note tails included, so their
+   OFF markers scale with them) */
+function prSelBounds(){
+  const ns=prSelNotes();if(!ns.length)return null;
+  const pat=song.patterns[curPat],d=pat.data[cursor.t];
+  let r1=1e9,lo=95,hi=0,lastOn=-1,end=-1;
+  ns.forEach(x=>{
+    r1=Math.min(r1,x.r);lastOn=Math.max(lastOn,x.r);
+    lo=Math.min(lo,x.n);hi=Math.max(hi,x.n);
+  });
+  /* end = the last event that belongs to the selection: a note's own OFF counts, the
+     pattern edge counts (unterminated note), but a terminator that is really the NEXT
+     unselected note's note-on does not — only the note-on is ours then. */
+  ns.forEach(x=>{
+    const e=x.r+x.len;
+    end=Math.max(end,e>=pat.rows?pat.rows:(d[e]&&d[e].n===OFF?e:x.r));
+  });
+  /* Phrase length = the last note-on padded up to the note-on grid (the step the notes
+     walk in). Measuring to the last OFF instead either left the span one step short
+     (31 of 32) or — when a squeeze had put an OFF exactly on the phrase boundary —
+     one step long (34 of 32). Both broke the clean ×2 round trip. */
+  let step=0;ns.forEach(x=>step=gcd2(step,x.r-r1));step=step||1;
+  let S=clamp(Math.ceil((lastOn+1-r1)/step)*step,1,pat.rows-r1);
+  if(end<pat.rows&&end-r1>S)S=clamp(Math.ceil((end-r1)/step)*step,1,pat.rows-r1); /* last note overhangs its step */
+  /* padding must never swallow foreign events */
+  const ownMax=Math.min(end===pat.rows?lastOn:Math.max(lastOn,end),r1+S-1);
+  for(let r=ownMax+1;r<r1+S;r++){
+    const c=d[r];
+    if(c&&(c.n!=null||c.i!=null||c.v!=null||c.c)){S=ownMax-r1+1;break}
+  }
+  const G=rectGrid({l1:LIN(cursor.t,0),l2:LIN(cursor.t,7),r1,r2:Math.max(r1,ownMax)});
+  return{r1,lo,hi,S,G,end,count:ns.length};
+}
+function prGripRect(){
+  const b=prSelBounds();if(!b||b.count<2)return null; /* one note: resize its edge instead — no grip */
+  const pat=song.patterns[curPat];
+  const T=PR.scale?PR.scale.T:b.S;
+  const top=(PR.base+PR.NP-1-b.hi)*PR.CH, bot=(PR.base+PR.NP-1-b.lo)*PR.CH+PR.CH;
+  /* keep it fully on-canvas even when the span runs to the last row */
+  const x=Math.min(PR.GUT+(b.r1+T)*PR.CW,PR.GUT+pat.rows*PR.CW-9);
+  return{x,y:(top+bot)/2,top,bot,b};
+}
+function prScaleApply(r1,S,q,end){
+  const pat=song.patterns[curPat],d=pat.data[cursor.t];
+  /* The last note's terminator can live OUTSIDE the scaled block: an OFF exactly on the
+     phrase boundary (row r1+S), or no OFF at all (the note implicitly runs to the pattern
+     edge). Remap it by hand, or the note's length ignores the scale — or runs away. */
+  const boundary=end>=r1+S;
+  if(boundary&&end<pat.rows){const c=d[end];if(c&&c.n===OFF){c.n=null;pruneCell(cursor.t,end)}}
+  const res=scaleRect({l1:LIN(cursor.t,0),l2:LIN(cursor.t,7),r1,r2:r1+S-1},q);
+  if(!res){
+    if(boundary&&end<pat.rows){const nc=ensureCell(cursor.t,end);nc.n=OFF} /* nothing scaled — put it back */
+    prRender();return;
+  }
+  if(boundary){
+    const e=r1+Math.round((end>=pat.rows?S:end-r1)*q);
+    /* lands past the pattern edge = the note runs to the end again, no OFF needed */
+    if(e<pat.rows){const c=cellAt(cursor.t,e);if(!c||c.n==null){const nc=ensureCell(cursor.t,e);nc.n=OFF}}
+  }
+  const seen=Object.create(null);
+  PR.sel=PR.sel.map(x=>({r:r1+Math.min(res.T-1,Math.round((x.r-r1)*q)),n:x.n}))
+    .filter(x=>{const k=x.r+':'+x.n;if(seen[k])return false;seen[k]=1;return true});
+  prRender();
+  status(scaleMsg(res.S,res.T,q,res.dropped));
+}
+document.addEventListener('mousemove',e=>{
+  if(!PR.scale)return;
+  const s=PR.scale;
+  const rawT=Math.max(1,s.S+Math.round((e.clientX-s.x)/PR.CW));
+  const maxQ=(song.patterns[curPat].rows-s.r1)/s.S;
+  const q=snapQ(rawT/s.S,s.G,maxQ);
+  const capped=rawT/s.S>maxQ;
+  if(q===s.q&&capped===s.capped)return;
+  s.q=q;s.T=qRows(s.S,q,s.r1);s.capped=capped;prRender();
+  status(scaleMsg(s.S,s.T,q,0,(capped?' · biggest step that fits the pattern':'')+' · release to apply, Esc cancels'));
+});
+document.addEventListener('mouseup',()=>{
+  if(!PR.scale)return;
+  const s=PR.scale;PR.scale=null;
+  if(s.q!==1)prScaleApply(s.r1,s.S,s.q,s.end);else prRender();
+});
 function prHit(e){
   const rect=prCv.getBoundingClientRect();
   const x=e.clientX-rect.left,y=e.clientY-rect.top;
@@ -6359,6 +6941,15 @@ function prHit(e){
 }
 prCv.addEventListener('mousemove',e=>{
   if(PR.drag||PR.band)return;
+  const gr=prGripRect(); /* hovering the grip: show it's draggable, and don't hover-light notes under it */
+  if(gr){
+    const rc=prCv.getBoundingClientRect();
+    if(Math.abs(e.clientX-rc.left-gr.x)<=9&&Math.abs(e.clientY-rc.top-gr.y)<=11){
+      prCv.style.cursor='ew-resize';
+      if(PR.hover){PR.hover=null;prRender()}
+      return;
+    }
+  }
   const h=prHit(e);
   prCv.style.cursor=h&&h.hit?(h.edge?'ew-resize':'grab'):'crosshair';
   const nh=h&&h.hit?{r:h.hit.r,n:h.hit.n}:null;
@@ -6376,6 +6967,17 @@ prCv.addEventListener('mousedown',e=>{
     const r=clamp(Math.floor((e.clientX-rect0.left-PR.GUT)/PR.CW),0,pat.rows-1);
     PR.loopDrag={a:r};pat.la=r;pat.lb=r;
     updateLoopVis();prRender();return;
+  }
+  /* the time-scale grip wins over notes and rubber-band select — it only exists
+     while something is selected, and it sits past the selection's right edge */
+  const gr=prGripRect();
+  if(gr){
+    const px=e.clientX-rect0.left,py=e.clientY-rect0.top;
+    if(Math.abs(px-gr.x)<=9&&Math.abs(py-gr.y)<=11){
+      e.preventDefault();
+      PR.scale={x:e.clientX,S:gr.b.S,r1:gr.b.r1,T:gr.b.S,q:1,G:gr.b.G,end:gr.b.end};
+      prRender();return;
+    }
   }
   const h=prHit(e);if(!h)return;
   e.preventDefault();
@@ -6498,8 +7100,26 @@ document.addEventListener('mouseup',()=>{
   }
   prApplyDrag(d);
 });
+/* A note has no stored length — it plays until the next event on the track, which may be
+   an OFF or simply the next note-on. So deleting a note can strand the one before it: with
+   its terminator gone it stretches on to the next event, or to the end of the pattern.
+   Wherever that would happen, leave an OFF behind on the row the note used to end. */
+function noteOpenBefore(t,r){
+  const d=song.patterns[curPat].data[t];
+  for(let i=r-1;i>=0;i--){
+    const c=d[i];if(!c||c.n==null)continue;
+    return c.n!==OFF; /* note-on = still sounding into row r · OFF = already stopped */
+  }
+  return false;
+}
+function noteEndFrom(t,r1){ /* first event at/after r1 — where the open note currently ends */
+  const pat=song.patterns[curPat],d=pat.data[t];
+  for(let r=r1;r<pat.rows;r++){const c=d[r];if(c&&c.n!=null)return r}
+  return -1;
+}
 function prEraseNote(t,no){
   const pat=song.patterns[curPat],dt=pat.data[t];
+  const strand=noteOpenBefore(t,no.r); /* was the previous note ending on this note-on? */
   const c=dt[no.r];
   if(c){c.n=null;c.i=null;c.v=null;pruneCell(t,no.r)}
   const end=no.r+no.len;
@@ -6507,6 +7127,7 @@ function prEraseNote(t,no){
     const ec=dt[end];
     if(ec&&ec.n===OFF){ec.n=null;pruneCell(t,end)}
   }
+  if(strand){const nc=ensureCell(t,no.r);nc.n=OFF;nc.i=null;nc.v=null}
 }
 function prWriteNote(t,no){
   const pat=song.patterns[curPat];
@@ -6580,6 +7201,7 @@ function prDeleteSel(){
 }
 prCv.addEventListener('contextmenu',e=>{
   e.preventDefault();
+  if(e.ctrlKey||e.metaKey){prFitView();return} /* Ctrl+right-click = reset the view (like FL) */
   const rect0=prCv.getBoundingClientRect();
   if(e.clientY-rect0.top<=8){ /* right-click the loop bar = clear the loop */
     const pat=song.patterns[curPat];
@@ -7210,7 +7832,7 @@ const newId=()=>'p'+Math.random().toString(36).slice(2,9);
 function saveTabs(){try{localStorage.setItem('volt.tabs',JSON.stringify({order:PM.tabs.map(t=>({id:t.id,name:t.name})),active:PM.active}))}catch(e){}}
 function renderTabs(){
   document.getElementById('tabList').innerHTML=PM.tabs.map(t=>
-    '<span class="tab'+(t.id===PM.active?' cur':'')+'" data-id="'+t.id+'" title="'+esc(t.name||'untitled')+' — click to open, double-click to rename"><span>'+esc(t.name||'untitled')+'</span><u data-x="'+t.id+'" title="Close project">&#215;</u></span>').join('');
+    '<span class="tab'+(t.id===PM.active?' cur':'')+'" data-id="'+t.id+'" title="'+esc(t.name||'untitled')+(t.dirty?' — unsaved changes':'')+' — click to open, double-click to rename, Alt+C closes"><span>'+esc(t.name||'untitled')+(t.dirty?' *':'')+'</span><u data-x="'+t.id+'" title="Close project">&#215;</u></span>').join('');
 }
 function storeTabState(){
   const t=PM.tabs.find(x=>x.id===PM.active);if(!t||!song)return;
@@ -7290,7 +7912,14 @@ document.getElementById('tabList').addEventListener('dblclick',e=>{
   });
 });
 document.getElementById('tabNew').onclick=()=>newTab(blankSong());
-window.addEventListener('beforeunload',()=>{try{flushSave();saveTabs()}catch(e){}});
+window.addEventListener('beforeunload',e=>{
+  try{flushSave();saveTabs()}catch(e2){}
+  /* Ctrl+W on the browser tab can't be intercepted — but the browser can be made to ask
+     before leaving whenever closing would actually lose something: unsaved-to-file work
+     (when file saves are in use), or samples the quota-limited autosave couldn't keep.
+     Browser-storage-only sessions with a clean autosave close silently — nothing is lost. */
+  if(saveLossy||(VAULT.proj&&PM.tabs.some(t=>t.dirty))){e.preventDefault();e.returnValue=''}
+});
 
 /* ================= help (F1) — the manual, minus the boredom ================= */
 const HELP=[
@@ -7485,6 +8114,119 @@ document.getElementById('themeSel').innerHTML=Object.entries(THEMES).map(([id,t]
 document.getElementById('themeSel').addEventListener('change',e=>{applyTheme(e.target.value);status(THEMES[e.target.value].label)});
 Object.entries(THEMES).forEach(([id,t])=>COMMANDS.push({n:'Theme: '+t.label,kw:'color lighting skin look',f:()=>{applyTheme(id);status(t.label)}}));
 
+/* ================= fader polish =================
+   Every fader in the app is a native <input type=range>, so one delegated pair of
+   handlers covers all of them (params, track mix, EQ, FX, mixer strips, headers):
+     · Ctrl+drag  — fine mode, 5× slower than the pointer, for precise values
+     · dblclick the number — type an exact value in real units (dB / Hz / %)
+   Both drive the slider and re-dispatch 'input', so every existing handler
+   (model update, readout, saveSoon, automation) runs untouched. */
+const FINE_RATIO=.2;
+let fDrag=null;
+document.addEventListener('pointerdown',e=>{
+  if(!(e.ctrlKey||e.metaKey)||e.button!==0)return;
+  const r=e.target;
+  if(!r||r.tagName!=='INPUT'||r.type!=='range'||r.disabled)return;
+  e.preventDefault(); /* stop the native jump-to-click drag */
+  const vert=r.classList.contains('vert');
+  const mn=r.min===''?0:+r.min, mx=r.max===''?100:+r.max, st=+r.step||1;
+  fDrag={r,vert,mn,mx,st,len:Math.max(vert?r.offsetHeight:r.offsetWidth,1),
+         x:e.clientX,y:e.clientY,v0:+r.value,dec:(String(st).split('.')[1]||'').length};
+  r.classList.add('fine');
+  try{r.setPointerCapture(e.pointerId)}catch(_){}
+},true);
+document.addEventListener('pointermove',e=>{
+  if(!fDrag)return;
+  const f=fDrag;
+  const d=f.vert?(f.y-e.clientY):(e.clientX-f.x); /* vertical faders read bottom-up */
+  let v=f.v0+d*((f.mx-f.mn)/f.len)*FINE_RATIO;
+  v=clamp(+(Math.round(v/f.st)*f.st).toFixed(f.dec),f.mn,f.mx);
+  if(v!==+f.r.value){f.r.value=v;f.r.dispatchEvent(new Event('input',{bubbles:true}))}
+},true);
+function fDragEnd(){
+  if(!fDrag)return;
+  fDrag.r.classList.remove('fine');
+  fDrag.r.dispatchEvent(new Event('change',{bubbles:true}));
+  fDrag=null;
+}
+document.addEventListener('pointerup',fDragEnd,true);
+document.addEventListener('pointercancel',fDragEnd,true);
+/* typed display value -> slider value, per fader family (inverse of the readouts) */
+function pvToSlider(r,txt){
+  const s=txt.trim(),num=parseFloat(s);
+  const k=r.dataset.k,teq=r.dataset.teq,tk=r.dataset.tk,fxp=r.dataset.fxp;
+  if(k){ /* instrument params: slider 0-1000, linear or exponential */
+    const ins=song.instruments[curInst];if(!ins)return null;
+    const d=ITYPES[ins.type]&&ITYPES[ins.type].p[k];if(!d||!isFinite(num))return null;
+    const[mn,mx,,ex]=d;
+    const v=clamp(num,Math.min(mn,mx),Math.max(mn,mx));
+    const t=ex?Math.log(v/mn)/Math.log(mx/mn):(v-mn)/(mx-mn);
+    return Math.round(clamp(t,0,1)*1000);
+  }
+  if(teq)return isFinite(num)?clamp(Math.round(num*2)/2,-12,12):null; /* EQ: dB, .5 steps */
+  if(tk){
+    if(tk==='vol'){ /* readout is dB */
+      if(/^-?\s*(inf|∞)$/i.test(s))return 0;
+      if(!isFinite(num))return null;
+      return num<=-60?0:Math.round(clamp(Math.pow(10,num/20)*100,0,100));
+    }
+    if(tk==='pan'){ /* readout is C / L50 / R30 */
+      if(/^c$/i.test(s))return 0;
+      const m=/^([LR])\s*(\d+(?:\.\d+)?)$/i.exec(s);
+      if(m)return Math.round(clamp((m[1].toUpperCase()==='L'?-1:1)*parseFloat(m[2]),-100,100));
+      return isFinite(num)?Math.round(clamp(num,-100,100)):null;
+    }
+    if(tk==='fltF'){ /* readout is Hz, accepts 1.2k */
+      if(!isFinite(num))return null;
+      const hz=clamp(/k/i.test(s)?num*1000:num,60,60*300);
+      return Math.round(clamp(Math.log(hz/60)/Math.log(300),0,1)*100);
+    }
+    if(tk==='fltQ')return isFinite(num)?Math.round(clamp(num*5,0,100)):null; /* readout = x*20 */
+    return isFinite(num)?Math.round(clamp(num,0,100)):null; /* sends: percent */
+  }
+  if(fxp){ /* FX params: slider 0-1000, linear */
+    const ts=masterView?MHOST:song.trackset[cursor.t];
+    const fx=ts&&ts.fx&&ts.fx[+r.dataset.fxi];if(!fx||!isFinite(num))return null;
+    const d=FX_TYPES[fx.type]&&FX_TYPES[fx.type].p[fxp];if(!d)return null;
+    const[mn,mx]=d;
+    return Math.round(clamp((clamp(num,Math.min(mn,mx),Math.max(mn,mx))-mn)/(mx-mn),0,1)*1000);
+  }
+  return null;
+}
+let pvEdit=null;
+document.addEventListener('dblclick',e=>{
+  const pv=e.target.closest&&e.target.closest('.pv');
+  if(!pv||pvEdit)return;
+  const row=pv.closest('.param');if(!row)return;
+  const r=row.querySelector('input[type=range]');if(!r)return;
+  e.preventDefault();e.stopPropagation(); /* don't let the reset-on-dblclick handlers see it */
+  const orig=pv.textContent;
+  const inp=document.createElement('input');
+  inp.type='text';inp.className='pvedit';
+  inp.value=orig.replace(/dB$/i,'').trim();
+  inp.title='Type a value in the units shown, then Enter (Esc cancels)';
+  pv.textContent='';pv.appendChild(inp);
+  pvEdit=pv;
+  inp.focus();inp.select();
+  const done=ok=>{
+    if(!pvEdit)return;
+    const txt=inp.value;
+    pvEdit=null;pv.textContent=orig; /* restore first — the input handler rewrites this */
+    if(!ok)return;
+    const sv=pvToSlider(r,txt);
+    if(sv==null){status('“'+txt+'” isn’t a value this fader takes');return}
+    r.value=sv;
+    r.dispatchEvent(new Event('input',{bubbles:true}));
+    r.dispatchEvent(new Event('change',{bubbles:true}));
+  };
+  inp.addEventListener('keydown',ev=>{
+    ev.stopPropagation();
+    if(ev.key==='Enter'){ev.preventDefault();done(true)}
+    else if(ev.key==='Escape'){ev.preventDefault();done(false)}
+  });
+  inp.addEventListener('blur',()=>done(true));
+},true);
+
 /* ================= boot ================= */
 document.addEventListener('pointerdown',()=>{if(AC&&AC.state==='suspended')AC.resume()},true);
 window.addEventListener('resize',()=>{syncHeadWidths();updateSelBox()});
@@ -7497,7 +8239,15 @@ window.addEventListener('resize',()=>{syncHeadWidths();updateSelBox()});
   if(idx&&idx.order&&idx.order.length){
     PM.tabs=idx.order.map(t=>({id:t.id,name:t.name||'untitled'}));
     PM.active=PM.tabs.some(t=>t.id===idx.active)?idx.active:PM.tabs[0].id;
-    loadSong(loadProj(PM.active)||embeddedDefault()||tplDnb());
+    /* a corrupt saved project used to throw here and leave the app half-drawn
+       (everything renders at the end of loadSong) — fall back to a working song */
+    loadSong(loadProj(PM.active)||embeddedDefault()||tplDnb()).catch(err=>{
+      console.error('VOLT: saved project failed to load —',err);
+      delete projCache[PM.active];
+      loadSong(embeddedDefault()||tplDnb())
+        .then(()=>status('that saved project wouldn’t open — started a fresh one (its data is still in this browser)'))
+        .catch(e2=>{console.error('VOLT: default song failed too —',e2);loadSong(blankSong()).catch(()=>{})});
+    });
   }else{
     /* migrate the old single-song save into the first tab */
     let s=null;
@@ -7507,8 +8257,14 @@ window.addEventListener('resize',()=>{syncHeadWidths();updateSelBox()});
     loadSong(s||embeddedDefault()||tplDnb()).then(()=>{
       flushSave();saveTabs();
       try{localStorage.removeItem('volt.song')}catch(e){}
+    }).catch(err=>{
+      console.error('VOLT: song failed to load —',err);
+      loadSong(blankSong()).catch(()=>{});
     });
   }
+  /* ask the browser to keep our storage (folder handles + ideas) out of automatic
+     eviction — does not survive a manual "clear site data" */
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persisted().then(p=>{if(!p)navigator.storage.persist()})}catch(e){}
   requestAnimationFrame(raf);
 })();
 </script>

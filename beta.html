@@ -29,6 +29,7 @@ button:hover{border-color:var(--teal);color:var(--teal)}
 button:active{transform:translateY(1px)}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:1px solid var(--teal);outline-offset:1px}
 button.on{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
+button.armed{background:rgba(255,77,157,.18);border-color:var(--mag,#ff4d9d);color:var(--mag,#ff4d9d);animation:recPulse 1s infinite}
 button.danger:hover{border-color:var(--mag);color:var(--mag)}
 input[type=number],select{background:var(--bg);border:1px solid var(--line);border-radius:3px;color:var(--txt);font-family:var(--mono);font-size:12px;padding:3px 5px}
 input[type=number]{width:52px}
@@ -74,6 +75,10 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 #smpEd{margin-top:8px}
 #smpCanvas{width:100%;height:64px;display:block;background:var(--well);border:1px solid var(--line);border-radius:3px;cursor:col-resize}
 #smpInfo{color:var(--dim);font-size:10px;font-family:var(--mono)}
+.tempoBpm{color:var(--teal,#4ade80);font-size:10px;font-family:var(--mono);align-self:center;margin-right:2px}
+.miss{background:rgba(255,120,60,.10);border:1px solid rgba(255,120,60,.5);border-radius:4px;padding:8px;margin-top:6px;font-size:11px}
+.miss .msT{color:#ff9a3c;font-weight:600;margin-bottom:3px}
+.miss .msP{color:var(--dim);word-break:break-all;font-family:var(--mono);font-size:10px;margin-bottom:6px}
 #slCanvas{width:100%;height:64px;display:block;background:var(--well);border:1px solid var(--line);border-radius:3px;cursor:pointer}
 #slHint{color:var(--dim);font-size:10px;margin-top:4px}
 
@@ -393,6 +398,11 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 #autoBar .abhint{color:var(--faint);font-size:9px}
 .astep i{position:absolute;left:0;right:0;bottom:0;background:var(--amber);opacity:.8;pointer-events:none}
 .astep.ph{box-shadow:inset 0 -3px 0 var(--teal)}
+/* Ctrl+drag range selection inside a lane — distinct violet wash + top/bottom rails */
+.astep.asel{background:rgba(167,139,250,.16);box-shadow:inset 0 2px 0 rgba(167,139,250,.8),inset 0 -2px 0 rgba(167,139,250,.8)}
+.astep.asel.b4{background:rgba(167,139,250,.22)}
+.astep.asel.selA{box-shadow:inset 0 2px 0 rgba(167,139,250,.8),inset 0 -2px 0 rgba(167,139,250,.8),inset 2px 0 0 rgba(167,139,250,.9)}
+.astep.asel.selB{box-shadow:inset 0 2px 0 rgba(167,139,250,.8),inset 0 -2px 0 rgba(167,139,250,.8),inset -2px 0 0 rgba(167,139,250,.9)}
 #autoHint{color:var(--dim);font-size:11px;padding:4px 0}
 
 /* ---- context menu ---- */
@@ -410,6 +420,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 /* ---- everything search panel ---- */
 #esQ{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:3px;color:var(--txt);font-family:var(--mono);font-size:12px;padding:4px 6px}
+.esNote{color:var(--faint);font-size:9px;margin-top:4px}
 #esResults{display:flex;flex-direction:column;gap:1px;margin-top:6px;max-height:230px;overflow-y:auto;font-size:11px}
 .esrow{display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:3px}
 .esrow:hover{background:var(--raised)}
@@ -422,7 +433,6 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 #esCfgPanel input[type=text],#esCfgPanel input[type=password]{width:126px;background:var(--bg);border:1px solid var(--line);border-radius:3px;color:var(--txt);font-family:var(--mono);font-size:11px;padding:2px 4px}
 #esMsg{color:var(--dim);font-size:10px;margin-top:4px;word-break:break-word}
 #esMsg.err{color:var(--mag)}
-#esDirName{color:var(--dim);font-size:10px;word-break:break-all}
 #esCfgBtn{float:right;padding:0 6px;font-size:10px}
 #esDot{font-style:normal;font-size:9px;color:var(--faint);vertical-align:1px}
 #esDot.ok{color:#4ade80;text-shadow:0 0 6px rgba(74,222,128,.6)}
@@ -485,6 +495,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
     <button id="playSong" title="Play song">&#9654; Song</button>
     <button id="stopBtn" title="Stop (Space)">&#9632;</button>
     <button id="followBtn" title="Follow playback — auto-scroll the grid to the playhead">Follow</button>
+    <button id="metBtn" title="Metronome (Ctrl+M) — click on every beat while playing, accent on the downbeat">&#9788; Metro</button>
   </div>
   <span class="sep"></span>
   <div class="grp">
@@ -513,6 +524,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
     <button id="autoBtn" title="Automation lanes (F7) — right-click a Cutoff/Volume/Delay/Reverb slider to add one">Auto</button>
     <button id="vaultBtn" title="Vault — your saved ideas &amp; phrases. Ctrl+Shift+G stashes the current selection.">Vault</button>
     <button id="recBtn" title="Recorder / sample editor (F10) — record the master or an input, edit, drop it back in as an instrument">Rec</button>
+    <button id="midiBtn" title="MIDI input — click to connect a keyboard (audition + step-record). Shift+click to arm LIVE record and jam into the playing song.">MIDI</button>
     <button id="setBtn" title="Settings — library &amp; projects folders, auto-save">&#9881;</button>
     <label class="fld">Theme <select id="themeSel" title="Color theme — pick for your room lighting"></select></label>
   </div>
@@ -581,9 +593,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
         <label>User <input type="text" id="esUser" placeholder="(browser auth)"></label>
         <label>Pass <input type="password" id="esPass"></label>
         <label>Ext <input type="text" id="esExts"></label>
-        <label>Copy to project <input type="checkbox" id="esCopy"></label>
-        <div class="btnrow"><button id="esDir">Project folder&#8230;</button><button id="esSave">Save</button></div>
-        <div id="esDirName"></div>
+        <div class="btnrow"><button id="esSave">Save</button></div>
+        <div class="esNote">Sample copying &amp; project folder now live in ⚙ Settings.</div>
       </div>
       <input type="text" id="esQ" placeholder="Search samples (Everything)&#8230;" autocomplete="off" spellcheck="false">
       <div id="esResults"></div>
@@ -625,7 +636,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
     <u id="recClose" title="Close">&#215;</u>
   </div>
   <canvas id="recCv" height="110"></canvas>
-  <div id="recHint">F10 toggles &#183; &#9679; records the master or an input (meter shows the live level) &#183; drag: select &#183; click: cursor &#183; <b>drag the selection out</b> onto the grid (new sample + note) or onto an instrument (asks replace/add) &#183; hovering here: Ctrl+C/X/V copy/cut/paste at the cursor, Del deletes, Ctrl+Z undoes &#183; wheel zooms, dblclick selects all</div>
+  <div id="recHint">F10 toggles &#183; &#9679; records the master or an input (meter shows the live level) &#183; drag: select &#183; click: cursor &#183; <b>drag the selection out</b> onto the grid (new sample + note), an instrument row, or a sampler&#8217;s waveform (replaces it) &#183; hovering here: <b>Space</b> plays &#183; <b>Ctrl+A</b> selects all &#183; Ctrl+C/X/V copy/cut/paste at the cursor, Del deletes, Ctrl+Z undoes &#183; wheel zooms, dblclick selects all</div>
 </div>
 
 <div id="beat" hidden><div id="beatLanes"></div></div>
@@ -745,9 +756,13 @@ function blankSong(){TRACKS=8;return{name:'untitled',bpm:170,lpb:4,instruments:[
 function cellAt(t,r){return song.patterns[curPat].data[t][r]}
 function ensureCell(t,r){const d=song.patterns[curPat].data;if(!d[t][r])d[t][r]={n:null,i:null,v:null,c:null,x:0};return d[t][r]}
 function pruneCell(t,r){const c=cellAt(t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null)song.patterns[curPat].data[t][r]=null}
+/* pattern-aware variants — MIDI live-record writes into whichever pattern is playing */
+function cellIn(pi,t,r){const d=song.patterns[pi].data[t];return d?d[r]:null}
+function ensureCellIn(pi,t,r){const d=song.patterns[pi].data;if(!d[t][r])d[t][r]={n:null,i:null,v:null,c:null,x:0};return d[t][r]}
+function pruneCellIn(pi,t,r){const c=cellIn(pi,t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null)song.patterns[pi].data[t][r]=null}
 
 /* ================= audio engine ================= */
-let AC=null, master, chans=[], noiseBuf, dlyIn, dlyL, dlyR, rvbIn, masterAn=null, masterAnL=null, masterAnR=null, MCH=null, masterComp=null;
+let AC=null, master, chans=[], noiseBuf, dlyIn, dlyL, dlyR, rvbIn, masterAn=null, masterAnL=null, masterAnR=null, MCH=null, masterComp=null, metOut=null;
 function audio(){
   if(AC)return AC;
   AC=new (window.AudioContext||window.webkitAudioContext)();
@@ -769,6 +784,13 @@ function buildGraph(){
   master.connect(mFxIn);mFxIn.connect(mFxOut);mFxOut.connect(comp);
   MCH={fxIn:mFxIn,fxOut:mFxOut,_fxNodes:[],_fxLive:{}};
   comp.connect(AC.destination);
+  /* metronome bus: a transparent (1:1) compressor whose fixed algorithmic lookahead
+     matches the master limiter's, so the click lands sample-aligned with the mix instead
+     of ~6ms early — but it goes straight to the output, staying off the meter and out of
+     the master recorder (which taps masterComp) */
+  metOut=AC.createDynamicsCompressor();
+  metOut.threshold.value=0;metOut.knee.value=0;metOut.ratio.value=1;metOut.attack.value=.003;metOut.release.value=.25;
+  metOut.connect(AC.destination);
   masterAn=AC.createAnalyser();masterAn.fftSize=2048;comp.connect(masterAn);
   /* stereo metering: split the master into L/R analysers */
   const msp=AC.createChannelSplitter(2);
@@ -1482,13 +1504,13 @@ function panic(){
 }
 
 /* ================= sequencer ================= */
-const SEQ={playing:false,songMode:false,ord:0,row:0,next:0,timer:null,q:[]};
+const SEQ={playing:false,songMode:false,ord:0,row:0,next:0,timer:null,q:[],rec:[]};
 const rowDur=()=>60/song.bpm/song.lpb;
 function play(songMode,fromRow){
   if(rendering)return;
   audio();if(AC.state==='suspended')AC.resume();
   stop(true);stopAllVoices();
-  SEQ.playing=true;SEQ.songMode=songMode;SEQ.ord=0;SEQ.q=[];
+  SEQ.playing=true;SEQ.songMode=songMode;SEQ.ord=0;SEQ.q=[];SEQ.rec=[];if(typeof MIDI!=='undefined'){MIDI.touch={};MIDI.liveChord=null;MIDI.held=0}
   SEQ.row=!songMode&&fromRow?clamp(fromRow,0,song.patterns[curPat].rows-1):0;
   if(songMode&&song.order.length)curPatSet(song.order[0]);
   SEQ.next=AC.currentTime+.08;
@@ -1500,7 +1522,7 @@ function stop(silent){
   if(SEQ.timer)clearInterval(SEQ.timer);SEQ.timer=null;
   if(SEQ.playing&&!silent){stopAllVoices()}
   const wasPlaying=SEQ.playing;
-  SEQ.playing=false;SEQ.q=[];setPlayRow(-1);
+  SEQ.playing=false;SEQ.q=[];SEQ.rec=[];setPlayRow(-1);if(typeof MIDI!=='undefined'){MIDI.liveChord=null;MIDI.held=0}
   document.getElementById('playPat').classList.remove('playing');
   document.getElementById('playSong').classList.remove('playing');
   /* snap sliders back to their stored values after automation moved them */
@@ -1515,12 +1537,34 @@ function pump(){
     const pat=song.patterns[pi];if(!pat){stop();return}
     schedRow(pi,SEQ.row,SEQ.next);
     SEQ.q.push({pat:pi,row:SEQ.row,t:SEQ.next,ord:SEQ.ord});
+    SEQ.rec.push({pat:pi,row:SEQ.row,t:SEQ.next}); /* undrained history for MIDI live-record quantize */
     SEQ.next+=rowDur();SEQ.row++;
     /* pattern-mode loop region (Ctrl+Shift+Enter / Shift+drag the row numbers) */
     if(!SEQ.songMode&&pat.la!=null&&pat.lb!=null&&(SEQ.row>pat.lb||SEQ.row>=pat.rows))
       SEQ.row=Math.min(pat.la,pat.rows-1);
     else if(SEQ.row>=pat.rows){SEQ.row=0;if(SEQ.songMode)SEQ.ord=(SEQ.ord+1)%song.order.length}
   }
+  const cut=AC.currentTime-1;while(SEQ.rec.length&&SEQ.rec[0].t<cut)SEQ.rec.shift(); /* keep ~1s of history */
+}
+/* ---- metronome: a synth click scheduled per beat, routed straight to the output so
+   it bypasses track mute/FX and never lands in the WAV render (gated on !rendering) ---- */
+const MET={on:false,vol:.45};
+try{MET.on=localStorage.getItem('volt.met')==='1'}catch(e){}
+function metClick(t,accent){
+  if(!AC)return;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type='square';o.frequency.value=accent?1800:1100;
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(MET.vol*(accent?1:.65),t+.001);
+  g.gain.exponentialRampToValueAtTime(.0001,t+.035);
+  o.connect(g);g.connect(metOut||AC.destination);
+  o.start(t);o.stop(t+.05);
+}
+function metToggle(){
+  MET.on=!MET.on;
+  const b=document.getElementById('metBtn');if(b)b.classList.toggle('on',MET.on);
+  try{localStorage.setItem('volt.met',MET.on?'1':'0')}catch(e){}
+  status('metronome '+(MET.on?'on':'off'));
 }
 /* ---- loop region: rows [la,lb] of a pattern repeat while jamming in pattern mode ---- */
 function updateLoopVis(){
@@ -1587,6 +1631,7 @@ function applyBaseAt(t){
 function schedRow(pi,row,t){
   const pat=song.patterns[pi];
   if(row===0)applyBaseAt(t);
+  if(MET.on&&!rendering&&song.lpb&&row%song.lpb===0)metClick(t,row%(song.lpb*4)===0); /* beat click, accent on the downbeat */
   const soloed=song.trackset.some(s=>s.solo);
   /* collect this row's automation: 'p.*' keys pre-apply to triggered notes,
      the rest post-apply to channels/voices */
@@ -1670,6 +1715,8 @@ function setFollow(on){
 }
 document.getElementById('followBtn').onclick=()=>{setFollow(!followPlay);status('follow '+(followPlay?'on':'off'))};
 document.getElementById('followBtn').classList.toggle('on',followPlay);
+document.getElementById('metBtn').onclick=metToggle;
+document.getElementById('metBtn').classList.toggle('on',MET.on);
 function setPlayRow(r){
   beatPlayhead(r);autoPlayhead(r);prPlayhead(r);
   if(playRowEl){playRowEl.classList.remove('playrow');playRowEl=null}
@@ -1962,11 +2009,15 @@ function syncHeadWidths(){
   const row=grows.children[0];if(!row)return;
   const cells=row.querySelectorAll('.tcell');
   const hcells=ghead.querySelectorAll('.tcell');
-  /* min AND max: the mini faders must never stretch a header past its grid column */
-  cells.forEach((c,i)=>{if(hcells[i]){const w=c.getBoundingClientRect().width+'px';
-    hcells[i].style.minWidth=w;hcells[i].style.maxWidth=w;hcells[i].style.boxSizing='border-box'}});
+  /* batch all the reads before any write — interleaving them forced a full reflow per
+     cell (the main cost of every renderGrid) */
+  const ws=[...cells].map(c=>c.getBoundingClientRect().width);
   const rn=row.querySelector('.rn'),hrn=ghead.querySelector('.rn');
-  if(rn&&hrn)hrn.style.minWidth=rn.getBoundingClientRect().width+'px';
+  const rw=rn?rn.getBoundingClientRect().width:0;
+  /* min AND max: the mini faders must never stretch a header past its grid column */
+  cells.forEach((c,i)=>{if(hcells[i]){const w=ws[i]+'px';
+    hcells[i].style.minWidth=w;hcells[i].style.maxWidth=w;hcells[i].style.boxSizing='border-box'}});
+  if(rn&&hrn)hrn.style.minWidth=rw+'px';
 }
 function renderGrid(){
   const pat=song.patterns[curPat];
@@ -2105,7 +2156,7 @@ function finishTrackChange(pos,msg){
   genCtCSS();genColorCSS();
   if(AC){ensureChans(TRACKS);applyMix();applyFxAll()}
   renderGrid();trackPanel();if(!mixer.hidden)renderMixer();saveSoon();
-  status(msg);
+  if(msg)status(msg);
 }
 /* ===== polyphonic tracks =====
    A "poly group" is a leader track plus contiguous child lanes to its right, each child
@@ -2121,8 +2172,8 @@ function polyLanes(t){
   return arr;
 }
 function polyGrouped(t){return polyLanes(t).length>1}
-function polyAddLane(t,follow){
-  if(TRACKS>=MAXTRACKS){status('max '+MAXTRACKS+' tracks — no room for another poly lane');return -1}
+function polyAddLane(t,follow,quiet){
+  if(TRACKS>=MAXTRACKS){if(!quiet)status('max '+MAXTRACKS+' tracks — no room for another poly lane');return -1}
   const lanes=polyLanes(t),pos=lanes[lanes.length-1]+1,keep=cursor.t;
   song.patterns.forEach(p=>{
     p.data.splice(pos,0,new Array(p.rows).fill(null));
@@ -2131,7 +2182,7 @@ function polyAddLane(t,follow){
   const nts=mkTs();nts.poly=true;
   song.trackset.splice(pos,0,nts);
   song.lfos=remapKeysUp(song.lfos,pos);
-  finishTrackChange(pos,'track '+(lanes[0]+1)+' is polyphonic — '+(lanes.length+1)+' lanes on one mixer channel (Alt+Y adds more)');
+  finishTrackChange(pos,quiet?'':'track '+(lanes[0]+1)+' is polyphonic — '+(lanes.length+1)+' lanes on one mixer channel (Alt+Y adds more)');
   if(!follow){cursor.t=keep;renderGrid();trackPanel()}
   return pos;
 }
@@ -2166,6 +2217,7 @@ function polyRemoveLane(t){
 }
 function insertTrackAt(pos){
   if(TRACKS>=MAXTRACKS){status('max '+MAXTRACKS+' tracks');return}
+  while(pos<TRACKS&&song.trackset[pos]&&song.trackset[pos].poly)pos++; /* never split a poly group — land after it */
   song.patterns.forEach(p=>{
     p.data.splice(pos,0,new Array(p.rows).fill(null));
     p.auto=remapKeysUp(p.auto,pos);
@@ -2176,7 +2228,10 @@ function insertTrackAt(pos){
 }
 function duplicateTrack(t){
   if(TRACKS>=MAXTRACKS){status('max '+MAXTRACKS+' tracks');return}
-  const pos=t+1;
+  /* duplicating a poly LEADER: the copy lands after the whole group (a copy inside would
+     be adopted as a lane). Duplicating a child just adds a same-content lane — fine. */
+  let pos=t+1;
+  if(!song.trackset[t].poly)while(pos<TRACKS&&song.trackset[pos].poly)pos++;
   const tsCopy=JSON.parse(JSON.stringify(song.trackset[t]));
   if(tsCopy.name)tsCopy.name+=' 2';
   song.patterns.forEach(p=>{
@@ -2674,6 +2729,132 @@ document.addEventListener('keyup',e=>{
     if(ch&&ch.voice&&!SEQ.playing)ch.voice.release(AC.currentTime);
   }
 });
+/* ================= MIDI input (Web MIDI API) =================
+   Click the MIDI button to connect. Once on: playing a key auditions the CURRENT
+   instrument on the cursor track (polyphonic, velocity-sensitive); while the song
+   is stopped each note also step-records at the cursor with its velocity → volume,
+   exactly like typing a note. Nothing is written while the song plays (jam freely). */
+const MIDI={access:null,on:false,live:false,recT:0,touch:{},voices:Object.create(null),dev:'',maxPoly:8,held:0,liveChord:null};
+const CHORD_S=.05; /* notes arriving within this window count as one chord (stack, don't scatter) */
+const midiBtn=document.getElementById('midiBtn');
+async function midiToggle(){
+  if(MIDI.on){midiStop();return}
+  /* reuse the access object once granted — re-requesting is what made the browser re-prompt
+     every time you toggled MIDI off then on within a session */
+  if(!MIDI.access){
+    if(!navigator.requestMIDIAccess){status('this browser has no Web MIDI — use Chrome or Edge');return}
+    try{MIDI.access=await navigator.requestMIDIAccess({sysex:false})}
+    catch(err){status('MIDI access denied');return}
+  }
+  MIDI.on=true;midiBind();
+  MIDI.access.onstatechange=midiBind;
+  midiBtn.classList.add('on');
+  const n=[...MIDI.access.inputs.values()].length;
+  status(n?('MIDI on — '+MIDI.dev+' · play to audition; when stopped, notes & held chords step-record at the cursor'):'MIDI on — no device found yet, plug one in');
+}
+function midiBind(){
+  if(!MIDI.access)return;
+  const names=[];
+  MIDI.access.inputs.forEach(inp=>{inp.onmidimessage=midiMsg;names.push(inp.name)});
+  MIDI.dev=names.length?names.join(', '):'no devices';
+  midiBtn.title='MIDI: '+MIDI.dev+' — click to turn off';
+}
+function midiStop(){
+  if(MIDI.access){MIDI.access.inputs.forEach(inp=>inp.onmidimessage=null);MIDI.access.onstatechange=null}
+  for(const k in MIDI.voices){try{MIDI.voices[k].cut(AC.currentTime)}catch(e){}}
+  MIDI.voices=Object.create(null);
+  MIDI.on=false;MIDI.live=false;MIDI.held=0;MIDI.liveChord=null;midiBtn.classList.remove('on','armed');
+  midiBtn.title='MIDI input — connect a MIDI keyboard to audition & step-record notes';
+  status('MIDI off');
+}
+/* live-record arm (Shift+click the MIDI button). While armed AND the song plays,
+   notes land on the armed track quantized to the nearest row; chords spread across
+   the track's poly lanes; a fresh pass over a row replaces its former take. */
+function midiArm(){
+  if(!MIDI.on){status('turn MIDI on first (click the MIDI button)');return}
+  MIDI.live=!MIDI.live;
+  MIDI.touch={};MIDI.liveChord=null;MIDI.held=0;
+  if(MIDI.live){
+    MIDI.recT=polyLead(cursor.t);
+    midiBtn.classList.add('armed');
+    status('● LIVE MIDI armed on T'+(MIDI.recT+1)+' — hit play and jam; chords auto-spread onto new lanes, each pass overwrites what you replay');
+  }else{
+    midiBtn.classList.remove('armed');
+    status('live MIDI record off');
+  }
+}
+/* nearest scheduled row boundary to a given audio-clock time */
+function liveRowAt(now){
+  let best=null,bd=1e9;
+  for(const e of SEQ.rec){const d=Math.abs(e.t-now);if(d<bd){bd=d;best=e}}
+  return best;
+}
+/* place one chord voice: drop the note on the first free poly lane of group `t` at (pi,row),
+   growing the group when every lane is busy — that's how parallel keys become a chord with no
+   Alt+Y. Growth is bounded by real polyphony (once widened it stays), capped at MIDI.maxPoly. */
+function placeVoice(pi,r,t,note,vel){
+  let lanes=polyLanes(t);
+  let lane=lanes.find(L=>{const c=cellIn(pi,L,r);return !c||c.n==null});
+  if(lane==null){
+    if(lanes.length<MIDI.maxPoly){const p=polyAddLane(t,false,true);lane=p>=0?p:lanes[lanes.length-1]}
+    else lane=lanes[lanes.length-1]; /* hit the poly ceiling — pile onto the last lane */
+  }
+  const cell=ensureCellIn(pi,lane,r);
+  cell.n=note;cell.i=curInst;cell.v=clamp(Math.round(vel/127*64),1,64);
+}
+/* wipe a whole chord row across every lane of group `t` (used to replace a former take) */
+function wipeChordRow(pi,r,t){
+  polyLanes(t).forEach(L=>{const c=cellIn(pi,L,r);if(c){c.n=null;c.i=null;c.v=null;c.c=null;c.x=0}pruneCellIn(pi,L,r)});
+}
+function livePlace(note,vel){
+  const now=AC.currentTime,t=MIDI.recT;
+  let pi,r,fresh=false;
+  /* notes within CHORD_S of the chord's first note pin to that same row instead of each
+     re-quantizing independently (which scattered chords down lane 0) */
+  if(MIDI.liveChord&&now-MIDI.liveChord.t0<=CHORD_S){pi=MIDI.liveChord.pi;r=MIDI.liveChord.r}
+  else{const q=liveRowAt(now);if(!q)return;pi=q.pat;r=q.row;MIDI.liveChord={pi,r,t0:now};fresh=true}
+  if(fresh)wipeChordRow(pi,r,t); /* the chord's first note replaces this row's former take */
+  placeVoice(pi,r,t,note,vel);
+  if(pi===curPat){renderRow(r);prRenderIfOpen()}
+  saveSoon();
+}
+function midiMsg(e){
+  const st=e.data[0],d1=e.data[1],d2=e.data[2],cmd=st&0xF0;
+  if(cmd===0x90&&d2>0)midiNoteOn(d1,d2);
+  else if(cmd===0x80||(cmd===0x90&&d2===0))midiNoteOff(d1);
+  /* CC / pitch-bend ignored for now — notes only */
+}
+function midiNoteOn(midiNote,vel){
+  audio();if(AC.state==='suspended')AC.resume();
+  const inst=song.instruments[curInst];if(!inst)return;
+  const n=clamp(midiNote-12,0,95); /* MIDI 60 (middle C) → tracker note 48 = C4 */
+  if(MIDI.voices[midiNote]){try{MIDI.voices[midiNote].cut(AC.currentTime)}catch(e){}}
+  const at=MIDI.live&&SEQ.playing?MIDI.recT:cursor.t; /* audition on the track we're recording into */
+  MIDI.voices[midiNote]=trig(inst,n,AC.currentTime+.005,at,clamp(vel/127,.05,1),0);
+  if(MIDI.live&&SEQ.playing){ /* live-record: quantize to the playhead on the armed track */
+    livePlace(n,vel);
+  }else if(!SEQ.playing){ /* step-record: held keys stack as a chord, advance on release */
+    stepPlace(n,vel);
+  }
+}
+/* step-record chord entry: the first key of a chord replaces the cursor row, further held keys
+   spread across poly lanes (growing the group). The cursor advances only once the whole chord
+   is released (see midiNoteOff) — hardware-style, so triads land on one row, not three. */
+function stepPlace(note,vel){
+  const t=polyLead(cursor.t),pi=curPat,r=cursor.r;
+  if(MIDI.held===0)wipeChordRow(pi,r,t); /* fresh chord → clear the row first */
+  MIDI.held++;
+  placeVoice(pi,r,t,note,vel);
+  renderRow(r);prRenderIfOpen();saveSoon();
+}
+function midiNoteOff(midiNote){
+  const v=MIDI.voices[midiNote];
+  if(v){try{v.release(AC.currentTime)}catch(e){}delete MIDI.voices[midiNote]}
+  if(!SEQ.playing&&MIDI.held>0){ /* chord fully released → step forward one */
+    if(--MIDI.held===0)moveCursor(0,editStep,0);
+  }
+}
+if(midiBtn)midiBtn.onclick=e=>{if(e.shiftKey)midiArm();else midiToggle()};
 function setNote(n,ii){
   const cell=ensureCell(cursor.t,cursor.r);
   cell.n=n;
@@ -2790,6 +2971,85 @@ function estBpm(buf){
   });
   return best;
 }
+/* ===== tempo-fit a sample to the project ===== */
+function cloneBuf(b){const nb=AC.createBuffer(b.numberOfChannels,b.length,b.sampleRate);for(let c=0;c<b.numberOfChannels;c++)nb.getChannelData(c).set(b.getChannelData(c));return nb}
+/* linear-interpolated resample: new length = old*factor. Changes BOTH length and pitch
+   (the classic tracker "repitch to tempo"). */
+function resampleBuf(buf,factor){
+  const chN=buf.numberOfChannels,outLen=Math.max(1,Math.round(buf.length*factor));
+  const out=AC.createBuffer(chN,outLen,buf.sampleRate);
+  for(let c=0;c<chN;c++){
+    const x=buf.getChannelData(c),y=out.getChannelData(c),xl=x.length;
+    for(let i=0;i<outLen;i++){
+      const t=i/factor,i0=Math.floor(t),f=t-i0;
+      const a=i0<xl?x[i0]:0,b=i0+1<xl?x[i0+1]:a;
+      y[i]=a+(b-a)*f;
+    }
+  }
+  return out;
+}
+/* WSOLA time-stretch: new length = old*factor, PITCH PRESERVED. Overlap-adds Hann-windowed
+   grains, nudging each grain's read position (±seek) to the spot that best continues the
+   previous grain — that similarity search is what keeps transients/phase clean. */
+function wsolaStretch(buf,factor){
+  if(Math.abs(factor-1)<1e-3)return cloneBuf(buf);
+  const sr=buf.sampleRate,chN=buf.numberOfChannels;
+  const outLen=Math.max(1,Math.round(buf.length*factor));
+  const out=AC.createBuffer(chN,outLen,sr);
+  const W=Math.max(256,Math.round(sr*.04)); /* ~40ms window */
+  const Hs=W>>1;                             /* synthesis hop = 50% overlap */
+  const Ha=Hs/factor;                        /* analysis hop */
+  const seek=Math.max(1,Math.round(sr*.012));/* ±12ms similarity search */
+  const win=new Float32Array(W);
+  for(let i=0;i<W;i++)win[i]=.5-.5*Math.cos(2*Math.PI*i/(W-1));
+  for(let c=0;c<chN;c++){
+    const x=buf.getChannelData(c),y=out.getChannelData(c),xl=x.length;
+    const norm=new Float32Array(outLen);
+    let ana=0,natural=-1,sp=0;
+    while(sp<outLen){
+      let base=Math.round(ana),delta=0;
+      if(natural>=0){ /* find the read offset near `base` that best matches the natural continuation */
+        let bestC=-Infinity;
+        for(let d=-seek;d<=seek;d++){
+          const p=base+d;if(p<0||p+W>=xl)continue;
+          let corr=0;
+          for(let i=0;i<W;i+=4){const np=natural+i;if(np>=xl)break;corr+=x[p+i]*x[np]}
+          if(corr>bestC){bestC=corr;delta=d}
+        }
+      }
+      const start=base+delta;
+      for(let i=0;i<W;i++){const xp=start+i,yp=sp+i;if(xp<0||xp>=xl||yp>=outLen)continue;y[yp]+=x[xp]*win[i];norm[yp]+=win[i]}
+      natural=start+Hs;ana+=Ha;sp+=Hs;
+    }
+    for(let i=0;i<outLen;i++)if(norm[i]>1e-6)y[i]/=norm[i];
+  }
+  return out;
+}
+function sampSrc(ins){return ins._orig||ins.buffer}
+/* bake a tempo-matched copy of the sample. mode 'repitch' resamples (speed+pitch), mode
+   'stretch' WSOLA-stretches (pitch kept). Always works from the original, so re-fitting
+   doesn't compound. */
+function fitInstrument(ins,mode){
+  if(!ins||!ins.buffer){status('no sample loaded');return}
+  audio();
+  const src=sampSrc(ins),bpm=estBpm(src);
+  if(!bpm){status('couldn’t guess a BPM from this sample’s length');return}
+  if(!ins._orig)ins._orig=cloneBuf(src);
+  const factor=bpm/song.bpm; /* new duration = old*(loopBPM/songBPM) → locks to the song */
+  let baked;
+  try{baked=mode==='stretch'?wsolaStretch(src,factor):resampleBuf(src,factor)}
+  catch(err){status('fit failed: '+(err.message||err));return}
+  ins.buffer=baked;ins.sampleB64=abToB64(bufToWav(baked,0));ins._copied=false;ins._sid=null; /* fresh undo slot so Ctrl+Z restores the pre-fit audio */
+  if(ins.type==='sliced')ins.params.rate=1;
+  renderParams();saveSoon();
+  status((mode==='stretch'?'stretched':'repitched')+' ≈'+bpm.toFixed(1)+' BPM → locked to '+song.bpm+'  ('+Math.round(factor*100)+'% length, pitch '+(mode==='stretch'?'kept':'shifted')+')');
+}
+function resetFit(ins){
+  if(!ins||!ins._orig){status('nothing to restore');return}
+  ins.buffer=ins._orig;ins.sampleB64=abToB64(bufToWav(ins._orig,0));delete ins._orig;ins._copied=false;ins._sid=null; /* fresh undo slot */
+  renderParams();saveSoon();status('restored the original sample');
+}
+function bpmTag(ins){const b=estBpm(ins._orig||ins.buffer);return '<span class="tempoBpm" title="Estimated loop BPM from its length — the song is '+song.bpm+' BPM">&#8776;'+(b?Math.round(b):'?')+' BPM</span>'}
 let dropCellEl=null;
 function clearDropRow(){if(dropCellEl){dropCellEl.classList.remove('dropCell');dropCellEl=null}}
 grows.addEventListener('dragover',e=>{
@@ -3005,18 +3265,53 @@ function renderParams(){
     +'<div class="btnrow"><button id="smpPlay">&#9654; region</button><button id="smpReset">Reset</button>'
     +'<button id="smpNorm" title="Normalize: set AMP so the region peaks at 0 dB — non-destructive, it just moves the AMP slider">Norm</button>'
     +'<button id="smpSlice" title="Chop the sample into slices playable from the keyboard">Slice&#8230;</button>'
-    +'<span id="smpInfo"></span></div></div>':'')
+    +'<span id="smpInfo"></span></div>'
+    +'<div class="btnrow">'+bpmTag(ins)
+    +'<button id="smpFit" title="Repitch to the song tempo — changes speed AND pitch (vinyl / tracker style)">Repitch</button>'
+    +'<button id="smpStretch" title="Time-stretch to the song tempo — keeps the pitch (WSOLA)">Stretch</button>'
+    +(ins._orig?'<button id="smpOrig" title="Restore the original, un-fitted sample">&#8634; orig</button>':'')
+    +'</div></div>':'')
   +(ins.type==='sliced'&&ins.buffer?
     '<div id="smpEd"><canvas id="slCanvas" height="64" draggable="true" title="Click: preview &#183; scroll: zoom (Shift+scroll: pan) &#183; drag a marker line: move it &#183; dblclick: add a slice &#183; right-click a line: remove it &#183; drag the waveform onto the grid to lay out the groove"></canvas>'
     +'<div class="btnrow"><button data-slc="auto" title="Re-slice on detected transients">Auto</button>'
     +'<button data-slc="8" title="8 equal slices">8</button><button data-slc="16" title="16 equal slices">16</button>'
-    +'<button data-slc="fit" title="Detect the loop&#8217;s BPM from its length and set the rate so it locks to the song tempo">Fit BPM</button>'
+    +'<button data-slc="fit" title="Detect the loop&#8217;s BPM from its length and set the rate so it locks to the song tempo (repitch — pitch shifts)">Fit BPM</button>'
+    +'<button data-slc="stretch" title="Time-stretch the loop to the song tempo — keeps pitch (WSOLA), slices stay aligned">Stretch</button>'
+    +(ins._orig?'<button data-slc="orig" title="Restore the original, un-stretched loop">&#8634; orig</button>':'')
     +'<button data-slc="clear" title="Remove all slice markers (back to one full-length slice)">Clear</button>'
-    +'<span id="smpInfo"></span></div>'
-    +'<div id="slHint">'+(ins.slices?ins.slices.length+' slices &#183; ':'')+noteName(ins.sliceBase||48)+' = slice 1, up a semitone per slice &#183; drag the instrument onto the grid to lay out its groove</div></div>':'');
+    +'<span id="smpInfo"></span> '+bpmTag(ins)+'</div>'
+    +'<div id="slHint">'+(ins.slices?ins.slices.length+' slices &#183; ':'')+noteName(ins.sliceBase||48)+' = slice 1, up a semitone per slice &#183; drag the instrument onto the grid to lay out its groove</div></div>':'')
+  +(ins._missing?
+    '<div class="miss"><div class="msT">&#9888; sample missing — '+esc(ins.sampleName||'(unnamed)')+'</div>'
+    +(ins.sourcePath?'<div class="msP">'+esc(ins.sourcePath)+'</div>':'<div class="msP">no saved path — this one was recorded or dropped in</div>')
+    +'<div class="btnrow"><button id="missFind">&#128269; Find in Everything</button>'
+    +(ins.sourcePath?'<button id="missRetry" title="Re-fetch from the saved path via Everything">Retry path</button>':'')
+    +'<button id="missLoad" title="Pick the file from disk (replaces this slot)">Load file&#8230;</button></div></div>':'');
   if(ins.type==='sampler'&&ins.buffer)drawSmp(ins);
   if(ins.type==='sliced'&&ins.buffer)drawSlices(ins);
+  if(ins._missing){
+    const fb=document.getElementById('missFind');if(fb)fb.onclick=()=>findSampleFor(curInst);
+    const rb=document.getElementById('missRetry');if(rb)rb.onclick=async()=>{
+      status('re-fetching '+(ins.sampleName||'')+'…');
+      if(await relinkByPath(ins)){renderInstList();renderParams();saveSoon();status('relinked '+(ins.sampleName||''))}
+      else status('couldn’t fetch — is Everything running and the path still valid?');
+    };
+    const lb=document.getElementById('missLoad');if(lb)lb.onclick=()=>{missLoadTarget=curInst;document.getElementById('smpFile').click()};
+  }
   markAuto();
+}
+/* open the Sample Search panel prefilled with a missing sample's name so one ⇄ click relinks it */
+function findSampleFor(idx){
+  const ins=song.instruments[idx];if(!ins)return;
+  curInst=idx;renderInstList();
+  const sec=document.querySelector('#side .sec-es');if(sec)sec.classList.remove('closed');
+  const q=$id('esQ');
+  if(q){
+    q.value=(ins.sampleName||'').replace(/\.[^.]+$/,'');
+    if(sec)sec.scrollIntoView({block:'nearest'});
+    q.focus();esSearch();
+  }
+  status('search open — hit ⇄ on a result to relink '+hex2(idx)+' “'+(ins.name||'')+'”');
 }
 /* ---- slicer: chop a sample into note-mapped pieces ---- */
 function equalSlices(n){const a=[];for(let i=0;i<n;i++)a.push({s0:i/n,s1:(i+1)/n});return a}
@@ -3290,6 +3585,12 @@ document.getElementById('params').addEventListener('click',e=>{
       ins.s0=0;ins.s1=1;ins.pad=0;ins._smZ=1;ins._smO=0;drawSmp(ins);saveSoon();
     }else if(e.target.id==='smpSlice'){
       sliceInstrument(ins);
+    }else if(e.target.id==='smpFit'){
+      fitInstrument(ins,'repitch');
+    }else if(e.target.id==='smpStretch'){
+      fitInstrument(ins,'stretch');
+    }else if(e.target.id==='smpOrig'){
+      resetFit(ins);
     }
   }else if(ins.type==='sliced'){
     if(e.target.dataset.slc){
@@ -3302,6 +3603,8 @@ document.getElementById('params').addEventListener('click',e=>{
         status('≈'+bpm.toFixed(1)+' BPM detected → rate '+Math.round(ins.params.rate*100)+'% to lock to '+song.bpm);
         return;
       }
+      if(m==='stretch'){fitInstrument(ins,'stretch');return}
+      if(m==='orig'){resetFit(ins);return}
       if(m==='clear'){
         if(!confirm('Remove all slice markers?'))return;
         ins.slices=[{s0:0,s1:1}];
@@ -3704,10 +4007,10 @@ masterPan.addEventListener('click',e=>{
    files in a real library folder (Chrome/Edge, File System Access API) or in browser
    storage as a fallback. Ctrl+click an idea to preview it, click to load for paste. */
 const vaultPan=document.getElementById('vaultPan'),setPan=document.getElementById('setPan'),vaultSaveEl=document.getElementById('vaultSave');
-const VAULT={lib:null,proj:null,auto:false,fsOk:typeof window.showDirectoryPicker==='function',local:[]};
-try{VAULT.auto=!!JSON.parse(localStorage.getItem('volt.vault.cfg')||'{}').auto}catch(e){}
+const VAULT={lib:null,proj:null,auto:false,copy:true,fsOk:typeof window.showDirectoryPicker==='function',local:[]};
+try{const c=JSON.parse(localStorage.getItem('volt.vault.cfg')||'{}');VAULT.auto=!!c.auto;VAULT.copy=c.copy!==false}catch(e){}
 try{VAULT.local=JSON.parse(localStorage.getItem('volt.vault.ideas')||'[]')}catch(e){}
-function vaultCfgSave(){try{localStorage.setItem('volt.vault.cfg',JSON.stringify({auto:VAULT.auto}))}catch(e){}}
+function vaultCfgSave(){try{localStorage.setItem('volt.vault.cfg',JSON.stringify({auto:VAULT.auto,copy:VAULT.copy}))}catch(e){}}
 function vaultLocalSave(){try{localStorage.setItem('volt.vault.ideas',JSON.stringify(VAULT.local))}catch(e){status('idea library full — pick a real library folder in Settings (⚙)')}}
 /* directory handles survive reloads in IndexedDB (localStorage can't hold them) */
 function idbOpen(){return new Promise((res,rej)=>{const q=indexedDB.open('volt.fs',1);q.onupgradeneeded=()=>q.result.createObjectStore('h');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
@@ -4068,8 +4371,9 @@ function renderSettings(){
     +'<div class="srow"><span>Projects</span><span class="sv" title="Where auto-saved project JSONs go">'+esc(proj)+'</span><span>'
       +(VAULT.fsOk?'<button id="sProj" style="font-size:10px;padding:2px 8px">Pick&#8230;</button>'+(VAULT.proj?' <button id="sProjX" style="font-size:10px;padding:2px 6px">&#215;</button>':''):'')+'</span></div>'
     +'<label class="schk"><input type="checkbox" id="sAuto"'+(VAULT.auto?' checked':'')+(VAULT.proj?'':' disabled')+'> Auto-save the project as JSON into the projects folder</label>'
+    +'<label class="schk"><input type="checkbox" id="sCopy"'+(VAULT.copy?' checked':'')+(VAULT.proj?'':' disabled')+'> Copy samples into a “&lt;project&gt; samples” subfolder</label>'
     +'<div class="vhint">'+(VAULT.fsOk
-      ?'Ideas (Ctrl+Shift+G) are saved as .json files in the library folder — its subfolders show up as Vault folders. Auto-save rewrites “&lt;song name&gt;.json” shortly after every change.'
+      ?'Ideas (Ctrl+Shift+G) are saved as .json files in the library folder — its subfolders show up as Vault folders. Auto-save rewrites “&lt;song name&gt;.json” shortly after every change. Sample-copy mirrors every recording, drop and Everything result into a subfolder beside the project.'
       :'This browser can&#8217;t open real folders (Chrome / Edge can). Ideas are kept in isolated browser storage instead — everything else works the same.')+'</div>';
   $id('sClose').onclick=toggleSettings;
   if($id('sLib'))$id('sLib').onclick=async()=>{
@@ -4084,6 +4388,10 @@ function renderSettings(){
     VAULT.auto=ev.target.checked;vaultCfgSave();
     status(VAULT.auto?'auto-save on — “'+(song.name||'untitled')+'.json” rewrites after every change':'auto-save off');
     if(VAULT.auto)vaultAutoSave();
+  };
+  if($id('sCopy'))$id('sCopy').onchange=ev=>{
+    VAULT.copy=ev.target.checked;vaultCfgSave();
+    status(VAULT.copy?'samples will be copied into a “<project> samples” subfolder':'sample copying off');
   };
 }
 function toggleSettings(){
@@ -4137,6 +4445,7 @@ async function songSave(){
     if(tab)tab.savedAs=fn;
     markClean();
     status('saved “'+fn+'” → '+(VAULT.proj.name||'projects folder'));
+    syncProjectSamples();
   }catch(err){
     downloadSong(serialize(true),song.name);
     status('couldn’t write to the projects folder ('+(err.message||err)+') — exported instead');
@@ -4154,12 +4463,41 @@ async function vaultAutoSave(){
       await w.write(serialize(true));
       await w.close();
       markClean(); /* the file on disk now matches the project */
+      syncProjectSamples(); /* mirror any new samples into the "<project> samples" subfolder */
     }else if(!VAULT._permHint){
       VAULT._permHint=true;
       status('auto-save needs access again — open ⚙ and click into the projects folder once');
     }
   }catch(e){}
   vaultASbusy=false;
+}
+/* Ctrl+Shift+S = Save As — native OS file dialog (pick name + location), samples baked in.
+   Falls back to a name prompt + download where the File System Access API isn't available. */
+async function songSaveAs(){
+  const nm=song.name||'untitled';
+  const tab=PM.tabs.find(x=>x.id===PM.active);
+  if(window.showSaveFilePicker){
+    let fh;
+    try{
+      fh=await showSaveFilePicker({id:'volt-proj',suggestedName:safeFile(nm)+'.json',
+        types:[{description:'VOLT project',accept:{'application/json':['.json']}}]});
+    }catch(e){return} /* user hit Cancel */
+    try{
+      const w=await fh.createWritable();await w.write(serialize(true));await w.close();
+      const base=fh.name.replace(/\.json$/i,'');
+      song.name=base;
+      if(tab){tab.name=base;tab.savedAs=fh.name;saveTabs();renderTabs()}
+      markClean();flushSave();
+      status('saved as “'+fh.name+'”');
+    }catch(err){status('save-as failed: '+(err.message||err))}
+    return;
+  }
+  const newName=await askText('Save as:',nm);
+  if(newName==null||!newName)return;
+  song.name=newName;
+  if(tab){tab.name=newName;saveTabs();renderTabs()}
+  downloadSong(serialize(true),newName);markClean();flushSave();
+  status('exported “'+safeFile(newName)+'.json”');
 }
 
 /* ================= REC: record the master (or an input) + Edison-style sample editor ================= */
@@ -4549,11 +4887,13 @@ document.getElementById('recToInst').onclick=()=>{
   }
   const name='rec '+String(song.instruments.length).padStart(2,'0');
   const ins=mkInst('sampler',name);
-  ins.sampleB64=abToB64(bufToWav(buf,0));
+  const wav=bufToWav(buf,0);
+  ins.sampleB64=abToB64(wav);
   ins.sampleName=name+'.wav';
   ins.buffer=buf;
   song.instruments.push(ins);curInst=song.instruments.length-1;
   renderInstList();renderParams();saveSoon();
+  maybeCopySample(ins.sampleName,wav);
   status('added '+hex2(curInst)+' “'+name+'” — trim, slice or Norm it in the sampler');
 };
 document.getElementById('recWav').onclick=()=>{
@@ -4772,15 +5112,18 @@ document.getElementById('instList').addEventListener('drop',async e=>{
   renderInstList();renderParams();saveSoon();
 });
 document.getElementById('instSmp').onclick=()=>document.getElementById('smpFile').click();
+let missLoadTarget=null; /* set by the missing-sample "Load file…" button → force-replace that slot */
 document.getElementById('smpFile').addEventListener('change',async e=>{
   audio();
   const files=[...e.target.files];
   e.target.value='';
-  if(!files.length)return;
+  if(!files.length){missLoadTarget=null;return}
   /* one file with an instrument selected: offer to replace it (notes keep the slot) */
   let replace=false;
+  const relinkTgt=missLoadTarget;missLoadTarget=null;
+  if(relinkTgt!=null&&song.instruments[relinkTgt]){curInst=relinkTgt;replace=true} /* relinking a missing sample — replace, no prompt */
   const cur=song.instruments[curInst];
-  if(files.length===1&&cur){
+  if(!replace&&files.length===1&&cur){
     const pick=await askDialog('Load “'+files[0].name+'”\n\nReplace '+hex2(curInst)+' “'+cur.name+'” (pattern notes keep using this slot), or add as a new instrument?',[
       {label:'Replace '+hex2(curInst),value:'rep',cls:'primary'},{label:'Add new',value:'add'},{label:'Cancel',value:''}
     ]);
@@ -4795,6 +5138,7 @@ document.getElementById('smpFile').addEventListener('change',async e=>{
     try{ins.buffer=await AC.decodeAudioData(ab.slice(0))}catch(err){status('decode failed: '+f.name);continue}
     if(replace)song.instruments[curInst]=ins;
     else{song.instruments.push(ins);curInst=song.instruments.length-1}
+    maybeCopySample(f.name,ab);
   }
   renderInstList();renderParams();saveSoon();
   status(replace?'replaced '+hex2(curInst)+' with '+files[0].name:'added '+files.length+' sample'+(files.length>1?'s':''));
@@ -4809,6 +5153,7 @@ function b64ToAb(b){const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.l
 /* ================= transport / pattern UI ================= */
 function curPatSet(pi){
   curPat=clamp(pi,0,song.patterns.length-1);
+  autoSel=null; /* a range in the old pattern means nothing here */
   renderGrid();
 }
 function patLabel(pi){const p=song.patterns[pi];return hex2(pi)+(p&&p.name?' '+p.name:'')}
@@ -4836,7 +5181,7 @@ document.getElementById('patLen').addEventListener('change',e=>{
     const a=pat.auto[k];if(!a)continue;
     pat.auto[k]=n>a.length?a.concat(new Array(n-a.length).fill(null)):a.slice(0,n);
   }
-  pat.rows=n;renderGrid();saveSoon();
+  pat.rows=n;autoSel=null;renderGrid();saveSoon();
 });
 document.getElementById('trkN').addEventListener('change',e=>{setTracks(clamp(+e.target.value||TRACKS,2,MAXTRACKS))});
 async function setTracks(n){
@@ -5131,6 +5476,9 @@ async function loadSong(s){
     if((ins.type==='sampler'||ins.type==='sliced')&&ins.sampleB64&&!ins.buffer){
       try{audio();ins.buffer=await AC.decodeAudioData(b64ToAb(ins.sampleB64))}catch(e){}
     }
+    /* a sampler with no audio (dropped by lossy autosave, or a moved/deleted file) → flag it
+       so the panel shows ⚠ + Find; relinkMissing() then tries its saved path in the background */
+    ins._missing=(ins.type==='sampler'||ins.type==='sliced')&&!ins.buffer;
   }
   undoStack=[snapState()];redoStack=[];
   if(PM.active){
@@ -5141,6 +5489,7 @@ async function loadSong(s){
   }
   renderGrid();renderInstList();renderParams();trackPanel();if(!mixer.hidden)renderMixer();
   status(song.name);
+  relinkMissing(); /* fire-and-forget: heal missing samples from their saved paths */
 }
 function downloadSong(json,name){
   const blob=new Blob([json],{type:'application/json'});
@@ -5293,6 +5642,7 @@ document.addEventListener('drop',async e=>{
       song.instruments.push(ins);
       curInst=song.instruments.length-1;
       renderInstList();renderParams();saveSoon();
+      maybeCopySample(f.name,ab);
       status('added sample '+f.name);
     }
   }
@@ -6243,6 +6593,11 @@ document.addEventListener('keydown',e=>{
     status(had?'selection cleared':'nothing was selected');
     return;
   }
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&!e.altKey&&low==='s'){ /* Ctrl+Shift+S = Save As (native file dialog) */
+    e.preventDefault();e.stopImmediatePropagation();
+    songSaveAs();
+    return;
+  }
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&low==='s'){ /* Ctrl+S = save into the projects folder (falls back to a download) */
     e.preventDefault();e.stopImmediatePropagation();
     songSave();
@@ -6253,7 +6608,15 @@ document.addEventListener('keydown',e=>{
   if(k==='F4'){e.preventDefault();e.stopImmediatePropagation();SEQ.playing&&!SEQ.songMode?stop():play(false);return}
   if(k==='F3'){e.preventDefault();e.stopImmediatePropagation();toggleVault();return}
   if(k==='F10'){e.preventDefault();e.stopImmediatePropagation();recToggle();return}
-  if(!recPan.hidden&&recPan.matches(':hover')){ /* hovering the recorder: its own clipboard + undo */
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&low==='m'){e.preventDefault();e.stopImmediatePropagation();metToggle();return}
+  if(!recPan.hidden&&recPan.matches(':hover')){ /* hovering the recorder: its own transport + clipboard + undo */
+    if(k===' '){ /* Space plays/stops the recording (selection/region), not the song */
+      e.preventDefault();e.stopImmediatePropagation();recPlayToggle();return;
+    }
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&low==='a'&&REC.buf){ /* Ctrl+A selects the whole sample */
+      e.preventDefault();e.stopImmediatePropagation();REC.sel={a:0,b:1};drawRec();
+      status('selected the whole sample');return;
+    }
     if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&low==='z'){
       e.preventDefault();e.stopImmediatePropagation();recOp('undo');return;
     }
@@ -6264,6 +6627,27 @@ document.addEventListener('keydown',e=>{
     }
     if((k==='Delete'||k==='Backspace')&&REC.sel){
       e.preventDefault();e.stopImmediatePropagation();recOp('cut');return;
+    }
+  }
+  if(!autoPan.hidden&&autoPan.matches(':hover')){ /* hovering the automation panel: its own range clipboard */
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(low==='c'||low==='x')){
+      e.preventDefault();e.stopImmediatePropagation();autoCopySel(low==='x');return;
+    }
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&low==='v'){
+      e.preventDefault();e.stopImmediatePropagation();
+      const k2=autoHover?autoHover.k:(autoSel?autoSel.k:null);
+      const at=autoHover?autoHover.r:(autoSel?Math.min(autoSel.r1,autoSel.r2):0);
+      if(k2)autoPasteAt(k2,at);else status('hover the lane you want to paste into');
+      return;
+    }
+    if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&low==='d'){
+      e.preventDefault();e.stopImmediatePropagation();autoDupSel();return;
+    }
+    if((k==='Delete'||k==='Backspace')&&autoSel){
+      e.preventDefault();e.stopImmediatePropagation();autoClearSel();return;
+    }
+    if(k==='Escape'&&autoSel){
+      e.preventDefault();e.stopImmediatePropagation();clearAutoSel();status('selection cleared');return;
     }
   }
   if(k==='Escape'&&(gripDrag||PR.scale||PR.slice)){ /* bail out of a time-scale/slice drag before anything else sees Esc */
@@ -6288,8 +6672,9 @@ document.addEventListener('keydown',e=>{
     const ctl=e.ctrlKey||e.metaKey;
     if(k==='Home'){
       e.preventDefault();e.stopImmediatePropagation();
+      const oldR=cursor.r;
       PR.cursorRow=0;cursor.r=0;prWrap.scrollLeft=0;
-      renderGrid();prRender();return;
+      renderRow(oldR);renderRow(0);prRender();return;
     }
     if(ctl&&(k==='0'||e.code==='Digit0'||e.code==='Numpad0')){ /* fit all notes in view */
       e.preventDefault();e.stopImmediatePropagation();prFitView();return;
@@ -6709,13 +7094,13 @@ setTimeout(async()=>{
   if(!esSameOrigin&&!esBridge)return;
   try{const r=await esGet('/?search=&json=1&count=1');esDot(r.ok)}catch(e){esDot(false)}
 },1200);
-function esLoadCfgUI(){$id('esHost').value=ES.host;$id('esPort').value=ES.port;$id('esUser').value=ES.user;$id('esPass').value=ES.pass;$id('esExts').value=ES.exts;$id('esCopy').checked=ES.copy}
+function esLoadCfgUI(){$id('esHost').value=ES.host;$id('esPort').value=ES.port;$id('esUser').value=ES.user;$id('esPass').value=ES.pass;$id('esExts').value=ES.exts}
 $id('esCfgBtn').onclick=()=>{const p=$id('esCfgPanel');p.hidden=!p.hidden;if(!p.hidden)esLoadCfgUI()};
 $id('esSave').onclick=()=>{
   ES.host=$id('esHost').value.trim()||'127.0.0.1';ES.port=+$id('esPort').value||8667;
   if(ES.host==='localhost')ES.host='127.0.0.1';
   ES.user=$id('esUser').value;ES.pass=$id('esPass').value;
-  ES.exts=$id('esExts').value.trim();ES.copy=$id('esCopy').checked;
+  ES.exts=$id('esExts').value.trim();
   localStorage.setItem('volt.es',JSON.stringify(ES));
   $id('esCfgPanel').hidden=true;esMsg('settings saved');
 };
@@ -6776,6 +7161,38 @@ function esFilePath(x){
   const full=x.path+'\\'+x.name;
   return '/'+full.split('\\').filter(s=>s!=='').map(encodeURIComponent).join('/');
 }
+/* Everything HTTP download URL for a raw absolute path string (what sourcePath holds) —
+   the only way a browser can pull a file's bytes by absolute path */
+function esUrlForPath(full){
+  return '/'+String(full||'').split(/[\\/]/).filter(s=>s!=='').map(encodeURIComponent).join('/');
+}
+/* re-fetch a sampler's audio from its saved sourcePath via Everything. Returns true on success. */
+async function relinkByPath(ins){
+  if(!ins||!ins.sourcePath)return false;
+  try{
+    const r=await esGet(esUrlForPath(ins.sourcePath));
+    if(!r.ok||!r.ab||!r.ab.byteLength)return false;
+    audio();
+    const buf=await AC.decodeAudioData(r.ab.slice(0));
+    ins.sampleB64=abToB64(r.ab);ins.buffer=buf;ins._missing=false;
+    return true;
+  }catch(e){return false}
+}
+/* background pass after a project loads: silently restore every missing sampler it can via
+   Everything; whatever can't be fetched keeps its ⚠ flag for the Find button in the panel */
+let relinkBusy=false;
+async function relinkMissing(){
+  if(relinkBusy||!song)return;
+  const miss=song.instruments.filter(i=>i&&i._missing&&i.sourcePath);
+  if(!miss.length)return;
+  relinkBusy=true;
+  let ok=0;
+  for(const ins of miss){if(await relinkByPath(ins))ok++}
+  relinkBusy=false;
+  if(ok){renderInstList();renderParams();saveSoon()}
+  const still=song.instruments.filter(i=>i&&i._missing).length;
+  if(ok||still)status((ok?'relinked '+ok+' sample'+(ok>1?'s':''):'')+(ok&&still?' · ':'')+(still?still+' still missing — use Find in the instrument panel':''));
+}
 async function esFetchFile(x){
   const r=await esGet(esFilePath(x));
   if(!r.ok)throw new Error('HTTP '+r.status);
@@ -6817,8 +7234,8 @@ async function esAdd(i,replace,at,quiet){
   else{song.instruments.push(ins);curInst=song.instruments.length-1}
   renderInstList();renderParams();saveSoon();
   let m=(replace?'replaced ':'added ')+hex2(curInst)+' '+x.name;
-  if(ES.copy&&projDir){
-    try{await copyToProject(x.name,ab);m+=' → copied to '+projDir.name}
+  if(VAULT.copy&&VAULT.proj){
+    try{await copyToProject(x.name,ab);m+=' → copied to '+VAULT.proj.name}
     catch(err){m+=' (copy failed: '+err.message+')'}
   }
   esMsg(m);
@@ -6853,46 +7270,65 @@ instListEl.addEventListener('drop',e=>{
   else esAdd(i,false);
 });
 document.getElementById('params').addEventListener('dragover',e=>{
-  if(esDrag!=null&&(e.target.id==='smpCanvas'||e.target.id==='slCanvas'))e.preventDefault();
+  if((esDrag!=null||recDrag)&&(e.target.id==='smpCanvas'||e.target.id==='slCanvas'))e.preventDefault();
 });
 document.getElementById('params').addEventListener('drop',e=>{
-  if(esDrag==null||(e.target.id!=='smpCanvas'&&e.target.id!=='slCanvas'))return;
+  if((esDrag==null&&!recDrag)||(e.target.id!=='smpCanvas'&&e.target.id!=='slCanvas'))return;
   e.preventDefault();e.stopPropagation();
-  const i=esDrag;esDrag=null;
-  esAdd(i,true,curInst,true); /* replace the instrument whose waveform you dropped on */
+  if(esDrag!=null){const i=esDrag;esDrag=null;esAdd(i,true,curInst,true);return} /* search result → replace */
+  if(recDrag){ /* a recorder selection → replace this sampler's audio, keep the slot's name */
+    const rd=recDrag;recDrag=null;
+    const cur=song.instruments[curInst];if(!cur)return;
+    const ins=recMakeInst(rd.fa,rd.fb);ins.name=cur.name;
+    song.instruments[curInst]=ins;
+    renderInstList();renderParams();saveSoon();
+    status('recording → replaced '+hex2(curInst)+' “'+ins.name+'”');
+  }
 });
-/* project folder (File System Access API, persisted in IndexedDB) */
-let projDir=null;
-function kv(mode,key,val){return new Promise((res,rej)=>{
-  const q=indexedDB.open('volt-fs',1);
-  q.onupgradeneeded=()=>q.result.createObjectStore('kv');
-  q.onerror=()=>rej(q.error);
-  q.onsuccess=()=>{
-    const tx=q.result.transaction('kv',mode==='set'?'readwrite':'readonly');
-    const r=mode==='set'?tx.objectStore('kv').put(val,key):tx.objectStore('kv').get(key);
-    r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
-  };
-})}
-async function ensureDirPerm(){
-  if(!projDir)return false;
-  if(await projDir.queryPermission({mode:'readwrite'})==='granted')return true;
-  return(await projDir.requestPermission({mode:'readwrite'}))==='granted';
+/* samples live in a per-project subfolder INSIDE the Projects folder (⚙ Settings) so a
+   project's JSON and its audio stay together — one folder, not two */
+async function projSampleDir(){
+  if(!(await fsPerm(VAULT.proj,true)))throw new Error('no folder permission');
+  const sub=safeFile((song&&song.name)||'untitled')+' samples';
+  return VAULT.proj.getDirectoryHandle(sub,{create:true});
 }
 async function copyToProject(name,ab){
-  if(!(await ensureDirPerm()))throw new Error('no folder permission');
-  const fh=await projDir.getFileHandle(name,{create:true});
+  const dir=await projSampleDir();
+  const fh=await dir.getFileHandle(name,{create:true});
   const w=await fh.createWritable();await w.write(ab);await w.close();
 }
-$id('esDir').onclick=async()=>{
-  if(!window.showDirectoryPicker){esMsg('folder copy needs Chrome/Edge (File System Access API)',1);return}
-  try{
-    projDir=await showDirectoryPicker({id:'volt-proj',mode:'readwrite'});
-    await kv('set','projDir',projDir);
-    $id('esDirName').textContent='→ '+projDir.name;
-    esMsg('project folder set');
-  }catch(e){}
-};
-kv('get','projDir').then(h=>{if(h){projDir=h;$id('esDirName').textContent='→ '+h.name}}).catch(()=>{});
+/* best-effort "copy every sample next to the project" — no-op unless enabled + folder set */
+async function maybeCopySample(name,ab){
+  if(!VAULT.copy||!VAULT.proj||!name||!ab)return;
+  try{await copyToProject(name,ab)}catch(e){}
+}
+/* catch-all: on save, mirror every sampler's audio into the "<project> samples" subfolder.
+   Reads sampleB64 (always in memory), so it works no matter how the sample got in —
+   recordings, drops, Everything — and even when localStorage autosave went lossy. */
+let syncBusy=false;
+async function syncProjectSamples(){
+  if(syncBusy||!VAULT.copy||!VAULT.proj||!song)return;
+  const samps=song.instruments.filter(i=>i&&(i.type==='sampler'||i.type==='sliced')&&i.sampleB64&&!i._copied);
+  if(!samps.length)return;
+  syncBusy=true;
+  let dir,wrote=0,failed=0;
+  try{dir=await projSampleDir()}catch(e){syncBusy=false;status('sample copy needs folder access — open ⚙ and click the projects folder once');return}
+  for(const ins of samps){
+    const fn=safeFile(ins.sampleName||ins.name||'sample')||'sample.wav';
+    try{
+      let exists=false;try{await dir.getFileHandle(fn);exists=true}catch(e){}
+      if(!exists){
+        const fh=await dir.getFileHandle(fn,{create:true});
+        const w=await fh.createWritable();await w.write(b64ToAb(ins.sampleB64));await w.close();
+        wrote++;
+      }
+      ins._copied=true; /* transient — skip re-checking this one until next load */
+    }catch(e){failed++}
+  }
+  syncBusy=false;
+  if(wrote)status('copied '+wrote+' sample'+(wrote>1?'s':'')+' → '+VAULT.proj.name+'/'+safeFile((song.name||'untitled'))+' samples'+(failed?' ('+failed+' failed)':''));
+  else if(failed)status(failed+' sample'+(failed>1?'s':'')+' could not be copied to the project folder');
+}
 
 /* ================= side panel resize ================= */
 const sideEl=document.getElementById('side'),dragbar=document.getElementById('dragbar');
@@ -6964,6 +7400,13 @@ const COMMANDS=[
   {n:'Toggle beat grid',kw:'step sequencer fl drum machine beat f8',f:()=>beatToggle()},
   {n:'Toggle piano roll',k:'F6',kw:'notes fl midi roll melody',f:()=>prToggle()},
   {n:'Toggle automation panel',kw:'auto lanes cutoff filter f7',f:()=>autoToggle()},
+  {n:'Toggle metronome',k:'Ctrl+M',kw:'metronome click beat count tempo',f:()=>metToggle()},
+  {n:'MIDI: connect / disconnect keyboard',kw:'midi controller input keyboard device',f:()=>midiToggle()},
+  {n:'MIDI: arm live-record (jam into the playing song)',kw:'midi live record jam overdub loop punch',f:()=>midiArm()},
+  {n:'Automation: copy selected range',k:'Ctrl+C',kw:'auto copy curve',f:()=>autoCopySel(false)},
+  {n:'Automation: paste range',k:'Ctrl+V',kw:'auto paste curve',f:()=>{const k2=autoHover?autoHover.k:(autoSel?autoSel.k:null);if(k2)autoPasteAt(k2,autoHover?autoHover.r:(autoSel?Math.min(autoSel.r1,autoSel.r2):0));else status('hover an automation lane first')}},
+  {n:'Automation: duplicate selected range',k:'Ctrl+D',kw:'auto dup curve',f:()=>autoDupSel()},
+  {n:'Automation: clear selected range',k:'Del',kw:'auto clear curve',f:()=>autoClearSel()},
   {n:'Load Full-on main kit',kw:'template default mickey fullon psytrance 145',f:()=>loadKit('mine')},
   {n:'Load DnB kit',kw:'template drum bass 174',f:()=>loadKit('dnb')},
   {n:'Load Trance kit',kw:'template 138',f:()=>loadKit('trance')},
@@ -7367,6 +7810,15 @@ function prDrawNote(ctx,no,seld,ghost){
 }
 let prT=null;
 function prRenderIfOpen(){if(prPan.hidden||PR.drag)return;clearTimeout(prT);prT=setTimeout(prRender,150)}
+/* roll edits repaint only what a note edit can change: the grid rows and the beat grid.
+   The old renderGrid() call also rebuilt the header (forcing a layout pass per cell in
+   syncHeadWidths), the pattern selector, the song chips and the automation panel — all
+   untouched by a note edit, and the reason keyboard-resize felt heavy. */
+function prRepaint(){
+  const pat=song.patterns[curPat];
+  renderRows(0,pat.rows-1);
+  renderBeatIfOpen();
+}
 function prPlayhead(r){if(prPan.hidden)return;PR.playRow=r;if(!PR.drag)prRender()}
 /* row span + pitch range the selected notes cover (note tails included, so their
    OFF markers scale with them) */
@@ -7578,7 +8030,7 @@ function prApplySlice(sl){
       cuts++;
     }
   });
-  if(cuts){renderGrid();saveSoon();status(cuts+' note'+(cuts>1?'s':'')+' sliced')}
+  if(cuts){prRepaint();saveSoon();status(cuts+' note'+(cuts>1?'s':'')+' sliced')}
   prRender();
 }
 function prCreateNote(row,n){
@@ -7589,7 +8041,7 @@ function prCreateNote(row,n){
   prChordExtras(no);
   PR.sel=[{t:lane,r:no.r,n:no.n}];
   if(!SEQ.playing)beatPreview(lane,n,laneDefaults(lane).i);
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
 }
 document.addEventListener('mousemove',e=>{
   if(PR.loopDrag){
@@ -7645,7 +8097,7 @@ document.addEventListener('mouseup',()=>{
       if(b.x0>=PR.GUT){
         const row=clamp(Math.floor((b.x0-PR.GUT)/PR.CW),0,song.patterns[curPat].rows-1);
         PR.sel=[];PR.cursorRow=row;
-        cursor.r=row;renderGrid();prRender();updateBeatCursor();
+        cursor.r=row;prRepaint();prRender();updateBeatCursor();
         status('cursor at row '+row+' — Space plays from here');
       }else prRender();
       return;
@@ -7732,7 +8184,7 @@ function prApplyDrag(d){
   });
   if(d.mode==='resize')PR.lastLen=d.len;
   PR.sel=outs;
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
 }
 /* chord stamp: extra intervals stack onto free poly lanes of THIS track's group — lanes
    are created on demand, so the whole chord lives on one mixer channel */
@@ -7770,7 +8222,7 @@ function prDeleteSel(){
   const sel=prSelNotes();if(!sel.length)return;
   sel.forEach(x=>prEraseNote(prLaneOf(x),x));
   PR.sel=[];
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
   status(sel.length+' note'+(sel.length>1?'s':'')+' deleted');
 }
 prCv.addEventListener('contextmenu',e=>{
@@ -7785,7 +8237,7 @@ prCv.addEventListener('contextmenu',e=>{
   const h=prHit(e);if(!h||!h.hit)return;
   prEraseNote(prLaneOf(h.hit),h.hit);
   PR.sel=PR.sel.filter(s=>!(s.r===h.hit.r&&s.n===h.hit.n&&prLaneOf(s)===prLaneOf(h.hit)));
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
   status('note deleted');
 });
 prCv.addEventListener('wheel',e=>{
@@ -7809,7 +8261,7 @@ function prCopySel(cut){
   if(cut){
     sel.forEach(x=>prEraseNote(prLaneOf(x),x));
     PR.sel=[];
-    renderGrid();saveSoon();prRender();
+    prRepaint();saveSoon();prRender();
   }
   status((cut?'cut ':'copied ')+prClip.length+' note'+(prClip.length>1?'s':''));
 }
@@ -7826,7 +8278,7 @@ function prPaste(){
   });
   if(!outs.length){status('paste lands outside the pattern');return}
   PR.sel=outs;
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
   status('pasted '+outs.length+' note'+(outs.length>1?'s':'')+' at row '+at);
 }
 /* Ctrl+Shift+←/→: grow / shrink the selected notes by a row — the keyboard version of
@@ -7844,7 +8296,7 @@ function prResizeSel(d){
   });
   PR.lastLen=clamp(sel[0].len+d,1,rows);
   PR.sel=outs;
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
   status('length '+(d>0?'+':'')+d+' row — notes '+(d>0?'longer':'shorter'));
 }
 /* Ctrl+Alt+←/→: same, but from the START edge — the end stays put, the front grows
@@ -7862,7 +8314,7 @@ function prResizeSelL(d){
     prWriteNote(lane,no);outs.push({t:lane,r:no.r,n:no.n});
   });
   PR.sel=outs;
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
   status('start edge '+(d<0?'← earlier (longer)':'→ later (shorter)'));
 }
 function prMoveSel(dr,dn){
@@ -7880,7 +8332,7 @@ function prMoveSel(dr,dn){
     prWriteNote(lane,no);outs.push({t:lane,r:no.r,n:no.n});
   });
   PR.sel=outs;
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
 }
 function prDuplicate(){
   const sel=prSelNotes();if(!sel.length)return;
@@ -7899,7 +8351,7 @@ function prDuplicate(){
   });
   if(!outs.length){status('no room to duplicate');return}
   PR.sel=outs;
-  renderGrid();saveSoon();prRender();
+  prRepaint();saveSoon();prRender();
   status(outs.length+' note'+(outs.length>1?'s':'')+' duplicated');
 }
 /* drag the grip to grow / shrink the roll (more pitches visible) */
@@ -7985,10 +8437,10 @@ function renderAuto(){
   const pat=song.patterns[curPat];
   const keys=pat.auto?Object.keys(pat.auto).filter(k=>pat.auto[k]):[];
   if(!keys.length){
-    autoLanes.innerHTML='<div id="autoHint">No automation in this pattern yet — right-click any slider in the side panel and choose “Automate”. Left-drag paints &#183; Shift+drag draws a straight line &#183; right-drag erases.</div>';
+    autoLanes.innerHTML='<div id="autoHint">No automation in this pattern yet — right-click any slider in the side panel and choose “Automate”. Left-drag paints &#183; Shift+drag draws a straight line &#183; right-drag erases &#183; Ctrl+drag selects a range (then Ctrl+C / Ctrl+V / Ctrl+D / Del).</div>';
     return;
   }
-  let h='<div id="autoBar"><label title="When on, painting only lands on rows where that track plays a note — the rest stay untouched"><input type="checkbox" id="autoLockN"'+(AUTO_LOCK?' checked':'')+'> lock to notes</label><span class="abhint">teal tick above a step = the track has a note there</span></div>';
+  let h='<div id="autoBar"><label title="When on, painting only lands on rows where that track plays a note — the rest stay untouched"><input type="checkbox" id="autoLockN"'+(AUTO_LOCK?' checked':'')+'> lock to notes</label><span class="abhint">teal tick = note here &#183; Ctrl+drag selects · Ctrl+C/V/D copy·paste·dup · Del clears</span></div>';
   for(const k of keys.sort()){
     const dot=k.indexOf('.');const isM=k.indexOf('M.')===0;
     const tr=isM?-1:+k.slice(0,dot),p=k.slice(dot+1);
@@ -8007,6 +8459,8 @@ function renderAuto(){
   autoLanes.innerHTML=h;
   const lk=$id('autoLockN');
   if(lk)lk.onchange=()=>{AUTO_LOCK=lk.checked;try{localStorage.setItem('volt.autoLock',AUTO_LOCK?'1':'0')}catch(e){};status(AUTO_LOCK?'painting locked to notes':'painting anywhere')};
+  if(autoSel&&!keys.includes(autoSel.k))autoSel=null; /* its lane went away */
+  paintAutoSel(); /* keep the range highlight across re-renders */
 }
 let AUTO_LOCK=false;try{AUTO_LOCK=localStorage.getItem('volt.autoLock')==='1'}catch(e){}
 function laneNoteAt(k,r){
@@ -8049,6 +8503,64 @@ function updateLaneDOM(k){
     f.style.height=Math.round(v*100)+'%';
   });
 }
+/* ---- automation range selection + clipboard ----
+   Ctrl+drag a range inside a lane → select it. Then (while the panel is hovered):
+   Ctrl+C copy · Ctrl+V paste (into the lane under the mouse) · Ctrl+D duplicate after
+   · Delete clears it. Values are normalized 0..1 so a curve copies across ANY lane. */
+let autoSel=null; /* {k, r1, r2} — a contiguous row range within one lane */
+let autoClip=null; /* {vals:[...], src} */
+let autoHover=null; /* {k, r} last step the mouse was over, for paste targeting */
+function paintAutoSel(){
+  autoLanes.querySelectorAll('.astep.asel').forEach(el=>el.classList.remove('asel','selA','selB'));
+  if(!autoSel)return;
+  const a=Math.min(autoSel.r1,autoSel.r2),b=Math.max(autoSel.r1,autoSel.r2);
+  autoLanes.querySelectorAll('.astep[data-k="'+cssq(autoSel.k)+'"]').forEach(el=>{
+    const r=+el.dataset.r;
+    if(r<a||r>b)return;
+    el.classList.add('asel');
+    if(r===a)el.classList.add('selA');
+    if(r===b)el.classList.add('selB');
+  });
+}
+function cssq(s){return s.replace(/"/g,'\\"')}
+function clearAutoSel(){if(!autoSel)return;autoSel=null;paintAutoSel()}
+function autoSelRange(){if(!autoSel)return null;return{a:Math.min(autoSel.r1,autoSel.r2),b:Math.max(autoSel.r1,autoSel.r2)}}
+function autoCopySel(cut){
+  const rg=autoSelRange();if(!rg){status('nothing selected — Ctrl+drag a range in a lane first');return}
+  const lane=laneByKey(autoSel.k);
+  autoClip={vals:lane.slice(rg.a,rg.b+1),src:autoSel.k};
+  if(cut){for(let r=rg.a;r<=rg.b;r++)lane[r]=null;updateLaneDOM(autoSel.k);saveSoon()}
+  status((cut?'cut ':'copied ')+autoClip.vals.length+' step'+(autoClip.vals.length>1?'s':'')+' — Ctrl+V pastes into the lane under the mouse');
+}
+function autoPasteAt(k,at){
+  if(!autoClip){status('automation clipboard empty');return}
+  const pat=song.patterns[curPat];
+  const lane=laneByKey(k);
+  let n=0;
+  autoClip.vals.forEach((v,i)=>{const r=at+i;if(r>=0&&r<pat.rows){lane[r]=v;n++}});
+  updateLaneDOM(k);saveSoon();
+  autoSel={k,r1:at,r2:Math.min(pat.rows-1,at+autoClip.vals.length-1)};paintAutoSel();
+  status('pasted '+n+' step'+(n!==1?'s':'')+' into '+laneTag(k)+' @ row '+at);
+}
+function autoDupSel(){
+  const rg=autoSelRange();if(!rg){status('nothing selected to duplicate');return}
+  const pat=song.patterns[curPat];
+  const lane=laneByKey(autoSel.k);
+  const vals=lane.slice(rg.a,rg.b+1),len=vals.length,at=rg.b+1;
+  let n=0;
+  vals.forEach((v,i)=>{const r=at+i;if(r<pat.rows){lane[r]=v;n++}});
+  updateLaneDOM(autoSel.k);saveSoon();
+  autoSel={k:autoSel.k,r1:at,r2:Math.min(pat.rows-1,at+len-1)};paintAutoSel();
+  status('duplicated '+n+' step'+(n!==1?'s':'')+' below');
+}
+function autoClearSel(){
+  const rg=autoSelRange();if(!rg)return;
+  const lane=laneByKey(autoSel.k);
+  for(let r=rg.a;r<=rg.b;r++)lane[r]=null;
+  updateLaneDOM(autoSel.k);saveSoon();
+  status('cleared '+(rg.b-rg.a+1)+' step'+(rg.b-rg.a?'s':''));
+}
+function laneTag(k){const dot=k.indexOf('.');const isM=k.indexOf('M.')===0;return isM?'MASTER':'T'+(+k.slice(0,dot)+1)}
 autoLanes.addEventListener('mousedown',e=>{
   const x=e.target.closest('u[data-x]');
   if(x){
@@ -8065,9 +8577,15 @@ autoLanes.addEventListener('mousedown',e=>{
   const liveLane=s.closest('.alane');
   autoLanes.querySelectorAll('.alane.live').forEach(x=>x.classList.remove('live'));
   if(liveLane)liveLane.classList.add('live');
-  if(e.button===2){autoPaint={mode:'erase',k:s.dataset.k};autoErase(s);saveSoon();return}
+  if(e.button===2){autoPaint={mode:'erase',k:s.dataset.k};clearAutoSel();autoErase(s);saveSoon();return}
   if(e.button!==0)return;
   const k=s.dataset.k,r=+s.dataset.r;
+  if(e.ctrlKey||e.metaKey){ /* Ctrl+drag = select a range in this lane (no painting) */
+    autoPaint={mode:'select',k};
+    autoSel={k,r1:r,r2:r};paintAutoSel();
+    return;
+  }
+  clearAutoSel(); /* a plain paint stroke drops any range selection */
   if(e.shiftKey){ /* FL-style line tool: anchor here, ramp to wherever the drag ends */
     const rect=s.getBoundingClientRect();
     const v=Math.round(clamp(1-(e.clientY-rect.top)/rect.height,0,1)*100)/100;
@@ -8079,9 +8597,12 @@ autoLanes.addEventListener('mousedown',e=>{
   autoPaint={mode:'draw',k};autoSetFromEvent(s,e);saveSoon();
 });
 autoLanes.addEventListener('mousemove',e=>{
+  const hov=e.target.closest('.astep');
+  if(hov)autoHover={k:hov.dataset.k,r:+hov.dataset.r}; /* remember where paste should land */
   if(!autoPaint)return;
   const s=e.target.closest('.astep');if(!s)return;
   if(s.dataset.k!==autoPaint.k)return; /* never leak the stroke into another lane */
+  if(autoPaint.mode==='select'){autoSel.r2=+s.dataset.r;paintAutoSel();return}
   if(autoPaint.mode==='draw')autoSetFromEvent(s,e);
   else if(autoPaint.mode==='erase')autoErase(s);
   else{
@@ -8102,8 +8623,16 @@ autoLanes.addEventListener('mousemove',e=>{
   saveSoon();
 });
 autoLanes.addEventListener('contextmenu',e=>e.preventDefault());
+autoLanes.addEventListener('mouseleave',()=>{autoHover=null});
 document.addEventListener('mouseup',()=>{
-  if(autoPaint)autoLanes.querySelectorAll('.alane.live').forEach(x=>x.classList.remove('live'));
+  if(autoPaint){
+    autoLanes.querySelectorAll('.alane.live').forEach(x=>x.classList.remove('live'));
+    if(autoPaint.mode==='select'&&autoSel){ /* normalize so r1<=r2 */
+      const a=Math.min(autoSel.r1,autoSel.r2),b=Math.max(autoSel.r1,autoSel.r2);
+      autoSel.r1=a;autoSel.r2=b;
+      status((b-a+1)+' step'+(b-a?'s':'')+' selected — Ctrl+C copy · Ctrl+D duplicate · Del clear');
+    }
+  }
   autoPaint=null;
 });
 function autoPlayhead(r){
@@ -8549,6 +9078,10 @@ const HELP=[
  ['Selection','Whole columns','click / Shift+click headers','Click a track header to select its column; Shift+click another header to stretch the selection across tracks.'],
  ['Selection','Whole rows','Ctrl+drag row numbers','Drag down the row-number gutter with Ctrl held to select complete rows across every track.'],
  ['Selection','Deselect all','Alt+D','Clears the grid selection and the piano-roll selection in one hit (Esc works too).'],
+ ['Automation','Copy / paste a curve','Ctrl+drag, then Ctrl+C/V/D','Hover the Auto panel: Ctrl+drag selects a range in a lane, Ctrl+C copies it, Ctrl+V pastes into the lane under the mouse, Ctrl+D duplicates it below, Del clears it. Values are normalized so a curve pastes across any lane.'],
+ ['MIDI','MIDI keyboard','MIDI button','Connect a MIDI controller to audition the current instrument (velocity-sensitive, polyphonic). While stopped, notes step-record at the cursor with velocity → volume. Chrome/Edge only.'],
+ ['MIDI','Live-record / jam','Shift+click MIDI','Arms live record on the cursor track (button pulses red). Hit play and jam — notes quantize to the nearest row; chords spread across the track’s poly lanes (Alt+Y to add lanes). Each loop pass overwrites the rows you replay; rows you leave alone keep their take.'],
+ ['Transport','Metronome','Ctrl+M','Beat click while playing, accent on the downbeat (follows BPM & lines-per-beat). Routed past the mix, so it never lands in the WAV render. State is remembered.'],
  ['Transport','Loop a section','Ctrl+Shift+Enter / Shift+drag rows','Loops the selected rows while the pattern plays. Shift+drag the row numbers (or the bar on top of the piano roll) paints the loop; dblclick a row number or hit the hotkey again to clear.'],
  ['Patterns','Column FX, no typing','right-click a cell','Pick Cxx cutoff, Gxx glide, Rxx retrigger, Sxx offset, U/Dxx pitch — set the value with a slider, or Fill / Ramp it across the selection.'],
  ['Automation','Notes & lock','tick marks / checkbox','Steps where the track plays a note get a teal tick. Turn on “lock to notes” and painting only lands on those rows.'],

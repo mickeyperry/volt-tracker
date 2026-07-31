@@ -46,6 +46,7 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 /* ---- layout ---- */
 #main{flex:1;display:flex;min-height:0}
 #side{width:252px;min-width:252px;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:14px}
+body.norail #side{display:none} /* Alt+L — hand the whole width to the pattern */
 #side h3{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;font-weight:600}
 #side h3::before{content:'';display:inline-block;width:3px;height:9px;background:var(--teal);margin-right:6px;border-radius:1px;opacity:.85;vertical-align:-1px}
 #side .sec-inst h3::before,#side .sec-par h3::before{background:#4ade80}
@@ -203,6 +204,19 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #vaultSave label{display:grid;grid-template-columns:56px 1fr;gap:8px;align-items:center;font-size:10px;color:var(--dim);text-transform:uppercase;margin-bottom:8px}
 #vaultSave input[type=text],#vaultSave select{background:var(--well);border:1px solid var(--line);border-radius:3px;color:var(--txt);font-size:12px;padding:3px 6px;min-width:0}
 #vaultSave .btnrow{display:flex;gap:6px;justify-content:flex-end;margin-top:4px}
+/* ---- arp panel (Alt+A from the piano roll) — lives beside the roll, edits live ---- */
+#arpPan{position:fixed;z-index:64;top:44px;right:8px;width:296px;max-height:calc(100vh - 56px);overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:0 10px 34px rgba(0,0,0,.55);padding:10px 12px}
+#arpPan .ahead{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-bottom:9px;display:flex;justify-content:space-between;align-items:center}
+#arpPan .arow{display:grid;grid-template-columns:52px 1fr 52px;gap:7px;align-items:center;font-size:10px;color:var(--dim);text-transform:uppercase;margin-bottom:7px}
+#arpPan .arow .av{font-family:var(--mono);font-size:10px;color:var(--txt);text-align:right;text-transform:none;white-space:nowrap}
+#arpPan .aseg{display:flex;gap:3px;flex-wrap:wrap}
+#arpPan .aseg button{flex:1 1 28%;font-size:10px;padding:3px 0;min-width:0}
+#arpPan input[type=range]{width:100%;min-width:0}
+#arpPan .achk{display:flex;gap:7px;align-items:center;font-size:10px;color:var(--txt);margin:8px 0 2px;cursor:pointer}
+#arpPan .abtns{display:flex;gap:6px;margin-top:10px}
+#arpPan .abtns button{flex:1;font-size:11px;padding:4px 0}
+#arpPan .ahint{font-size:9px;color:var(--faint);margin-top:8px;line-height:1.5}
+#arpPan .awarn{color:var(--amber)}
 
 /* ---- pattern grid ---- */
 #gridwrap{flex:1;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.5;position:relative;background:var(--bg)}
@@ -221,7 +235,14 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #ghead .tbtn.sON{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
 #ghead .thead.hushed .tname,#ghead .thead.hushed .tno{color:var(--faint)}
 .inlineEd{width:78px;background:var(--bg);border:1px solid var(--teal);border-radius:2px;color:var(--txt);font:inherit;text-transform:none;padding:0 2px;outline:none}
-.prow{display:inline-flex;white-space:pre;min-width:100%}
+/* Rows are skipped by the browser while they're off-screen — with 32 tracks a single pattern is
+   ~37k DOM nodes, and every playhead row was forcing a repaint of all of it (9 fps). The intrinsic
+   size below is the placeholder used for skipped rows; calibrateRows() keeps it pixel-exact from a
+   real row, so offsetTop/scroll maths are unchanged. #grows kills the line-box strut, otherwise a
+   skipped row would fall back to the parent's font metrics and every row would jump taller. */
+#grows{line-height:0}
+.prow{display:inline-flex;white-space:pre;min-width:100%;line-height:normal;
+  content-visibility:auto;contain-intrinsic-width:var(--roww,2000px);contain-intrinsic-height:var(--rowh,19.5px)}
 .prow .rn{color:var(--faint);padding:0 8px 0 10px;user-select:none;cursor:pointer}
 .prow.b4 .rn{color:var(--dim)}
 .prow.b16 .rn{color:var(--amber)}
@@ -506,7 +527,11 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <span class="sep"></span>
   <div class="grp">
     <label class="fld">Pattern <select id="patSel"></select></label>
-    <label class="fld">Len <input type="number" id="patLen" min="8" max="128" value="64"></label>
+    <label class="fld">Len <input type="number" id="patLen" min="8" max="256" value="64"></label>
+    <label class="fld" title="Rows per beat (Shift+[ / Shift+]) — how fine the grid is. Changing it re-times the whole song so it sounds exactly the same, just with more (or fewer) rows to work in. 6 and 12 put triplets on the grid.">R/Beat <select id="lpbSel" style="width:52px">
+      <option value="2">2</option><option value="3">3</option><option value="4" selected>4</option>
+      <option value="6">6</option><option value="8">8</option><option value="12">12</option><option value="16">16</option>
+    </select></label>
     <label class="fld">Trk <input type="number" id="trkN" min="2" max="32" value="8" style="width:44px" title="Number of tracks"></label>
     <button id="patNew" title="New empty pattern">+</button>
     <button id="patDup" title="Duplicate pattern">Dup</button>
@@ -546,6 +571,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 <div id="vaultPan" hidden></div>
 <div id="setPan" hidden></div>
 <div id="vaultSave" hidden></div>
+<div id="arpPan" hidden></div>
 
 <div id="tabs"><div id="tabList"></div><button id="tabNew" title="New project (blank)">+</button></div>
 
@@ -654,7 +680,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
       <option value="0,7">5th</option>
       <option value="0,12">octave</option>
     </select></label>
-    <span id="prHint">click: cursor (Space plays from it, Home resets) &#183; Ctrl/Shift+click empty: add note &#183; drag: move (Shift: pitch lock, Ctrl: time lock) &#183; Ctrl+drag: select &#183; Ctrl+A/C/X/V: all/copy/cut/paste &#183; Shift+arrows: nudge &#189;tone/row &#183; Ctrl+&#8593;&#8595;: octave &#183; Del &#183; +/&#8722; zoom &#183; Ctrl+D dup &#183; <b>drag the &#8596; grip: squeeze/stretch in time</b> &#183; Ctrl+right-click: reset view</span></div>
+    <button id="arpBtn" title="Arp / repeat the selected notes (Alt+A) — live: every knob rewrites and re-auditions the notes">Arp</button>
+    <span id="prHint">click: cursor (Space plays from it, Home resets) &#183; Ctrl/Shift+click empty: add note &#183; drag: move (Shift: pitch lock, Ctrl: time lock) &#183; Ctrl+drag: select &#183; Ctrl+A/C/X/V: all/copy/cut/paste &#183; Shift+arrows: nudge &#189;tone/row &#183; Ctrl+&#8593;&#8595;: octave &#183; Del &#183; +/&#8722; zoom &#183; Ctrl+D dup &#183; <b>Alt+A: arp / repeat (live)</b> &#183; <b>drag the &#8596; grip: squeeze/stretch in time</b> &#183; Ctrl+right-click: reset view</span></div>
   <div id="prWrap"><canvas id="prCanvas"></canvas></div>
 </div>
 
@@ -1519,6 +1546,7 @@ function play(songMode,fromRow){
   document.getElementById('playSong').classList.toggle('playing',songMode);
 }
 function stop(silent){
+  releaseFollowHold(); /* a fresh transport start always follows the playhead again */
   if(SEQ.timer)clearInterval(SEQ.timer);SEQ.timer=null;
   if(SEQ.playing&&!silent){stopAllVoices()}
   const wasPlaying=SEQ.playing;
@@ -1532,7 +1560,11 @@ function stop(silent){
   }
 }
 function pump(){
-  while(SEQ.next<AC.currentTime+.16){
+  /* background tabs get their timers throttled to ~1s, which used to starve this loop and gap the
+     audio a moment after you switch away. Schedule further ahead while hidden — the only cost is
+     that edits take a beat longer to be heard, and you're not looking at the grid anyway. */
+  const LOOK=document.hidden?1.6:.16;
+  while(SEQ.next<AC.currentTime+LOOK){
     const pi=SEQ.songMode?song.order[SEQ.ord%song.order.length]:curPat;
     const pat=song.patterns[pi];if(!pat){stop();return}
     schedRow(pi,SEQ.row,SEQ.next);
@@ -1708,10 +1740,31 @@ function schedRow(pi,row,t){
 /* playhead */
 let playRowEl=null;
 let followPlay=true;try{followPlay=localStorage.getItem('volt.follow')!=='0'}catch(e){}
+/* Follow keeps the view glued to the playhead — which used to mean the edit cursor simply could
+   not be seen while playing (Home / End / PgUp / PgDn moved it off-screen and the playhead yanked
+   the view straight back). Navigating now PARKS the view on the cursor and holds the auto-scroll;
+   the hold lifts by itself when playback reaches the row you parked at, or on stop / play. */
+let followHold=false,followHoldRow=-1;
+function releaseFollowHold(){followHold=false;followHoldRow=-1}
 function setFollow(on){
-  followPlay=on;
+  followPlay=on;releaseFollowHold();
   document.getElementById('followBtn').classList.toggle('on',on);
   try{localStorage.setItem('volt.follow',on?'1':'0')}catch(e){}
+}
+/* scroll the grid so the edit cursor is visible, whatever the transport is doing */
+function scrollCursorIntoView(){
+  const el=grows.children[cursor.r];if(!el)return;
+  const gw=gridwrap,top=el.offsetTop-40,bot=el.offsetTop+el.offsetHeight+40;
+  if(cursor.r===0)gw.scrollTop=0; /* row 0 sits below the header — the padded math left it half-hidden after Home */
+  else if(top<gw.scrollTop)gw.scrollTop=top;
+  else if(bot>gw.scrollTop+gw.clientHeight)gw.scrollTop=bot-gw.clientHeight;
+  if(SEQ.playing&&followPlay){
+    const first=!followHold;
+    followHold=true;followHoldRow=cursor.r;
+    /* only say so when the playhead really did go off-screen — typing notes next to it shouldn't chatter */
+    if(first&&playRowEl&&(playRowEl.offsetTop<gw.scrollTop||playRowEl.offsetTop+playRowEl.offsetHeight>gw.scrollTop+gw.clientHeight))
+      status('view parked on the cursor — follow resumes when the playhead reaches row '+cursor.r);
+  }
 }
 document.getElementById('followBtn').onclick=()=>{setFollow(!followPlay);status('follow '+(followPlay?'on':'off'))};
 document.getElementById('followBtn').classList.toggle('on',followPlay);
@@ -1724,11 +1777,15 @@ function setPlayRow(r){
   const el=grows.children[r];if(!el)return;
   el.classList.add('playrow');playRowEl=el;
   if(!followPlay)return;
+  if(followHold){
+    if(r!==followHoldRow)return; /* the view is parked on the cursor — leave it alone */
+    releaseFollowHold();         /* playback caught up with it: follow again, from right here */
+  }
   const gw=gridwrap;
   const y=el.offsetTop-gw.clientHeight/2+40;
   gw.scrollTop=y;
 }
-let lastQ=null,animOn=false;
+let lastQ=null,animOn=false,lastPP=null;
 const meterBuf=new Uint8Array(512);
 const mmBuf=new Uint8Array(2048);
 let mmPk=0,mmPkL=0,mmPkR=0,mmClipT=0,rafN=0;
@@ -1737,9 +1794,22 @@ function songStrip(f){
   const on=SEQ.playing&&SEQ.songMode&&lastQ&&lastQ.ord!=null?lastQ.ord%song.order.length:-1;
   for(let i=0;i<chips.length;i++){
     const isOn=i===on;
-    chips[i].classList.toggle('playing',isOn);
-    chips[i].style.background=isOn?'linear-gradient(90deg,rgba(63,224,180,.3) '+(f*100).toFixed(1)+'%,var(--raised) '+(f*100).toFixed(1)+'%)':'';
+    const el=chips[i];
+    /* every style write here invalidates layout for the grid underneath, 60 times a second.
+       Writing a value identical to the last one costs the same as a real change — so don't. */
+    if(el._on!==isOn){el._on=isOn;el.classList.toggle('playing',isOn)}
+    const bg=isOn?'linear-gradient(90deg,rgba(63,224,180,.3) '+(f*100).toFixed(1)+'%,var(--raised) '+(f*100).toFixed(1)+'%)':'';
+    if(el._bg!==bg){el._bg=bg;el.style.background=bg}
   }
+}
+/* set a style property only when it actually changes — the guard is far cheaper than the
+   style recalc a redundant write forces */
+function styleIf(el,prop,val,key){
+  if(!el)return;
+  const k=key||prop;
+  if(el['_s'+k]===val)return;
+  el['_s'+k]=val;
+  el.style[prop]=val;
 }
 function raf(){
   if(SEQ.playing&&AC){
@@ -1758,13 +1828,14 @@ function raf(){
       const f=clamp((lastQ.row+(AC.currentTime-lastQ.t)/rowDur())/song.patterns[curPat].rows,0,1);
       /* progress quantized to quarters: bar over the pattern + fill on the playing song slot */
       const qf=Math.min(1,(Math.floor(f*4)+1)/4);
-      ghead.style.setProperty('--pp',qf.toFixed(2));
+      const ppv=qf.toFixed(2);
+      if(lastPP!==ppv){lastPP=ppv;ghead.style.setProperty('--pp',ppv)}
       songStrip(qf);
       animOn=true;
     }
   }else if(animOn){
     animOn=false;lastQ=null;
-    ghead.style.setProperty('--pp',0);
+    if(lastPP!=='0'){lastPP='0';ghead.style.setProperty('--pp',0)}
     songStrip(0);
   }
   if(!mixer.hidden&&AC){
@@ -1773,12 +1844,12 @@ function raf(){
       ch.an.getByteTimeDomainData(meterBuf);
       let pk=0;for(let i=0;i<meterBuf.length;i+=4){const d=Math.abs(meterBuf[i]-128);if(d>pk)pk=d}
       ch.pk=Math.max(pk/128,(ch.pk||0)*.86);
-      meterEls[t].style.transform='scaleY('+ch.pk.toFixed(3)+')';
+      styleIf(meterEls[t],'transform','scaleY('+ch.pk.toFixed(2)+')');
     }
     /* master strip meters: the summed bus L/R, post master-FX */
     if(mstrMeterEl&&mstrMeterEl[0]){
-      mstrMeterEl[0].style.transform='scaleY('+clamp(mmPkL,0,1).toFixed(3)+')';
-      mstrMeterEl[1].style.transform='scaleY('+clamp(mmPkR,0,1).toFixed(3)+')';
+      styleIf(mstrMeterEl[0],'transform','scaleY('+clamp(mmPkL,0,1).toFixed(2)+')');
+      styleIf(mstrMeterEl[1],'transform','scaleY('+clamp(mmPkR,0,1).toFixed(2)+')');
     }
   }
   /* master summary popup: per-channel bars + peak dB */
@@ -1790,10 +1861,10 @@ function raf(){
         let pk=0;for(let i=0;i<meterBuf.length;i+=4){const d=Math.abs(meterBuf[i]-128);if(d>pk)pk=d}
         ch.pk=Math.max(pk/128,(ch.pk||0)*.86);
       }
-      mpEls[t+1].bar.style.transform='scaleX('+clamp(ch.pk,0,1).toFixed(3)+')';
+      styleIf(mpEls[t+1].bar,'transform','scaleX('+clamp(ch.pk,0,1).toFixed(2)+')');
       if(!(rafN%8))mpEls[t+1].db.textContent=ch.pk>.001?(20*Math.log10(ch.pk)).toFixed(1):'-∞';
     }
-    mpEls[0].bar.style.transform='scaleX('+clamp((20*Math.log10(Math.max(mmPk,1e-4))+48)/48,0,1).toFixed(3)+')';
+    styleIf(mpEls[0].bar,'transform','scaleX('+clamp((20*Math.log10(Math.max(mmPk,1e-4))+48)/48,0,1).toFixed(2)+')');
     if(!(rafN%8))mpEls[0].db.textContent=mmPk>.001?(20*Math.log10(mmPk)).toFixed(1):'-∞';
   }
   /* instrument activity dots: each channel lights the instrument it last played */
@@ -1809,7 +1880,7 @@ function raf(){
       if(ch.lastI!=null&&ch.pk>.01)lv[ch.lastI]=Math.max(lv[ch.lastI]||0,ch.pk);
     }
     document.querySelectorAll('#instList .act').forEach(el=>{
-      el.style.opacity=clamp((lv[+el.dataset.a]||0)*1.7,0,1).toFixed(2);
+      styleIf(el,'opacity',clamp((lv[+el.dataset.a]||0)*1.7,0,1).toFixed(1));
     });
   }
   if(AC&&masterAnL&&masterAnR&&AC.state==='running'){
@@ -1819,8 +1890,8 @@ function raf(){
     mmPkR=Math.max(pkR,(mmPkR||0)*.92);
     mmPk=Math.max(mmPkL,mmPkR);
     const sx=v=>clamp(((v>.001?20*Math.log10(v):-60)+48)/48,0,1).toFixed(3);
-    document.getElementById('mmL').style.transform='scaleX('+sx(mmPkL)+')';
-    document.getElementById('mmR').style.transform='scaleX('+sx(mmPkR)+')';
+    styleIf(document.getElementById('mmL'),'transform','scaleX('+sx(mmPkL)+')');
+    styleIf(document.getElementById('mmR'),'transform','scaleX('+sx(mmPkR)+')');
     const db=mmPk>.001?20*Math.log10(mmPk):-60;
     const clipEl=document.getElementById('mmClip');
     if(pk>=.985){clipEl.classList.add('clip');mmClipT=performance.now()}
@@ -1919,6 +1990,58 @@ function rowInner(r){
   return h;
 }
 function renderRow(r){const el=grows.children[r];if(el)el.innerHTML=rowInner(r)}
+/* Measure one REAL row and hand its size to the off-screen placeholder. Row 0 is forced to render
+   for the measurement so we never measure a placeholder and lock in a wrong value; without this the
+   skipped rows would be a different height and every scroll/offset calculation would drift. */
+/* ---- view toggles: get everything out of the way of the notes -------------------------------
+   Alt+L drops the left rail. Alt+H narrows the grid to the tracks you have selected (or the
+   cursor's, with its poly lanes) and hides the rest — a VIEW only, the hidden tracks keep playing.
+   Both are pure CSS, so nothing re-renders; the row placeholder just gets re-measured after. */
+const focusStyle=document.createElement('style');document.head.appendChild(focusStyle);
+let FOCUS=null; /* Set of visible track indices, or null when everything is shown */
+function toggleRail(on){
+  const b=document.body.classList.toggle('norail',on===undefined?undefined:!!on);
+  try{localStorage.setItem('volt.norail',b?'1':'0')}catch(e){}
+  calibrateRows();updateSelBox();
+  status(b?'left panel hidden — Alt+L brings it back':'left panel back');
+}
+try{if(localStorage.getItem('volt.norail')==='1')document.body.classList.add('norail')}catch(e){}
+function focusTracks(){
+  if(FOCUS){FOCUS=null;focusStyle.textContent='';calibrateRows();updateSelBox();status('all tracks visible again');return}
+  const keep=new Set();
+  const s=selRect();
+  if(s){
+    const t1=Math.floor(s.l1/8),t2=Math.floor(s.l2/8);
+    for(let t=t1;t<=t2;t++)if(!s.mask||s.mask.has(t))keep.add(t);
+  }else polyLanes(polyLead(cursor.t)).forEach(t=>keep.add(t)); /* no selection: the cursor's track, lanes and all */
+  polyLanes(polyLead(cursor.t)).forEach(t=>{if(keep.has(polyLead(t)))keep.add(t)});
+  if(!keep.size||keep.size>=TRACKS){status('nothing to narrow down to — select the columns you want first');return}
+  FOCUS=keep;
+  let css='';
+  for(let t=0;t<TRACKS;t++)if(!keep.has(t))css+='.prow .tcell[data-t="'+t+'"],#ghead .tcell[data-t="'+t+'"]{display:none}';
+  focusStyle.textContent=css;
+  calibrateRows();updateSelBox();
+  status(keep.size+' of '+TRACKS+' tracks shown — the rest are only hidden, they still play (Alt+H shows them again)');
+}
+/* keep the cursor out of hidden columns while focus mode is on */
+function focusFix(dir){
+  if(!FOCUS||FOCUS.has(cursor.t))return;
+  const step=dir<0?-1:1;
+  for(let i=0;i<TRACKS;i++){
+    const t=(cursor.t+step*(i+1)+TRACKS*2)%TRACKS;
+    if(FOCUS.has(t)){cursor.t=t;cursor.c=clamp(cursor.c,0,7);return}
+  }
+}
+function calibrateRows(){
+  const el=grows.children[0];if(!el)return;
+  const prev=el.style.contentVisibility;
+  el.style.contentVisibility='visible';
+  const r=el.getBoundingClientRect();
+  el.style.contentVisibility=prev;
+  if(r.height>2)grows.style.setProperty('--rowh',r.height+'px');
+  if(r.width>2)grows.style.setProperty('--roww',r.width+'px');
+}
+addEventListener('resize',()=>{if(song&&grows.children.length)calibrateRows()}); /* browser zoom changes row metrics */
 function trackAudible(t){const sol=song.trackset.some(s=>s.solo);const ts=song.trackset[polyLead(t)];return !ts.mute&&(!sol||ts.solo)}
 const mixStyle=document.createElement('style');document.head.appendChild(mixStyle);
 /* per-track colors: tint the column, its header, the beat-grid lane and the mixer name */
@@ -2029,6 +2152,7 @@ function renderGrid(){
     h+='<div class="'+cls+'" data-r="'+r+'">'+rowInner(r)+'</div>';
   }
   grows.innerHTML=h;playRowEl=null;
+  calibrateRows();
   renderHead();updateSelBox();updateLoopVis();
   document.getElementById('patLen').value=pat.rows;
   renderPatSel();renderOrder();renderBeatIfOpen();renderAutoIfOpen();prRenderIfOpen();markAuto();
@@ -2042,16 +2166,11 @@ function moveCursor(dt,dr,dc){
     while(c>7){t=(t+1)%TRACKS;c-=8}
     cursor.c=c;cursor.t=t;}
   if(dt){cursor.t=(cursor.t+dt+TRACKS)%TRACKS}
+  if(dt||dc)focusFix(dt||dc); /* skip past columns that focus mode is hiding */
   if(dr){cursor.r=clamp(cursor.r+dr,0,pat.rows-1)} /* stop at the ends — no wrap back to the top/bottom */
   renderRow(oldR);renderRow(cursor.r);
   trackPanel();
-  const el=grows.children[cursor.r];
-  if(el&&!SEQ.playing){
-    const gw=gridwrap,top=el.offsetTop-40,bot=el.offsetTop+el.offsetHeight+40;
-    if(cursor.r===0)gw.scrollTop=0; /* row 0 sits below the header — the padded math left it half-hidden after Home */
-    else if(top<gw.scrollTop)gw.scrollTop=top;
-    else if(bot>gw.scrollTop+gw.clientHeight)gw.scrollTop=bot-gw.clientHeight;
-  }
+  scrollCursorIntoView();
   syncCursorViews();
 }
 /* the whitespace between a cell's note/inst/vol/fx fields belongs to no <i> —
@@ -5170,9 +5289,116 @@ function renamePattern(pi){
   });
 }
 document.getElementById('patSel').addEventListener('change',e=>curPatSet(+e.target.value));
+/* ---- rows per beat (song.lpb) ------------------------------------------------------------
+   The grid's resolution. Raising it doesn't change the music: every pattern is re-timed so the
+   notes land on the same beats, and anything that fell between rows is kept as a Txx micro-delay.
+   Lowering it can genuinely lose notes (two old rows can collide on one new one), so that asks
+   first. Sub-row positions survive both ways — a note at row 3 of a 4-row beat becomes row 4½
+   (row 4 + T96) at 6 rows/beat, which is the same instant in time. */
+const LPB_MAXROWS=256;
+function lpbRescalePattern(pat,f,nr,stats){
+  const rows=pat.rows;
+  pat.data.forEach((src,t)=>{
+    const out=new Array(nr).fill(null);
+    for(let r=0;r<rows;r++){
+      const c=src[r];if(!c)continue;
+      const tick=c.c==='T'?(c.x||0)/192:0;
+      const pos=(r+tick)*f;
+      let row=Math.floor(pos+1e-9),frac=pos-row;
+      const keepCmd=c.c&&c.c!=='T'; /* a cell holds ONE command — a real Sxx/Gxx outranks the timing nudge */
+      if(keepCmd&&frac>.002){row=Math.round(pos);frac=0;stats.quant++}
+      if(row>=nr||row<0){stats.lost++;continue}
+      if(out[row]){stats.lost++;continue} /* collision on the coarser grid — first one wins */
+      const nc=Object.assign({},c);
+      if(!keepCmd){
+        if(frac>.002){nc.c='T';nc.x=clamp(Math.round(frac*192),1,191)}
+        else if(c.c==='T'){nc.c=null;nc.x=0}
+      }
+      out[row]=nc;stats.moved++;
+    }
+    pat.data[t]=out;
+  });
+  if(pat.auto)for(const k in pat.auto){
+    const a=pat.auto[k];if(!a)continue;
+    const na=new Array(nr).fill(null);
+    for(let r=0;r<rows&&r<a.length;r++){
+      const v=a[r];if(v==null)continue;
+      const row=clamp(Math.round(r*f),0,nr-1);
+      na[row]=v;
+      const nv=a[r+1];
+      if(nv!=null&&f>1){ /* fill between two adjacent painted points so ramps stay smooth */
+        const row2=clamp(Math.round((r+1)*f),0,nr-1);
+        for(let x=row+1;x<row2;x++)na[x]=v+(nv-v)*((x-row)/(row2-row));
+      }
+    }
+    pat.auto[k]=na;
+  }
+  if(pat.la!=null&&pat.lb!=null){
+    pat.la=clamp(Math.round(pat.la*f),0,nr-1);
+    pat.lb=clamp(Math.round((pat.lb+1)*f)-1,pat.la,nr-1);
+  }
+  pat.rows=nr;
+}
+async function setLpb(n){
+  const cur=song.lpb||4;
+  const selEl=document.getElementById('lpbSel'); /* NOT `sel` — that's the grid's block selection */
+  n=clamp(+n||4,2,16);
+  if(n===cur){selEl.value=cur;return}
+  const f=n/cur;
+  const over=song.patterns.filter(p=>Math.round(p.rows*f)>LPB_MAXROWS);
+  if(over.length){
+    selEl.value=cur;
+    status('can’t go to '+n+' rows/beat — that needs '+Math.round(over[0].rows*f)+' rows and the limit is '+LPB_MAXROWS+'. Shorten the pattern (Len) first.');
+    return;
+  }
+  if(f<1){ /* dry run: does anything actually get lost? */
+    let lost=0;
+    song.patterns.forEach(p=>{
+      const nr=clamp(Math.round(p.rows*f),8,LPB_MAXROWS),seen={};
+      p.data.forEach((tr,t)=>{
+        for(let r=0;r<p.rows;r++){
+          const c=tr[r];if(!c||(c.n==null&&c.i==null&&c.v==null&&!c.c))continue;
+          const row=Math.floor(r*f+1e-9),key=t+':'+row;
+          if(row>=nr||seen[key])lost++;else seen[key]=1;
+        }
+      });
+    });
+    if(lost&&!await askConfirm(lost+' cell'+(lost>1?'s':'')+' can’t fit on a '+n+'-row beat and would be dropped. Continue?','Drop them'))
+      {selEl.value=cur;return}
+  }
+  if(SEQ.playing)stop();
+  const stats={moved:0,lost:0,quant:0};
+  song.patterns.forEach(p=>lpbRescalePattern(p,f,clamp(Math.round(p.rows*f),8,LPB_MAXROWS),stats));
+  song.lpb=n;
+  cursor.r=clamp(Math.round(cursor.r*f),0,song.patterns[curPat].rows-1);
+  if(PR.cursorRow!=null)PR.cursorRow=cursor.r;
+  sel=null;autoSel=null;PR.sel=[];
+  if(typeof ARP!=='undefined'&&ARP.open)arpAbort();
+  selEl.value=n;
+  renderGrid();updateLoopVis();renderBeat();prRenderIfOpen();renderAutoIfOpen();
+  if(AC)setDelayTime();
+  saveSoon();pushUndoSoon();
+  status(n+' rows/beat — song re-timed, '+stats.moved+' cells moved'
+    +(stats.quant?', '+stats.quant+' snapped to a row (they carry another command)':'')
+    +(stats.lost?', '+stats.lost+' dropped':'')+' · Ctrl+Z undoes it');
+}
+document.getElementById('lpbSel').addEventListener('change',e=>setLpb(e.target.value));
+/* Shift+[ / Shift+] — step through the rows/beat list without leaving the keyboard. Plain [ ] are
+   the octave, so this is the same pair one level up. It walks the list rather than wrapping:
+   falling off 16 straight back to 2 would quietly mangle a song. */
+let lpbBusy=false;
+async function nudgeLpb(dir){
+  if(lpbBusy||!song)return; /* one rescale at a time — setLpb can be waiting on a confirm */
+  const opts=[].map.call(document.getElementById('lpbSel').options,o=>+o.value);
+  const i=opts.indexOf(song.lpb||4);
+  const j=clamp((i<0?opts.indexOf(4):i)+dir,0,opts.length-1);
+  if(j===i){status(opts[i]+' rows/beat — that’s as '+(dir>0?'fine':'coarse')+' as it goes');return} /* status() is textContent — no entities */
+  lpbBusy=true;
+  try{await setLpb(opts[j])}finally{lpbBusy=false}
+}
 document.getElementById('patLen').addEventListener('change',e=>{
   const pat=song.patterns[curPat];
-  const n=clamp(+e.target.value||64,8,128);
+  const n=clamp(+e.target.value||64,8,LPB_MAXROWS);
   pat.data.forEach((tr,i)=>{
     if(n>pat.rows)pat.data[i]=tr.concat(new Array(n-pat.rows).fill(null));
     else pat.data[i]=tr.slice(0,n);
@@ -5320,6 +5546,7 @@ document.getElementById('step').addEventListener('change',e=>{editStep=clamp(+e.
 
 /* ================= save / load ================= */
 function serialize(withSamples){
+  song.v=song.v||1; /* stamp the format so a future VOLT knows what it's opening */
   return JSON.stringify(song,(k,v)=>{
     if(k==='buffer'||k[0]==='_')return undefined; /* live buffers + caches (_sid, _peaks…) */
     if(k==='sampleB64'&&!withSamples)return undefined;
@@ -5338,7 +5565,7 @@ function sidFor(ins){
   return ins._sid;
 }
 const snapState=()=>JSON.stringify({
-  p:song.patterns,o:song.order,ts:song.trackset,bpm:song.bpm,
+  p:song.patterns,o:song.order,ts:song.trackset,bpm:song.bpm,lpb:song.lpb,
   m:song.masterFx||[],mv:song.masterVol,l:song.lfos||{},
   i:song.instruments.map(ins=>{
     const o={name:ins.name,type:ins.type,params:Object.assign({},ins.params)};
@@ -5358,13 +5585,19 @@ function pushUndoSoon(){
     const s=snapState();
     if(undoStack[undoStack.length-1]!==s){
       undoStack.push(s);
-      if(undoStack.length>100)undoStack.shift();
+      /* cap by SIZE, not just count: a 32-track song snapshots big, and 100 of them was tens of
+         megabytes sitting in memory. Depth stays generous for small songs, shrinks for huge ones. */
+      let bytes=0;
+      for(let i=undoStack.length-1;i>=0;i--)bytes+=undoStack[i].length;
+      while(undoStack.length>2&&(undoStack.length>100||bytes>24e6))bytes-=undoStack.shift().length;
       redoStack.length=0;
     }
   },250);
 }
 function applyState(s){
   restoring=true;
+  /* an open arp panel holds a snapshot of patterns that are about to be replaced — drop it first */
+  if(typeof ARP!=='undefined'&&ARP.open)arpAbort();
   const st=JSON.parse(s);
   song.patterns=st.p;song.order=st.o;song.trackset=st.ts;
   song.trackset.forEach(normTs);
@@ -5386,6 +5619,7 @@ function applyState(s){
     curInst=clamp(curInst,0,song.instruments.length-1);
   }
   if(st.bpm){song.bpm=st.bpm;document.getElementById('bpm').value=st.bpm;if(AC)setDelayTime()}
+  if(st.lpb){song.lpb=st.lpb;document.getElementById('lpbSel').value=st.lpb} /* rows/beat is undoable too */
   if(st.m!==undefined)song.masterFx=st.m;
   if(st.mv!==undefined)song.masterVol=st.mv;
   if(st.l!==undefined)song.lfos=st.l;
@@ -5455,6 +5689,10 @@ function flushSave(){
 async function loadSong(s){
   stop();
   song=s;
+  /* format stamp: songs saved before this carried no version — treat them as v1 and fill the
+     defaults they predate, so a future format change has something to migrate FROM */
+  song.v=song.v||1;
+  song.lpb=clamp(+song.lpb||4,2,16);
   TRACKS=clamp((song.patterns&&song.patterns[0]&&song.patterns[0].data.length)||8,2,MAXTRACKS);
   song.trackset=song.trackset||mkTrackset();
   while(song.trackset.length<TRACKS)song.trackset.push(mkTs());
@@ -5470,6 +5708,7 @@ async function loadSong(s){
   sel=null;
   curPat=0;curInst=0;cursor.t=0;cursor.r=0;cursor.c=0;
   document.getElementById('bpm').value=song.bpm;
+  document.getElementById('lpbSel').value=song.lpb;
   if(AC){applyMix();setDelayTime();applyFxAll()}
   for(const ins of song.instruments){
     normInst(ins);
@@ -5649,6 +5888,24 @@ document.addEventListener('drop',async e=>{
 });
 function status(s){document.getElementById('status').textContent=s;
   setTimeout(()=>{if(document.getElementById('status').textContent===s)document.getElementById('status').textContent=''},4000)}
+/* Crashes used to die silently in the console — the UI just stopped responding to that one action
+   and you'd have no idea why. Surface them, and keep the last one for Alt+/ to copy. */
+let lastErr=null;
+function noteError(what,e){
+  const msg=(e&&(e.message||e))+'';
+  lastErr=(new Date()).toLocaleTimeString()+' · '+what+': '+msg+'\n'+((e&&e.stack)||'');
+  try{status('⚠ '+what+' failed: '+msg+' — Alt+/ copies the details')}catch(_){}
+}
+addEventListener('error',e=>noteError('something',e.error||e));
+addEventListener('unhandledrejection',e=>noteError('a background task',e.reason));
+addEventListener('keydown',e=>{
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&(e.key==='/'||e.code==='Slash')){
+    e.preventDefault();
+    const txt=lastErr||'no errors this session — nothing to copy';
+    if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>status(lastErr?'error details copied':'no errors this session'),()=>{});
+    else status(txt.split('\n')[0]);
+  }
+});
 
 /* ================= templates ================= */
 function put(pat,t,r,n,i,v,c,x){
@@ -6650,12 +6907,31 @@ document.addEventListener('keydown',e=>{
       e.preventDefault();e.stopImmediatePropagation();clearAutoSel();status('selection cleared');return;
     }
   }
+  /* Alt+A — arp / repeat: from the roll's selection, or straight from a block in the tracker grid */
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&low==='a'){
+    e.preventDefault();e.stopImmediatePropagation();arpOpen();return;
+  }
+  /* Alt+L — hide / show the left rail · Alt+H — narrow the grid to the selected columns */
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&(low==='l'||low==='h')){
+    e.preventDefault();e.stopImmediatePropagation();
+    if(low==='l')toggleRail();else focusTracks();
+    return;
+  }
+  /* Shift+[ / Shift+] — coarser / finer grid (plain [ ] stay on the octave) */
+  if(e.shiftKey&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(k==='{'||k==='}'||e.code==='BracketLeft'||e.code==='BracketRight')){
+    e.preventDefault();e.stopImmediatePropagation();
+    nudgeLpb((k==='}'||e.code==='BracketRight')?1:-1);return;
+  }
   if(k==='Escape'&&(gripDrag||PR.scale||PR.slice)){ /* bail out of a time-scale/slice drag before anything else sees Esc */
     e.preventDefault();e.stopImmediatePropagation();
     if(gripDrag)gripCancel();
     if(PR.scale){PR.scale=null;prRender()}
     if(PR.slice){PR.slice=null;prRender()}
     status('cancelled');return;
+  }
+  if(ARP.open){ /* the arp panel owns Esc / Enter while it's live-previewing */
+    if(k==='Escape'){e.preventDefault();e.stopImmediatePropagation();arpClose(false);return}
+    if(k==='Enter'&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();e.stopImmediatePropagation();arpClose(true);return}
   }
   if(k==='Escape'){ /* close Vault-family popups before anything else grabs Escape */
     if(!vaultSaveEl.hidden){e.stopImmediatePropagation();vaultSaveEl.hidden=true;pendingIdea=null;return}
@@ -6674,7 +6950,7 @@ document.addEventListener('keydown',e=>{
       e.preventDefault();e.stopImmediatePropagation();
       const oldR=cursor.r;
       PR.cursorRow=0;cursor.r=0;prWrap.scrollLeft=0;
-      renderRow(oldR);renderRow(0);prRender();return;
+      renderRow(oldR);renderRow(0);scrollCursorIntoView();prRender();return;
     }
     if(ctl&&(k==='0'||e.code==='Digit0'||e.code==='Numpad0')){ /* fit all notes in view */
       e.preventDefault();e.stopImmediatePropagation();prFitView();return;
@@ -6731,12 +7007,7 @@ document.addEventListener('keydown',e=>{
     const nr=selRect();
     renderRows(Math.min(old.r1,nr.r1,oldR),Math.max(old.r2,nr.r2,oldR));
     trackPanel();
-    const el=grows.children[cursor.r];
-    if(el&&!SEQ.playing){
-      const gw=gridwrap,top=el.offsetTop-40,bot=el.offsetTop+el.offsetHeight+40;
-      if(top<gw.scrollTop)gw.scrollTop=top;
-      else if(bot>gw.scrollTop+gw.clientHeight)gw.scrollTop=bot-gw.clientHeight;
-    }
+    scrollCursorIntoView();
     return;
   }
   if((e.ctrlKey||e.metaKey)&&low==='z'){
@@ -7399,6 +7670,11 @@ const COMMANDS=[
   {n:'Import song JSON',kw:'load open file',f:()=>document.getElementById('impBtn').click()},
   {n:'Toggle beat grid',kw:'step sequencer fl drum machine beat f8',f:()=>beatToggle()},
   {n:'Toggle piano roll',k:'F6',kw:'notes fl midi roll melody',f:()=>prToggle()},
+  {n:'Hide / show the left panel',k:'Alt+L',kw:'side rail panel instruments hide fullscreen wide space',f:()=>toggleRail()},
+  {n:'Show only the selected columns',k:'Alt+H',kw:'focus hide tracks columns narrow solo view isolate',f:()=>focusTracks()},
+  {n:'Rows per beat: finer / coarser grid',k:'Shift+[ ]',kw:'lpb resolution grid rows beat triplet 32nd swing timing',f:()=>document.getElementById('lpbSel').focus()},
+  {n:'Copy the last error',k:'Alt+/',kw:'error crash bug report diagnostics clipboard',f:()=>status(lastErr?'press Alt+/ to copy':'no errors this session')},
+  {n:'Arp / repeat the selected notes',k:'Alt+A',kw:'arp arpeggio arpeggiator repeat phrase rate resolution speed gate octaves live',f:()=>arpOpen()},
   {n:'Toggle automation panel',kw:'auto lanes cutoff filter f7',f:()=>autoToggle()},
   {n:'Toggle metronome',k:'Ctrl+M',kw:'metronome click beat count tempo',f:()=>metToggle()},
   {n:'MIDI: connect / disconnect keyboard',kw:'midi controller input keyboard device',f:()=>midiToggle()},
@@ -7628,6 +7904,7 @@ const prSelNotes=()=>prNotes().filter(prIsSel);
 const isBlackKey=n=>{const m=n%12;return m===1||m===3||m===6||m===8||m===10};
 function prToggle(){
   prPan.hidden=!prPan.hidden;
+  if(prPan.hidden&&typeof ARP!=='undefined'&&ARP.open)arpClose(true); /* rolling up the roll keeps the arp */
   document.getElementById('rollBtn').classList.toggle('on',!prPan.hidden);
   if(!prPan.hidden){PR.cursorRow=cursor.r;prAutoBase();prRender()} /* open at the shared cursor */
 }
@@ -8354,6 +8631,415 @@ function prDuplicate(){
   prRepaint();saveSoon();prRender();
   status(outs.length+' note'+(outs.length>1?'s':'')+' duplicated');
 }
+/* ================= arp / phrase repeat (Alt+A) — live and audible while you tweak =================
+   Takes the roll selection and rewrites it as either an ARPEGGIO (one note at a time, cycling the
+   selected pitches) or a REPEATED PHRASE (the whole selection re-stamped as a block). Every control
+   change regenerates the notes straight into the pattern, so a looping transport hears the new
+   version within ~a row; with the transport stopped the panel auditions the result itself. OK keeps
+   it as one undo step, Esc / Cancel puts the lanes back byte-for-byte. */
+const ARP={open:false,src:null,lanes:null,snap:null,out:null,mode:'arp',rateA:6,rateR:9,dir:'up',
+  oct:1,gate:80,steps:0,xp:0,vel:51,velT:false,audi:true,voices:[],t:null,rnd:[],pat:0,trk:0,skip:0,
+  prevSel:null,solo0:null,iv:null,how:'',a7:false,a9:false};
+const ARP_RATES=[{lab:'1/1',mul:4},{lab:'1/2',mul:2},{lab:'1/4',mul:1},{lab:'1/4T',mul:2/3},
+  {lab:'1/8',mul:.5},{lab:'1/8T',mul:1/3},{lab:'1/16',mul:.25},{lab:'1/16T',mul:1/6},
+  {lab:'1/32',mul:.125},{lab:'phrase',mul:0}]; /* mul 0 = step by the selection's own length */
+const ARP_DIRS=[['up','up'],['down','down'],['updown','up-dn'],['downup','dn-up'],['rnd','rnd'],['order','played']];
+const arpPan=$id('arpPan');
+const arpRateIdx=()=>ARP.mode==='arp'?ARP.rateA:ARP.rateR;
+const arpSetRate=i=>{if(ARP.mode==='arp')ARP.rateA=i;else ARP.rateR=i};
+/* which rates this song can actually hold: a lane has one cell per row, so a step has to be at
+   least one row. At 4 rows/beat that means 1/16 and the 1/4T · 1/8T triplets are in, 1/16T and
+   1/32 are out — offering them would only write a thinned-out mess. “phrase” is Repeat-only. */
+function arpRateList(){
+  const lpb=song.lpb||4,out=[];
+  ARP_RATES.forEach((R,i)=>{
+    if(!R.mul){if(ARP.mode!=='arp')out.push(i);return}
+    if(R.mul*lpb>=1)out.push(i);
+  });
+  return out;
+}
+function arpRatePos(){ /* slider position of the current rate, clamped if the song changed under it */
+  const l=arpRateList();
+  let p=l.indexOf(arpRateIdx());
+  if(p<0){p=l.length-1;arpSetRate(l[p])}
+  return p;
+}
+/* the phrase's musical length: last note-off minus first note-on, rounded UP to a beat. A note
+   with no OFF after it reads as “runs to the end of the pattern” (that's just how lanes work), so
+   an open tail counts as one row instead of swallowing the whole pattern. */
+function arpSrcSpan(){
+  if(!ARP.src||!ARP.src.length)return 1;
+  const lpb=song.lpb||4;
+  let mn=1e9,mx=-1;
+  ARP.src.forEach(x=>{mn=Math.min(mn,x.r);mx=Math.max(mx,x.r+(x.open?1:x.len))});
+  return Math.max(1,Math.ceil((mx-mn)/lpb)*lpb);
+}
+function arpStart(){return ARP.src.reduce((a,x)=>Math.min(a,x.r),1e9)}
+/* rows per step — fractional is fine, sub-row remainders become Txx micro-delays (real tuplets) */
+function arpStepRows(){
+  const R=ARP_RATES[arpRateIdx()];
+  if(!R.mul)return arpSrcSpan();
+  return Math.max(.125,R.mul*(song.lpb||4));
+}
+/* how far to fill: the loop region if one is set, otherwise the whole pattern */
+function arpEndRow(){
+  const pat=song.patterns[curPat];
+  if(pat.la!=null&&pat.lb!=null&&pat.lb+1>arpStart())return Math.min(pat.rows,pat.lb+1);
+  return pat.rows;
+}
+function arpRnd(i,n){ /* stable randomness: the same step keeps its note until you re-roll */
+  while(ARP.rnd.length<=i)ARP.rnd.push(Math.random());
+  return Math.floor(ARP.rnd[i]*n)%n;
+}
+/* which 7th the selection wants: a major third in the chord asks for a major 7th, anything else
+   (minor, or a bare root/5th) gets the flat 7 — the one that works over minor and dominant alike */
+function arpRoot(){return ARP.src.reduce((a,x)=>Math.min(a,x.n),96)}
+function arpMaj(){const r=arpRoot();return ARP.src.some(x=>(x.n-r)%12===4)&&!ARP.src.some(x=>(x.n-r)%12===3)}
+function arpAddLabel(){
+  if(!ARP.src||(!ARP.a7&&!ARP.a9))return 'off';
+  const p=[];if(ARP.a7)p.push(arpMaj()?'maj7':'b7');if(ARP.a9)p.push('9');
+  return p.join(' + ');
+}
+/* the pitch cycle: unique selected pitches (+ optional 7th / 9th colour), stacked over N octaves,
+   walked in the chosen direction */
+function arpPitches(){
+  const ord=ARP.dir==='order'
+    ?ARP.src.slice().sort((a,b)=>a.r-b.r||a.n-b.n).map(x=>x.n)
+    :ARP.src.map(x=>x.n).sort((a,b)=>a-b);
+  const uniq=[];ord.forEach(n=>{if(uniq.indexOf(n)<0)uniq.push(n)});
+  if(ARP.a7||ARP.a9){ /* extensions are measured from the lowest selected note */
+    const r=arpRoot(),maj=arpMaj();
+    if(ARP.a7){const s=r+(maj?11:10);if(s<=95&&uniq.indexOf(s)<0)uniq.push(s)}
+    if(ARP.a9){const s=r+14;if(s<=95&&uniq.indexOf(s)<0)uniq.push(s)}
+    if(ARP.dir!=='order')uniq.sort((a,b)=>a-b); /* “played” keeps the colour notes at the tail */
+  }
+  const out=[];
+  for(let o=0;o<ARP.oct;o++)uniq.forEach(n=>{if(n+12*o<=95)out.push(n+12*o)});
+  if(ARP.dir==='down')out.reverse();
+  else if(ARP.dir==='downup'){out.reverse();for(let i=out.length-2;i>0;i--)out.push(out[i])}
+  else if(ARP.dir==='updown')for(let i=out.length-2;i>0;i--)out.push(out[i]);
+  return out;
+}
+/* pure generator — returns the notes it WOULD write (plus how many steps couldn't fit a row) */
+function arpGen(){
+  if(!ARP.src||!ARP.src.length)return{notes:[],skipped:0};
+  const rows=song.patterns[curPat].rows;
+  const start=arpStart(),step=arpStepRows(),end=arpEndRow(),gate=ARP.gate/100;
+  const notes=[],used={};let skipped=0;
+  const put=(lane,pos,n,len,v,i,c,x,g)=>{
+    const r=Math.floor(pos+1e-6);
+    if(r<0||r>=rows||r>=end)return;
+    const key=lane+':'+r;
+    if(used[key]){skipped++;return} /* one cell per row per lane — a finer rate than the row grid thins out */
+    used[key]=1;
+    const frac=pos-r,tick=frac>.004?clamp(Math.round(frac*192),1,191):0;
+    notes.push({t:lane,r,n:clamp(Math.round(n),0,95),len:clamp(Math.round(len),1,rows-r),
+      v,i,c:c||null,x:x||0,g,tick});
+  };
+  if(ARP.mode==='arp'){
+    const seq=arpPitches();if(!seq.length)return{notes:[],skipped:0};
+    const first=ARP.src.slice().sort((a,b)=>a.r-b.r||a.n-b.n)[0];
+    const lane=prLaneOf(first); /* an arp is one voice — it all lands on the lowest selected lane */
+    const total=ARP.steps>0?ARP.steps:Math.max(1,Math.ceil((end-start)/step));
+    for(let s=0;s<total;s++){
+      const pos=start+s*step;
+      if(pos>=end)break;
+      const idx=ARP.dir==='rnd'?arpRnd(s,seq.length):s%seq.length;
+      const cyc=Math.floor(s/seq.length);
+      /* velocity: the source note's own, until you touch the slider — no inventing a v where
+         the track had none (that would pin it away from the engine default) */
+      put(lane,pos,seq[idx]+cyc*ARP.xp,Math.max(1,step*gate),
+        ARP.velT?ARP.vel:(first.v!=null?first.v:null),first.i,null,0,null);
+    }
+  }else{
+    const span=arpSrcSpan();
+    const total=ARP.steps>0?ARP.steps:Math.max(1,Math.ceil((end-start)/step));
+    for(let k=0;k<total;k++){
+      if(start+k*step>=end)break;
+      ARP.src.forEach(x=>{
+        /* an open tail holds to the end of its own copy rather than to the end of the pattern */
+        const len=x.open?Math.max(1,(span-(x.r-start))*gate):Math.max(1,x.len*gate);
+        /* a repeated phrase keeps its own dynamics until you actually touch the Vel slider.
+           Note groups stay with the original — copies get none, or every copy would be one group. */
+        put(prLaneOf(x),x.r+k*step,x.n+k*ARP.xp,len,ARP.velT?ARP.vel:x.v,x.i,x.c,x.x,k?null:x.g);
+      });
+    }
+  }
+  return{notes,skipped};
+}
+/* the lane snapshot is what makes live preview safe: every re-generate starts from the
+   pre-arp pattern, so nothing piles up and Cancel is exact */
+function arpSnap(){
+  const pat=song.patterns[curPat];
+  ARP.lanes=polyLanes(cursor.t);
+  ARP.patRef=pat;ARP.rows=pat.rows; /* identity, not just index — undo / tab switch / import swap the object */
+  ARP.snap={};
+  ARP.lanes.forEach(t=>{ARP.snap[t]=JSON.stringify(pat.data[t])});
+}
+/* has the ground moved under us? (pattern switched, undo replaced the song, LEN changed rows…)
+   If so the snapshot belongs to a pattern that no longer exists and must never be written back. */
+const arpStale=()=>!ARP.patRef||curPat!==ARP.pat||song.patterns[curPat]!==ARP.patRef
+  ||song.patterns[curPat].rows!==ARP.rows;
+function arpRestore(){
+  if(!ARP.snap||arpStale())return false;
+  const pat=song.patterns[curPat];
+  ARP.lanes.forEach(t=>{if(ARP.snap[t]!=null&&pat.data[t])pat.data[t]=JSON.parse(ARP.snap[t])});
+  return true;
+}
+/* the arp lost its pattern — drop the panel without touching a single cell */
+function arpAbort(){
+  if(!ARP.open)return;
+  ARP.open=false;
+  clearTimeout(ARP.t);clearInterval(ARP.iv);ARP.iv=null;
+  arpStopAudi();
+  if(ARP.solo0){song.trackset.forEach((ts,t)=>{if(ts)ts.solo=!!ARP.solo0[t]});ARP.solo0=null;renderHead()}
+  arpPan.hidden=true;arpPan.innerHTML='';
+  const b=$id('arpBtn');if(b)b.classList.remove('on');
+  ARP.snap=null;ARP.src=null;ARP.out=null;ARP.patRef=null;
+}
+function arpStopAudi(){
+  if(!AC)return;
+  const t=AC.currentTime;
+  ARP.voices.forEach(v=>{try{v.cut(t)}catch(e){}});
+  ARP.voices=[];
+}
+/* hear it even with the transport stopped: schedule the generated notes once, in real time */
+function arpAudition(){
+  arpStopAudi();
+  if(!ARP.audi||SEQ.playing||!ARP.out||!ARP.out.length)return; /* playing? the transport already sounds it */
+  audio();if(AC.state==='suspended')AC.resume();
+  const rd=rowDur(),t0=AC.currentTime+.06,base=arpStart();
+  let n=0;
+  for(const no of ARP.out){
+    const rel=(no.r-base+(no.tick||0)/192)*rd;
+    if(rel>6||n>=96)break; /* first ~6 s / 96 notes is plenty to judge a rate */
+    const ii=no.i!=null?no.i:laneDefaults(no.t).i;
+    const inst=song.instruments[ii];if(!inst)continue;
+    const tt=t0+rel;
+    const v=trig(inst,no.n,tt,no.t,(no.v!=null?clamp(no.v,0,64)/64:.8),0);
+    if(v){ARP.voices.push(v);try{v.release(tt+Math.max(.05,no.len*rd*.95))}catch(e){}}
+    n++;
+  }
+}
+/* keep the panel's Play / Solo buttons honest even when the transport is driven from elsewhere
+   (Space, the toolbar) — this is what lets you sit in the panel and tweak against a looping pattern */
+function arpSyncPlay(){
+  const p=$id('arpPlay');if(!p)return;
+  p.classList.toggle('on',SEQ.playing);
+  p.innerHTML=SEQ.playing?'&#9632; Stop':'&#9654; Play';
+  const s=$id('arpSolo');if(s)s.classList.toggle('on',!!ARP.solo0);
+}
+function arpSoloToggle(){
+  if(ARP.solo0){ /* back to whatever was soloed before */
+    song.trackset.forEach((ts,t)=>{ts.solo=!!ARP.solo0[t]});
+    ARP.solo0=null;
+  }else{
+    ARP.solo0=song.trackset.map(ts=>!!ts.solo);
+    song.trackset.forEach((ts,t)=>{ts.solo=(t===ARP.trk)}); /* poly lanes follow their leader */
+  }
+  renderHead();if(!mixer.hidden)renderMixer();
+  arpSyncPlay();
+  status(ARP.solo0?'arp track soloed — Solo again to hear everything':'solo cleared');
+}
+function arpApply(){
+  if(!ARP.open)return;
+  if(arpStale()){arpAbort();status('arp closed — its pattern changed underneath it');return}
+  if(polyLead(cursor.t)!==ARP.trk){arpClose(true);return} /* moved to another track — keep what's written */
+  arpRestore();
+  /* an arp replaces the chord it came from (the stack becomes a line); Repeat keeps it — its
+     first copy IS the original, rewritten in place */
+  if(ARP.mode==='arp')ARP.src.forEach(x=>prEraseNote(x.t,x));
+  const g=arpGen();
+  g.notes.forEach(no=>{
+    prWriteNote(no.t,{r:no.r,n:no.n,len:no.len,i:no.i,v:no.v});
+    const c=cellAt(no.t,no.r);
+    if(!c)return;
+    if(no.c){c.c=no.c;c.x=no.x} /* a repeated phrase carries its own commands along */
+    else if(no.tick){c.c='T';c.x=no.tick} /* sub-row placement = real triplet timing */
+    if(no.g!=null)c.g=no.g;
+  });
+  ARP.out=g.notes;ARP.skip=g.skipped;
+  PR.sel=g.notes.map(x=>({t:x.t,r:x.r,n:x.n}));
+  prRepaint();prRender();
+  arpHint();
+  arpAudition();
+}
+function arpTouch(){clearTimeout(ARP.t);ARP.t=setTimeout(arpApply,55)} /* debounce slider drags */
+function arpHint(){
+  const h=$id('arpMsg');if(!h)return;
+  const step=arpStepRows(),n=ARP.out?ARP.out.length:0;
+  let s=n+' note'+(n===1?'':'s')+' &#183; step '+(step%1?step.toFixed(2):step)+' row'+(step===1?'':'s')
+    +' &#183; '+(ARP.steps>0?ARP.steps+' step'+(ARP.steps>1?'s':''):'fills to row '+(arpEndRow()-1));
+  if(ARP.how)s+='<br>from '+ARP.how;
+  if(ARP.skip)s+='<br><span class="awarn">'+ARP.skip+' step'+(ARP.skip>1?'s':'')
+    +' didn&#8217;t fit &#8212; '+ARP_RATES[arpRateIdx()].lab+' is finer than one row at '+(song.lpb||4)+' rows/beat.</span>';
+  h.innerHTML=s;
+}
+function arpRender(){
+  const rate=ARP_RATES[arpRateIdx()];
+  let h='<div class="ahead"><span>Arp &#183; '+ARP.src.length+' selected</span>'
+    +'<u id="arpX" style="cursor:pointer;color:var(--faint);text-decoration:none" title="Cancel (Esc)">&#215;</u></div>'
+    +'<div class="arow"><span>Mode</span><span class="aseg" style="grid-column:2/4">'
+      +'<button id="arpM0" class="'+(ARP.mode==='arp'?'on':'')+'" style="flex:1 1 46%" title="Cycle the selected pitches one note at a time">Arpeggiate</button>'
+      +'<button id="arpM1" class="'+(ARP.mode==='rep'?'on':'')+'" style="flex:1 1 46%" title="Re-stamp the whole selection as a block">Repeat</button>'
+    +'</span></div>'
+    +'<div class="arow"><span>Rate</span><input type="range" id="arpRate" min="0" max="'+(arpRateList().length-1)+'" step="1" value="'+arpRatePos()+'"'
+      +' title="How fast the steps come — only rates this pattern can hold ('+(song.lpb||4)+' rows/beat) are offered">'
+      +'<span class="av" id="arpRateV">'+ARP_RATES[arpRateIdx()].lab+'</span></div>';
+  if(ARP.mode==='arp'){
+    h+='<div class="arow"><span>Dir</span><span class="aseg" id="arpDirs" style="grid-column:2/4">'
+      +ARP_DIRS.map(d=>'<button data-d="'+d[0]+'" class="'+(ARP.dir===d[0]?'on':'')+'"'
+        +(d[0]==='rnd'?' title="Click again to re-roll"':d[0]==='order'?' title="Keep the order you drew them in"':'')+'>'+d[1]+'</button>').join('')
+      +'</span></div>'
+      +'<div class="arow"><span>Colour</span><span class="aseg">'
+        +'<button id="arpA7" class="'+(ARP.a7?'on':'')+'" title="Add the 7th above the lowest selected note — maj7 over a major third, flat 7 otherwise">7th</button>'
+        +'<button id="arpA9" class="'+(ARP.a9?'on':'')+'" title="Add the 9th (a whole tone above the octave)">9th</button>'
+      +'</span><span class="av" id="arpAddV">'+arpAddLabel()+'</span></div>'
+      +'<div class="arow"><span>Octaves</span><input type="range" id="arpOct" min="1" max="4" step="1" value="'+ARP.oct+'">'
+      +'<span class="av" id="arpOctV">'+ARP.oct+'</span></div>';
+  }
+  h+='<div class="arow"><span>Gate</span><input type="range" id="arpGate" min="10" max="200" step="5" value="'+ARP.gate+'">'
+      +'<span class="av" id="arpGateV">'+ARP.gate+'%</span></div>'
+    +'<div class="arow"><span>Xpose</span><input type="range" id="arpXp" min="-12" max="12" step="1" value="'+ARP.xp+'">'
+      +'<span class="av" id="arpXpV">'+(ARP.xp>0?'+':'')+ARP.xp+' st/cyc</span></div>'
+    +'<div class="arow"><span>Vel</span><input type="range" id="arpVel" min="1" max="64" step="1" value="'+ARP.vel+'"'
+      +(ARP.mode==='rep'&&!ARP.velT?' title="Untouched: every copy keeps the velocity it was played with"':'')+'>'
+      +'<span class="av" id="arpVelV">'+(ARP.mode==='rep'&&!ARP.velT?'as&nbsp;is':ARP.vel)+'</span></div>'
+    +'<div class="arow"><span>Steps</span><input type="range" id="arpSteps" min="0" max="64" step="1" value="'+ARP.steps+'">'
+      +'<span class="av" id="arpStepsV">'+(ARP.steps||'fill')+'</span></div>'
+    +'<label class="achk"><input type="checkbox" id="arpAudi"'+(ARP.audi?' checked':'')+'> Audition every change (when stopped)</label>'
+    +'<div class="ahint" id="arpMsg"></div>'
+    +'<div class="abtns"><button id="arpPlay" title="Loop the pattern while you tweak — every change is heard on the next pass">&#9654; Play</button>'
+      +'<button id="arpSolo" title="Hear this track on its own">Solo</button>'
+      +'<button id="arpRep" style="flex:0 0 30px" title="Hear the arp once (transport stopped)">&#8635;</button></div>'
+    +'<div class="abtns"><button id="arpOk" class="primary" title="Keep it (Enter)">OK</button>'
+      +'<button id="arpCancel" title="Put the notes back (Esc)">Cancel</button></div>';
+  arpPan.innerHTML=h;
+  const seg=(id,fn)=>{const b=$id(id);if(b)b.onclick=fn};
+  seg('arpX',()=>arpClose(false));
+  seg('arpM0',()=>{ARP.mode='arp';arpRender();arpApply()});
+  seg('arpM1',()=>{ARP.mode='rep';arpRender();arpApply()});
+  seg('arpOk',()=>arpClose(true));
+  seg('arpCancel',()=>arpClose(false));
+  seg('arpPlay',()=>{
+    if(SEQ.playing)stop();
+    else{arpStopAudi();play(false,arpStart())} /* pattern mode from the arp's first row — it keeps looping */
+    arpSyncPlay();
+  });
+  seg('arpSolo',arpSoloToggle);
+  const colour=(id,key)=>seg(id,()=>{
+    ARP[key]=!ARP[key];
+    $id(id).classList.toggle('on',ARP[key]);
+    $id('arpAddV').textContent=arpAddLabel();
+    arpApply();
+  });
+  colour('arpA7','a7');colour('arpA9','a9');
+  seg('arpRep',()=>{ARP.audi=true;const c=$id('arpAudi');if(c)c.checked=true;arpAudition()});
+  arpSyncPlay();
+  const dirs=$id('arpDirs');
+  if(dirs)dirs.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    const d=b.dataset.d;
+    if(d==='rnd'&&ARP.dir==='rnd')ARP.rnd=[]; /* re-roll */
+    ARP.dir=d;
+    dirs.querySelectorAll('button').forEach(o=>o.classList.toggle('on',o.dataset.d===d));
+    arpApply();
+  });
+  const live=(id,vid,fn,fmt)=>{
+    const el=$id(id);if(!el)return;
+    el.oninput=()=>{fn(+el.value);const v=$id(vid);if(v)v.textContent=fmt();arpTouch()};
+  };
+  live('arpRate','arpRateV',v=>{const l=arpRateList();arpSetRate(l[clamp(v,0,l.length-1)])},()=>ARP_RATES[arpRateIdx()].lab);
+  live('arpOct','arpOctV',v=>ARP.oct=v,()=>ARP.oct);
+  live('arpGate','arpGateV',v=>ARP.gate=v,()=>ARP.gate+'%');
+  live('arpXp','arpXpV',v=>ARP.xp=v,()=>(ARP.xp>0?'+':'')+ARP.xp+' st/cyc');
+  live('arpVel','arpVelV',v=>{ARP.vel=v;ARP.velT=true},()=>ARP.vel);
+  live('arpSteps','arpStepsV',v=>ARP.steps=v,()=>ARP.steps||'fill');
+  const chk=$id('arpAudi');
+  if(chk)chk.onchange=()=>{ARP.audi=chk.checked;if(ARP.audi)arpAudition();else arpStopAudi()};
+  arpHint();
+}
+/* where the notes come from — the roll's selection if there is one, otherwise the tracker's
+   block selection (Alt+A straight from the grid), otherwise the whole track */
+function arpSource(){
+  ARP.how='';
+  if(!prPan.hidden){
+    const s=prSelNotes();
+    if(s.length)return s;
+  }
+  const gs=selRect();
+  if(gs){
+    const t0=polyLead(Math.floor(gs.l1/8));
+    if(t0!==cursor.t){const old=cursor.r;cursor.t=t0;cursor.c=0;renderRow(old);trackPanel();prAutoBase()}
+    const g=prNotes().filter(x=>x.r>=gs.r1&&x.r<=gs.r2);
+    if(g.length){
+      const nt=Math.floor(gs.l2/8)-Math.floor(gs.l1/8)+1;
+      ARP.how='rows '+gs.r1+'–'+gs.r2+' of '+(song.trackset[t0].name||('track '+(t0+1)))
+        +(nt>1?' — an arp works one track at a time':'');
+      return g;
+    }
+  }
+  const all=prNotes();
+  if(all.length){ARP.how='the whole track — nothing was selected';return all}
+  return [];
+}
+function arpOpen(){
+  if(!song)return;
+  if(ARP.open){arpClose(false);return}
+  const sel=arpSource();
+  if(!sel.length){status('nothing to arp — select notes in the roll, a block in the grid, or put some notes on this track first');return}
+  if(prPan.hidden)prToggle(); /* show what's happening (source is already picked) */
+  const rows=song.patterns[curPat].rows;
+  ARP.src=sel.map(x=>{
+    const c=cellAt(prLaneOf(x),x.r)||{};
+    return{t:prLaneOf(x),r:x.r,n:x.n,len:x.len,i:x.i,v:x.v,c:c.c||null,x:c.x||0,g:c.g,
+      open:x.r+x.len>=rows}; /* no OFF after it — length is unknown, not “forever” */
+  });
+  ARP.prevSel=sel.map(x=>({t:prLaneOf(x),r:x.r,n:x.n})); /* Cancel gives you your source selection back */
+  ARP.pat=curPat;ARP.trk=polyLead(cursor.t);
+  ARP.solo0=null;
+  ARP.vel=ARP.src[0].v!=null?clamp(ARP.src[0].v,1,64):51;ARP.velT=false;
+  ARP.rnd=[];ARP.out=null;ARP.skip=0;
+  ARP.mode=ARP.src.length>1&&ARP.src.every(x=>x.r===ARP.src[0].r)?'arp':ARP.mode; /* a chord wants arpeggiating */
+  arpSnap();
+  ARP.open=true;
+  arpPan.hidden=false;
+  $id('arpBtn').classList.add('on');
+  clearInterval(ARP.iv);ARP.iv=setInterval(arpSyncPlay,300);
+  arpRender();
+  arpApply();
+}
+function arpClose(commit){
+  if(!ARP.open)return;
+  if(arpStale()){arpAbort();status('arp closed — its pattern changed underneath it');return} /* nothing of ours is left to keep or undo */
+  ARP.open=false;
+  clearTimeout(ARP.t);clearInterval(ARP.iv);ARP.iv=null;
+  arpStopAudi();
+  if(ARP.solo0){ /* the panel's Solo was a listening aid — hand the mix back as it was */
+    song.trackset.forEach((ts,t)=>{ts.solo=!!ARP.solo0[t]});
+    ARP.solo0=null;renderHead();if(!mixer.hidden)renderMixer();
+  }
+  arpPan.hidden=true;arpPan.innerHTML='';
+  $id('arpBtn').classList.remove('on');
+  if(commit){
+    const n=ARP.out?ARP.out.length:0;
+    saveSoon();pushUndoSoon();
+    const col=ARP.a7||ARP.a9?' +'+arpAddLabel():'';
+    status(n+' note'+(n===1?'':'s')+' written — '+(ARP.mode==='arp'
+      ?'arp '+ARP_RATES[arpRateIdx()].lab+' '+ARP.dir+(ARP.oct>1?' × '+ARP.oct+' oct':'')+col
+      :'phrase × every '+arpStepRows()+' rows')+' (Ctrl+Z undoes it)');
+  }else if(arpRestore()){
+    PR.sel=ARP.prevSel||[];
+    prRepaint();prRender();saveSoon();
+    status('arp cancelled — notes back as they were');
+  }else status('arp closed');
+  ARP.snap=null;ARP.src=null;ARP.out=null;ARP.patRef=null;
+}
+$id('arpBtn').onclick=()=>arpOpen();
+arpPan.addEventListener('keydown',e=>{
+  e.stopPropagation();
+  if(e.key==='Escape'){e.preventDefault();arpClose(false)}
+  else if(e.key==='Enter'){e.preventDefault();arpClose(true)}
+});
 /* drag the grip to grow / shrink the roll (more pitches visible) */
 (function(){
   const grip=document.getElementById('prGrip');
@@ -9097,6 +9783,8 @@ const HELP=[
  ['Vault','Auto-save projects','Settings ⚙','Pick a projects folder and tick auto-save: the song rewrites “name.json” there after every change.'],
  ['Selection','Cell / row / all','2×click · 3×click · Ctrl+A','Double-click selects the cell, triple-click the row. Ctrl+A cycles column → track → everything.'],
  ['Selection','Transpose','Alt+↑↓ (+Shift)','±semitone, with Shift ±octave. Works on the selection or the cursor cell.'],
+ ['Patterns','More room to work','Alt+L / Alt+H','<b>Alt+L</b> hides the left panel and gives the width to the pattern. <b>Alt+H</b> narrows the grid to just the columns you have selected (or the cursor track and its poly lanes) and hides the rest — it is a view only, hidden tracks still play, and the cursor skips over them. Either key again puts everything back.'],
+ ['Patterns','Rows per beat','R/Beat, or Shift+[ / Shift+]','How fine the grid is. <b>Changing it does not change how the song sounds</b> — every pattern is re-timed so the notes stay on the same beats, and anything that fell between rows is kept as a Txx micro-delay. <b>Shift+]</b> steps finer, <b>Shift+[</b> coarser (plain [ ] stay on the octave). 4 is classic 16ths; <b>6 and 12 put triplets on the grid</b>; 8 gives you 32nds (and unlocks the faster arp rates). Going the other way can drop notes that two rows now share, so it asks first. One Ctrl+Z undoes the whole thing.'],
  ['Patterns','New / duplicate','Ctrl+⏎ / Ctrl+D','Duplicate copies notes and automation and drops itself into the SONG strip right after the original. “+ add” puts the current pattern in the song.'],
  ['Saving','Quick export','Ctrl+S','Downloads the song as JSON — same as the Export button, samples included.'],
  ['Patterns','Rename','dblclick a chip','Patterns can have names — they show on the chips and in the Pattern dropdown.'],
@@ -9117,6 +9805,8 @@ const HELP=[
  ['Piano roll','Add notes','click / drag','FL-style: click empty space to draw a note, keep dragging right to set its length. Right edge resizes — with several selected, they all resize together.'],
  ['Piano roll','Move notes','drag (+Ctrl)','Drag to move; hold Ctrl to lock the pitch (time-only moves). Right-click deletes.'],
  ['Piano roll','Duplicate notes','Shift+drag a note','FL-style: Shift+drag drops a copy where you release — works on the whole selection. A plain Shift+click still toggles selection.'],
+ ['Piano roll','Arp / repeat','Alt+A','Works from the roll (selected notes) <b>and from the tracker grid</b> (the selected block — no roll needed) — with nothing selected it takes the whole track. <b>Arpeggiate</b> cycles the selected pitches one at a time; <b>Repeat</b> re-stamps the whole phrase. Rate sets the speed (1/4 down to 1/32, triplets included), plus direction, octaves, gate, per-cycle transpose, velocity and step count (0 = fill the loop, or the pattern). <b>Colour</b> throws the 7th and 9th into the cycle — the 7th follows the chord (maj7 over a major third, flat 7 otherwise), so a bare root+5th turns into something worth listening to.'],
+ ['Piano roll','Arp: hear it live','Play / Solo in the panel','<b>Play</b> loops the pattern from the arp&#8217;s first row and leaves it running while you drag the sliders — every change is heard on the very next pass, in context with the rest of the song. <b>Solo</b> isolates the track while you dial it in (the mix goes back as it was when you close). Stopped, the panel auditions the arp on its own after every change. Enter keeps it, Esc puts everything back.'],
  ['Piano roll','Loop bar','drag the strip on top','Drag along the thin bar above the notes to loop that range while playing; right-click it to clear.'],
  ['Piano roll','Multi-select','Ctrl+drag / Shift+click','Rubber-band or toggle one by one. Ctrl+A takes all. Del deletes. Dragging any selected note moves the gang.'],
  ['Piano roll','Nudge & clipboard','Shift+arrows / Ctrl+C X V D','Shift+arrows: ±semitone / ±row. Ctrl+↑↓: ±octave. Copy/cut, paste at the cursor, Ctrl+D duplicates after itself.'],
@@ -9245,7 +9935,39 @@ const THEMES={
     '--muteon':'#f2c6d6','--selbg':'rgba(8,122,94,.16)','--seltxt':'#14352a',
     '--trkhl':'rgba(8,122,94,.06)','--trkhlline':'#a8cfc0',
     '--glow':'#f4f2ea','--headtop':'#efede2','--well':'#ffffff','--scroll':'#c2bda9','--scrollh':'#a8a38e',
-    '--glowa':'rgba(8,122,94,.25)','--glowb':'rgba(8,122,94,.18)'}}
+    '--glowa':'rgba(8,122,94,.25)','--glowb':'rgba(8,122,94,.18)'}},
+  /* Mono keeps the four cell fields readable the way a good print layout does — by BRIGHTNESS
+     rather than hue, so notes read loudest and the fx column sits back. Nothing to fight your eyes. */
+  mono:{label:'Mono — greyscale',v:{
+    '--bg':'#0d0d0f','--panel':'#131316','--raised':'#1c1c20','--line':'#2c2c32',
+    '--txt':'#e8e8ea','--dim':'#8b8b92','--faint':'#55555c',
+    '--teal':'#f4f4f6','--teal-dim':'#3a3a41','--mag':'#a9a9b2','--amber':'#cfcfd6','--blue':'#8f8f99',
+    '--b4':'#101013','--b16':'#151519','--playrow':'#2f2f36','--cellline':'#2a2a30','--curtxt':'#0d0d0f',
+    '--oddtrk':'rgba(255,255,255,.028)',
+    '--muteon':'#3a2a2e','--selbg':'rgba(255,255,255,.14)','--seltxt':'#ffffff',
+    '--trkhl':'rgba(255,255,255,.045)','--trkhlline':'#4a4a52',
+    '--glow':'#161619','--headtop':'#18181c','--well':'#0a0a0c','--scroll':'#2c2c32','--scrollh':'#3d3d45',
+    '--glowa':'rgba(255,255,255,.35)','--glowb':'rgba(255,255,255,.16)'}},
+  midnight:{label:'Midnight — deep blue',v:{
+    '--bg':'#0a0f1e','--panel':'#0e1526','--raised':'#172137','--line':'#24314d',
+    '--txt':'#dbe6f7','--dim':'#7488ad','--faint':'#455a7d',
+    '--teal':'#4fd6ff','--teal-dim':'#12405c','--mag':'#ff7ab6','--amber':'#ffc46b','--blue':'#7aa7ff',
+    '--b4':'#0c1224','--b16':'#111a2f','--playrow':'#123c5e','--cellline':'#27344f','--curtxt':'#05121f',
+    '--oddtrk':'rgba(122,167,255,.035)',
+    '--muteon':'#43152f','--selbg':'rgba(79,214,255,.16)','--seltxt':'#eaf7ff',
+    '--trkhl':'rgba(79,214,255,.055)','--trkhlline':'#1d4d70',
+    '--glow':'#0e1a33','--headtop':'#121d35','--well':'#080d1a','--scroll':'#24314d','--scrollh':'#334669',
+    '--glowa':'rgba(79,214,255,.45)','--glowb':'rgba(79,214,255,.2)'}},
+  paper:{label:'Paper — soft light',v:{
+    '--bg':'#efe9dd','--panel':'#f6f1e7','--raised':'#e6dfd1','--line':'#cdc3ae',
+    '--txt':'#2f2a22','--dim':'#6d6455','--faint':'#a29884',
+    '--teal':'#0f7a63','--teal-dim':'#cfe7de','--mag':'#a8306c','--amber':'#8a5b12','--blue':'#26559e',
+    '--b4':'#e8e1d3','--b16':'#e0d8c8','--playrow':'#cbe5d7','--cellline':'#b6ab95','--curtxt':'#ffffff',
+    '--oddtrk':'rgba(0,0,0,.03)',
+    '--muteon':'#eec3d1','--selbg':'rgba(15,122,99,.15)','--seltxt':'#123028',
+    '--trkhl':'rgba(15,122,99,.06)','--trkhlline':'#a9cabd',
+    '--glow':'#f2ece1','--headtop':'#eee7d9','--well':'#fffdf7','--scroll':'#c6bca7','--scrollh':'#aba08b',
+    '--glowa':'rgba(15,122,99,.22)','--glowb':'rgba(15,122,99,.14)'}}
 };
 const themeKeys=[...new Set([].concat(...Object.values(THEMES).map(t=>Object.keys(t.v))))];
 function applyTheme(id){

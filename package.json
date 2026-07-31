@@ -1,0 +1,12 @@
+{
+  "name": "volt-tracker",
+  "private": true,
+  "description": "VOLT — a tracker/DAW that lives in one HTML file",
+  "scripts": {
+    "test": "node tests/run.js",
+    "syntax": "node tests/run.js syntax"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.43.1"
+  }
+}

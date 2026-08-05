@@ -2,7 +2,7 @@
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src http: https:; img-src data:; media-src blob: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer"></head><body>
-<title>VOLT BETA</title><script>/* BETA COPY: storage isolated from the stable tracker */(function(){const map=k=>typeof k==="string"&&k.indexOf("volt.")===0?"voltbeta."+k:k;const P=Storage.prototype,g=P.getItem,s=P.setItem,r=P.removeItem;P.getItem=function(k){return g.call(this,map(k))};P.setItem=function(k,v){return s.call(this,map(k),v)};P.removeItem=function(k){return r.call(this,map(k))}})();</script>
+<title>VOLT BETA</title><script>/* BETA COPY: storage isolated from the stable tracker */window.VOLT_NS="voltbeta";(function(){const map=k=>typeof k==="string"&&k.indexOf("volt.")===0?"voltbeta."+k:k;const P=Storage.prototype,g=P.getItem,s=P.setItem,r=P.removeItem;P.getItem=function(k){return g.call(this,map(k))};P.setItem=function(k,v){return s.call(this,map(k),v)};P.removeItem=function(k){return r.call(this,map(k))}})();</script>
 <style>
 :root{
   --bg:#0a0c12; --panel:#10141d; --raised:#171d2a; --line:#232b3a;
@@ -42,6 +42,10 @@ label.fld{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10p
 .sep{width:1px;height:22px;background:var(--line)}
 #top .grp{display:flex;align-items:center;gap:6px}
 #playPat.playing,#playSong.playing{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
+/* ARMED = the mode Space uses. Weaker than .playing on purpose: outline only, no fill, so
+   "this is what Space will do" never gets confused with "this is sounding right now". */
+#playPat.armed,#playSong.armed{border-color:var(--teal);color:var(--teal)}
+#playPat.armed::before,#playSong.armed::before{content:"";display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--teal);margin-right:5px;vertical-align:middle}
 
 /* ---- layout ---- */
 #main{flex:1;display:flex;min-height:0}
@@ -51,6 +55,14 @@ body.norail #side{display:none} /* Alt+L — hand the whole width to the pattern
 #side h3::before{content:'';display:inline-block;width:3px;height:9px;background:var(--teal);margin-right:6px;border-radius:1px;opacity:.85;vertical-align:-1px}
 #side .sec-inst h3::before,#side .sec-par h3::before{background:#4ade80}
 #side .sec-trk h3::before{background:var(--trkcol,var(--teal));box-shadow:0 0 6px var(--trkcol,transparent)}
+/* per-channel spectrum, sat above the sliders so you see what you're mixing */
+#specWrap{position:relative;height:58px;margin:0 0 6px;border:1px solid var(--line);border-radius:3px;
+  background:var(--sunk,rgba(0,0,0,.25));cursor:pointer;overflow:hidden}
+#specCv{display:block;width:100%;height:100%}
+#specTag{position:absolute;left:5px;top:3px;font-size:8px;letter-spacing:.08em;color:var(--faint);
+  pointer-events:none;user-select:none;text-transform:uppercase}
+#specWrap.frozen{border-color:var(--amber)}
+#specWrap.frozen #specTag{color:var(--amber)}
 #side .sec-es h3::before{background:#ff9a3c}
 #side .sec h3{cursor:pointer;user-select:none}
 /* a left panel is "focused" when the keyboard is driving it (Alt+I/E/K/F, Ctrl+F).
@@ -233,6 +245,9 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #ghead .tbtn:hover{border-color:var(--dim);color:var(--txt)}
 #ghead .tbtn.mON{background:var(--muteon);border-color:var(--mag);color:var(--mag)}
 #ghead .tbtn.sON{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
+/* sidechain: amber when on, and the same grey as M/S when off. Has to live here next to its
+   siblings — a plain .tbtn.cON elsewhere loses to the #ghead .tbtn base rule above. */
+#ghead .tbtn.cON{background:rgba(255,176,58,.2);border-color:var(--amber);color:var(--amber)}
 #ghead .thead.hushed .tname,#ghead .thead.hushed .tno{color:var(--faint)}
 .inlineEd{width:78px;background:var(--bg);border:1px solid var(--teal);border-radius:2px;color:var(--txt);font:inherit;text-transform:none;padding:0 2px;outline:none}
 /* Rows are skipped by the browser while they're off-screen — with 32 tracks a single pattern is
@@ -276,6 +291,39 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #orderRow{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
 #orderRow .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
 #ordChips{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+/* ---- song sections ----
+   A section is a START marker: it owns every slot from itself until the next one. That makes it
+   immune to the chip strip wrapping (no spanning bars to draw) and means dragging slots around
+   can never leave a section half-overlapping another. */
+#ordCol{position:relative;display:flex;flex-direction:column;gap:2px;outline:none}
+/* the chips leave a lane above every wrapped row for the section bars to cap */
+#ordChips{padding-top:15px;row-gap:15px}
+#secLayer{position:absolute;inset:0;pointer-events:none;z-index:2}
+/* the bar caps the chips it covers — flush, so it reads as a label ON the patterns */
+.secBar{position:absolute;height:15px;border-radius:3px 3px 0 0;pointer-events:auto;cursor:pointer;
+  background:color-mix(in srgb,var(--sc) 22%,transparent);border:1px solid var(--sc);border-bottom:0;
+  font-size:9px;line-height:12px;color:var(--sc);white-space:nowrap;overflow:hidden;
+  padding:0 7px;user-select:none;box-sizing:border-box}
+.secBar:hover{background:color-mix(in srgb,var(--sc) 34%,transparent)}
+.secBar.playing{box-shadow:0 0 8px 1px var(--sc)}
+.secBar b{font-weight:700}
+.secBar i{font-style:normal;opacity:.6;margin-left:5px}
+/* grab either end to stretch the section over more slots */
+.secGrip{position:absolute;top:0;width:6px;height:100%;cursor:ew-resize;pointer-events:auto;z-index:3}
+.secGrip:hover{background:var(--sc);opacity:.6;border-radius:3px}
+.secBar.drag{opacity:.85}
+#secTools{display:flex;gap:5px;align-items:center;min-height:16px}
+#secAdd{font-size:10px;line-height:15px;padding:0 7px;border-radius:8px;border:1px dashed var(--line);
+  background:transparent;color:var(--faint);cursor:pointer}
+#secAdd:hover{border-color:var(--teal);color:var(--teal)}
+#secTools .none{font-size:9px;color:var(--faint);letter-spacing:.06em}
+#songClock{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.04em}
+#songClock.run{color:var(--teal)}
+/* multi-select on the song strip: pick a run of slots and act on all of them */
+.chip.msel{box-shadow:0 0 0 2px var(--amber) inset}
+#ordLasso{position:absolute;border:1px solid var(--amber);background:rgba(255,176,58,.12);
+  pointer-events:none;z-index:4;border-radius:2px}
+.chip.secStart{border-top-left-radius:0}
 #orderRow .lbl{color:var(--teal);font-weight:700}
 .chip{font-family:var(--mono);font-size:12px;padding:3px 6px 3px 8px;background:var(--raised);border:1px solid var(--line);border-left:3px solid var(--pc,var(--line));border-radius:4px;cursor:pointer;display:flex;gap:6px;align-items:center;color:var(--txt);position:relative}
 .chip b{color:var(--pc,var(--teal));font-weight:700;letter-spacing:.02em}
@@ -355,6 +403,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 .mch .msbtns .tbtn{font-size:10px;font-weight:600;padding:0 7px;line-height:16px;border-radius:2px;border:1px solid var(--line);background:transparent;color:var(--faint);cursor:pointer}
 .mch .msbtns .tbtn.mON{background:var(--muteon);border-color:var(--mag);color:var(--mag)}
 .mch .msbtns .tbtn.sON{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
+.mch .msbtns .tbtn.cON{background:rgba(255,176,58,.2);border-color:var(--amber);color:var(--amber)}
 
 /* ---- project tabs ---- */
 #tabs{display:flex;align-items:flex-end;gap:6px;padding:6px 12px 0;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -512,8 +561,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
   <span id="logo">VOLT<b style="color:var(--mag);text-shadow:0 0 14px rgba(255,77,157,.5)">BETA</b></span>
   <span class="sep"></span>
   <div class="grp">
-    <button id="playPat" title="Play pattern (Space)">&#9654; Pattern</button>
-    <button id="playSong" title="Play song">&#9654; Song</button>
+    <button id="playPat" title="Play pattern (F4) &#183; the dot means Space plays this &#8212; press \ to switch">&#9654; Pattern</button>
+    <button id="playSong" title="Play song (F5) &#183; the dot means Space plays this &#8212; press \ to switch">&#9654; Song</button>
     <button id="stopBtn" title="Stop (Space)">&#9632;</button>
     <button id="followBtn" title="Follow playback — auto-scroll the grid to the playhead">Follow</button>
     <button id="metBtn" title="Metronome (Ctrl+M) — click on every beat while playing, accent on the downbeat">&#9788; Metro</button>
@@ -523,6 +572,8 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
     <label class="fld">BPM <input type="number" id="bpm" min="40" max="300" value="174"></label>
     <label class="fld">Oct <input type="number" id="oct" min="0" max="7" value="4" style="width:40px"></label>
     <label class="fld">Step <input type="number" id="step" min="0" max="16" value="1" style="width:40px"></label>
+    <label class="fld" title="Swing for the whole song — 0 is dead straight, 100 is a full triplet shuffle. Every second off-beat is nudged late. Any channel can override this in the Track panel.">Swing <input type="number" id="swing" min="0" max="100" value="0" style="width:44px">%</label>
+    <label class="fld" title="Which grid the swing lands on: 1/8 shuffles the off-beats, 1/16 shuffles every other sixteenth (hats, DnB).">on <select id="swingRes" style="width:48px"><option value="8">1/8</option><option value="16">1/16</option></select></label>
   </div>
   <span class="sep"></span>
   <div class="grp">
@@ -577,9 +628,10 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 <div id="orderRow">
   <span class="lbl">Song</span>
-  <div id="ordChips"></div>
+  <div id="ordCol" tabindex="0"><div id="ordChips"></div><div id="secLayer"></div></div>
+  <div id="secTools"></div>
   <button id="ordAdd" title="Append current pattern to the song" style="padding:2px 8px;font-size:11px">+ add</button>
-  <span class="hint">patterns play left&#8594;right &#183; click = edit &#183; scroll = swap pattern &#183; dblclick = rename &#183; drag = reorder &#183; &#215; = remove &#183; <kbd>Ctrl</kbd><kbd>&#9166;</kbd> new pattern &#183; <kbd>Ctrl</kbd><kbd>D</kbd> duplicate</span>
+  <span class="hint">click = edit &#183; scroll = swap &#183; dblclick = rename &#183; drag = reorder &#183; <kbd>Shift</kbd>/<kbd>Ctrl</kbd>+click or <kbd>Ctrl</kbd>+drag = select many, then <kbd>Del</kbd> / <kbd>Ctrl</kbd><kbd>X C V D</kbd> &#183; <kbd>Ctrl</kbd><kbd>&#8679;</kbd><kbd>M</kbd> section &#183; <kbd>Ctrl</kbd><kbd>&#8592;</kbd><kbd>&#8594;</kbd> jump</span>
 </div>
 
 <div id="main">
@@ -609,6 +661,7 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
     </div>
     <div class="sec sec-trk">
       <h3 id="trkTitle">Track 1</h3>
+      <div id="specWrap" title="What this channel is actually putting out. Click to freeze a snapshot and compare against it; click again to release."><canvas id="specCv"></canvas><span id="specTag">spectrum</span></div>
       <div id="trackMix"></div>
     </div>
     <div class="sec sec-es">
@@ -776,8 +829,17 @@ function mkInst(type,name,over){const i={name,type,params:defParams(type)};if(ov
 /* songs saved before a param existed: backfill defaults so sliders/engine always have a value */
 function normInst(ins){const d=ITYPES[ins.type]&&ITYPES[ins.type].p;if(!d||!ins.params)return;
   for(const k in d)if(ins.params[k]==null)ins.params[k]=d[k][2]}
-function mkTs(){return{vol:.85,pan:0,dly:0,rvb:0,duck:0,mute:false,solo:false,name:'',eq:{l:0,m:0,h:0},cmp:0,drv:0,fltF:1,fltQ:0}}
-function normTs(ts){if(!ts.eq)ts.eq={l:0,m:0,h:0};if(ts.cmp==null)ts.cmp=0;if(ts.drv==null)ts.drv=0;if(ts.fltF==null)ts.fltF=1;if(ts.fltQ==null)ts.fltQ=0;if(ts.pan==null)ts.pan=0}
+/* Sidechain is ON for a new channel, pointed at "any kick instrument" — the pump is the default
+   sound rather than something you have to go and find. One click on the C button turns it off,
+   and that choice is remembered per track. Songs saved before this keep exactly what they had:
+   normTs never invents a duck value, only mkTs does. */
+const SC_DEF=.45;
+function mkTs(){return{vol:.85,pan:0,dly:0,rvb:0,duck:SC_DEF,duckSrc:-1,duckRel:.16,mute:false,solo:false,name:'',eq:{l:0,m:0,h:0},cmp:0,drv:0,fltF:1,fltQ:0}}
+function normTs(ts){if(!ts.eq)ts.eq={l:0,m:0,h:0};if(ts.cmp==null)ts.cmp=0;if(ts.drv==null)ts.drv=0;if(ts.fltF==null)ts.fltF=1;if(ts.fltQ==null)ts.fltQ=0;if(ts.pan==null)ts.pan=0;
+  /* who makes this track duck: -1 = "any kick-type instrument", which is what ducking did
+     before it was configurable, so old songs keep sounding the same. 0..n = that track. */
+  if(ts.duckSrc==null)ts.duckSrc=-1;
+  if(ts.duckRel==null)ts.duckRel=.16} /* 0..1 → ~30..530 ms of recovery; .16 matches the old fixed curve */
 function mkTrackset(){const a=[];for(let t=0;t<TRACKS;t++)a.push(mkTs());return a}
 function blankSong(){TRACKS=8;return{name:'untitled',bpm:170,lpb:4,instruments:[mkInst('kick','Kick'),mkInst('snare','Snare'),mkInst('hat','Hat'),mkInst('reese','Reese')],patterns:[mkPattern(64)],order:[0],trackset:mkTrackset()}}
 function cellAt(t,r){return song.patterns[curPat].data[t][r]}
@@ -1512,9 +1574,23 @@ function trig(inst,note,t,tr,vel,off,ov,rev,pan){
   }
   return v;
 }
-function duck(t){
-  song.trackset.forEach((ts,tr)=>{if(ts.duck>0){const gp=chans[tr].duckG.gain;
-    gp.cancelScheduledValues(t);gp.setTargetAtTime(1-ts.duck,t,.006);gp.setTargetAtTime(1,t+.09,.11)}});
+/* Sidechain ducking, driven by NOTES rather than by listening to audio. The scheduler already
+   knows every hit ~160 ms before you hear it, so the gain curve is scheduled dead on the note —
+   sample-accurate, no detector, no CPU cost, and it comes out identical in an offline render.
+   It also means a MUTED trigger track still ducks, which is the classic "ghost kick" trick.
+     src   = the track that played the note
+     isKick= its instrument is a kick synth (the legacy, source-less behaviour) */
+function duck(t,src,isKick){
+  song.trackset.forEach((ts,tr)=>{
+    if(!(ts.duck>0)||tr===src)return;            /* a track never ducks itself */
+    normTs(ts);
+    if(ts.duckSrc<0?!isKick:ts.duckSrc!==src)return;
+    const rel=.03+(ts.duckRel||0)*.5,hold=rel*.7;
+    const gp=chans[tr].duckG.gain;
+    gp.cancelScheduledValues(t);
+    gp.setTargetAtTime(1-ts.duck,t,.006);        /* down fast — that's the "thump" */
+    gp.setTargetAtTime(1,t+hold,rel);            /* back up slowly — that's the "pump" */
+  });
 }
 function stopAllVoices(){if(!AC)return;const t=AC.currentTime;chans.forEach(ch=>{if(ch.voice)ch.voice.cut(t);ch.voice=null})}
 /* Alt+P — stuck-note panic: cut every voice, previews and duckers, leave playback alone */
@@ -1533,17 +1609,63 @@ function panic(){
 /* ================= sequencer ================= */
 const SEQ={playing:false,songMode:false,ord:0,row:0,next:0,timer:null,q:[],rec:[]};
 const rowDur=()=>60/song.bpm/song.lpb;
+/* ---- armed mode: which of the two Space plays ----
+   Song by default (you're usually listening to the arrangement). \ flips it. F4/F5 and the two
+   buttons are the explicit "play THIS now" and re-arm as a side effect; Space and Shift+Space
+   never change the arming, so an audition can't quietly move the goalposts. */
+let armSong=true;try{armSong=localStorage.getItem('volt.armSong')!=='0'}catch(e){}
+function armSet(s){
+  armSong=!!s;
+  try{localStorage.setItem('volt.armSong',armSong?'1':'0')}catch(e){}
+  playBtns();
+}
+function playBtns(){
+  const p=document.getElementById('playPat'),s=document.getElementById('playSong');
+  if(!p||!s)return;
+  p.classList.toggle('playing',SEQ.playing&&!SEQ.songMode);
+  s.classList.toggle('playing',SEQ.playing&&SEQ.songMode);
+  p.classList.toggle('armed',!armSong);
+  s.classList.toggle('armed',armSong);
+}
+/* \ swaps Song <-> Pattern. While the transport runs this does NOT restart anything: pump()
+   re-reads SEQ.songMode on every row, so the switch lands on the next scheduled row — on the
+   beat, no click, no gap. Going to Song picks up at the slot holding whatever is sounding
+   (never the top of the arrangement); going to Pattern locks onto the pattern that's playing. */
+function flipMode(){
+  const toSong=!armSong;
+  if(toSong&&!song.order.length){status('song order is empty — add a slot with + on the SONG strip first');return}
+  armSet(toSong);
+  if(!SEQ.playing){
+    status(toSong?'Space plays the SONG':'Space plays the PATTERN — '+patLabel(curPat));
+    return;
+  }
+  const sounding=lastQ?lastQ.pat:curPat;
+  if(toSong){
+    const k=song.order.indexOf(sounding);
+    SEQ.ord=k>=0?k:0;
+    ordPos=SEQ.ord;
+    if(k<0)status('pattern '+patLabel(sounding)+' is not in the song — carrying on from slot 1');
+  }else if(sounding!==curPat)curPatSet(sounding); /* loop what your ears are on, not what you browsed to */
+  SEQ.songMode=toSong;
+  playBtns();renderOrder();
+  if(toSong)status('→ SONG · continuing from slot '+(SEQ.ord+1));
+  else status('→ PATTERN · looping '+patLabel(curPat));
+}
 function play(songMode,fromRow){
   if(rendering)return;
   audio();if(AC.state==='suspended')AC.resume();
   stop(true);stopAllVoices();
-  SEQ.playing=true;SEQ.songMode=songMode;SEQ.ord=0;SEQ.q=[];SEQ.rec=[];if(typeof MIDI!=='undefined'){MIDI.touch={};MIDI.liveChord=null;MIDI.held=0}
+  /* nothing arranged yet? make sound anyway rather than playing an empty order */
+  if(songMode&&!song.order.length){songMode=false;status('song order is empty — playing the pattern')}
+  SEQ.playing=true;SEQ.songMode=songMode;SEQ.q=[];SEQ.rec=[];if(typeof MIDI!=='undefined'){MIDI.touch={};MIDI.liveChord=null;MIDI.held=0}
+  /* start the song WHERE YOU ARE. Jumping to slot 1 on every Space would drag you out of the
+     pattern you're editing every time you wanted to hear it in context. */
+  SEQ.ord=songMode?Math.max(0,ordCurrent()):0;
   SEQ.row=!songMode&&fromRow?clamp(fromRow,0,song.patterns[curPat].rows-1):0;
-  if(songMode&&song.order.length)curPatSet(song.order[0]);
+  if(songMode)curPatSet(song.order[SEQ.ord]);
   SEQ.next=AC.currentTime+.08;
   SEQ.timer=setInterval(pump,30);pump();
-  document.getElementById('playPat').classList.toggle('playing',!songMode);
-  document.getElementById('playSong').classList.toggle('playing',songMode);
+  playBtns();
 }
 function stop(silent){
   releaseFollowHold(); /* a fresh transport start always follows the playhead again */
@@ -1551,8 +1673,7 @@ function stop(silent){
   if(SEQ.playing&&!silent){stopAllVoices()}
   const wasPlaying=SEQ.playing;
   SEQ.playing=false;SEQ.q=[];SEQ.rec=[];setPlayRow(-1);if(typeof MIDI!=='undefined'){MIDI.liveChord=null;MIDI.held=0}
-  document.getElementById('playPat').classList.remove('playing');
-  document.getElementById('playSong').classList.remove('playing');
+  playBtns();
   /* snap sliders back to their stored values after automation moved them */
   if(wasPlaying&&!silent&&song){
     if(AC)applyMix();
@@ -1660,6 +1781,27 @@ function applyBaseAt(t){
     }
   }
 }
+/* ---- swing ----
+   Nudges every second sub-beat late, the way an MPC does. It's applied at SCHEDULE time, so the
+   grid still reads straight — the notes stay where you put them and only the feel moves, which
+   means you can dial it in and out while a loop plays. 0 = dead straight, 100 = the late note
+   lands two-thirds of the way through the pair, i.e. a full triplet shuffle.
+   Per track: trackset[].swing overrides song.swing; null (the default) means "follow the song". */
+function swingAmt(tr){
+  const ts=song.trackset[polyLead(tr)];
+  return ts&&ts.swing!=null?ts.swing:(song.swing||0);
+}
+function swingUnit(){
+  const lpb=song.lpb||4;
+  const u=lpb/((song.swingRes||8)/4);
+  return u>=1&&u===Math.floor(u)?u:0; /* 1/16 swing needs 4+ rows per beat to have somewhere to go */
+}
+function swingOff(tr,row){
+  const a=swingAmt(tr);if(!a)return 0;
+  const u=swingUnit();if(!u)return 0;
+  if(row%u!==0||(row/u)%2!==1)return 0;  /* only the OFF sub-beats move */
+  return a*.5*u*rowDur();
+}
 function schedRow(pi,row,t){
   const pat=song.patterns[pi];
   if(row===0)applyBaseAt(t);
@@ -1684,6 +1826,17 @@ function schedRow(pi,row,t){
     else if(p2==='cmdG'||p2==='cmdR'||p2==='cmdS'){(autoCmd=autoCmd||{});(autoCmd[tr2]=autoCmd[tr2]||{})[p2[3]]=v}
     else{(autoPost=autoPost||[]).push([tr2,p2,v])}
   }
+  /* Ducking reads note DATA, not audio, so a trigger track that you can't hear still pumps
+     everything else — the ghost-kick trick, and it means soloing a lead doesn't kill the pump.
+     Audible tracks duck from inside the loop below instead, so a retrigger roll pumps per hit. */
+  for(let tr=0;tr<TRACKS;tr++){
+    const ts2=song.trackset[polyLead(tr)];
+    if(!(ts2.mute||(soloed&&!ts2.solo)))continue;
+    const cell=pat.data[tr][row];
+    if(!cell||cell.n==null||cell.n===OFF)continue;
+    const inst2=cell.i!=null?song.instruments[cell.i]:null;
+    duck((cell.c==='T'?t+Math.min(cell.x||0,191)/192*rowDur():t)+swingOff(tr,row),tr,!!inst2&&inst2.type==='kick');
+  }
   for(let tr=0;tr<TRACKS;tr++){
     const ts=song.trackset[polyLead(tr)]; /* a poly lane follows its leader's mute/solo */
     if(ts.mute||(soloed&&!ts.solo))continue;
@@ -1693,7 +1846,7 @@ function schedRow(pi,row,t){
     const fxc=cell.c,fxv=cell.x||0;
     /* Txx: micro-delay — this row's events fire x/192 of a row late. Sub-row timing is
        what makes true tuplets possible on an integer row grid (Alt+T writes these). */
-    const tc=fxc==='T'?t+Math.min(fxv,191)/192*rowDur():t;
+    const tc=(fxc==='T'?t+Math.min(fxv,191)/192*rowDur():t)+swingOff(tr,row);
     if(cell.n===OFF){if(ch.voice){ch.voice.release(tc);ch.voice=null}}
     else if(cell.n!=null){
       const ii=cell.i!=null?cell.i:ch.lastI;
@@ -1716,7 +1869,7 @@ function schedRow(pi,row,t){
             if(ch.voice)ch.voice.cut(tt);
             const nv=trig(inst,cell.n,tt,tr,vel*(k?0.8:1),off2,autoPre&&autoPre[tr],fxc==='B',fxc==='P'?(fxv/255)*2-1:null);
             ch.voice=nv;
-            if(inst.type==='kick')duck(tt);
+            duck(tt,tr,inst.type==='kick'); /* every note is a potential trigger — duck() decides */
           }
         }
       }
@@ -1789,9 +1942,17 @@ let lastQ=null,animOn=false,lastPP=null;
 const meterBuf=new Uint8Array(512);
 const mmBuf=new Uint8Array(2048);
 let mmPk=0,mmPkL=0,mmPkR=0,mmClipT=0,rafN=0;
+let secLit=-2,clockTxt='';
 function songStrip(f){
   const chips=document.getElementById('ordChips').children;
   const on=SEQ.playing&&SEQ.songMode&&lastQ&&lastQ.ord!=null?lastQ.ord%song.order.length:-1;
+  /* light the section the playhead is inside — only when it actually changes, this runs at 60fps */
+  const si=on>=0?secIndexOf(on):-1;
+  if(si!==secLit){
+    secLit=si;
+    const bars=document.getElementById('secLayer').children;
+    for(let i=0;i<bars.length;i++)bars[i].classList.toggle('playing',+bars[i].dataset.s===si);
+  }
   for(let i=0;i<chips.length;i++){
     const isOn=i===on;
     const el=chips[i];
@@ -1811,6 +1972,91 @@ function styleIf(el,prop,val,key){
   el['_s'+k]=val;
   el.style[prop]=val;
 }
+/* ================= per-channel spectrum =================
+   Every channel already owns an AnalyserNode for its meter, so this is almost all drawing. Only
+   the channel you're looking at is ever read — analysing 32 of them 60 times a second is exactly
+   the sort of thing that took the grid down to 8 fps once already. Log frequency axis, because
+   octaves are what your ears care about; the top half of a linear one is all cymbals.
+   Click to freeze: the frozen curve stays behind the live one, so you can A/B an EQ move. */
+const SPEC={buf:null,smooth:null,peak:null,hold:null,frozen:null,src:-1,fft:2048,tag:''};
+function specAnalyser(){
+  if(!AC)return null;
+  if(masterView)return masterAn||null;
+  const ch=chans[polyLead(cursor.t)];
+  return ch?ch.an:null;
+}
+function specDraw(){
+  const cv=$id('specCv');if(!cv||!cv.offsetParent)return; /* panel collapsed or rail hidden */
+  const an=specAnalyser();
+  const w=cv.clientWidth|0,h=cv.clientHeight|0;
+  if(!w||!h)return;
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;SPEC.smooth=null}
+  const g=cv.getContext('2d');
+  g.clearRect(0,0,w,h);
+  if(!an){g.fillStyle='rgba(255,255,255,.18)';g.font='9px ui-monospace,monospace';g.fillText('press play',6,h/2);return}
+  /* a bigger FFT than the meter wants — set it once, on the channel being watched */
+  if(an.fftSize!==SPEC.fft){try{an.fftSize=SPEC.fft}catch(e){}}
+  const n=an.frequencyBinCount;
+  if(!SPEC.buf||SPEC.buf.length!==n){SPEC.buf=new Uint8Array(n);SPEC.smooth=null}
+  an.getByteFrequencyData(SPEC.buf);
+  const NB=Math.min(96,w>>1);                 /* draw bands, not bins — cheaper and easier to read */
+  if(!SPEC.smooth||SPEC.smooth.length!==NB){SPEC.smooth=new Float32Array(NB);SPEC.peak=new Float32Array(NB)}
+  const sr=AC.sampleRate,lo=30,hi=Math.min(18000,sr/2);
+  const bins=new Float32Array(NB);
+  for(let b=0;b<NB;b++){
+    const f0=lo*Math.pow(hi/lo,b/NB),f1=lo*Math.pow(hi/lo,(b+1)/NB);
+    let i0=Math.floor(f0/(sr/2)*n),i1=Math.ceil(f1/(sr/2)*n);
+    if(i1<=i0)i1=i0+1;
+    let m=0;for(let i=i0;i<i1&&i<n;i++)if(SPEC.buf[i]>m)m=SPEC.buf[i];
+    bins[b]=m/255;
+  }
+  for(let b=0;b<NB;b++){
+    const v=bins[b];
+    SPEC.smooth[b]=v>SPEC.smooth[b]?v:SPEC.smooth[b]*.82+v*.18;  /* fast attack, slow release */
+    SPEC.peak[b]=Math.max(v,(SPEC.peak[b]||0)-.006);
+  }
+  const bw=w/NB;
+  /* octave guides at 100 Hz / 1 k / 10 k */
+  g.strokeStyle='rgba(255,255,255,.07)';g.lineWidth=1;
+  [100,1000,10000].forEach(f=>{
+    if(f>=hi)return;
+    const x=Math.round(Math.log(f/lo)/Math.log(hi/lo)*w)+.5;
+    g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke();
+  });
+  if(SPEC.frozen){                            /* the snapshot you're comparing against */
+    g.strokeStyle='rgba(255,176,58,.55)';g.lineWidth=1;g.beginPath();
+    for(let b=0;b<SPEC.frozen.length;b++){
+      const x=b*bw+bw/2,y=h-SPEC.frozen[b]*h;
+      b?g.lineTo(x,y):g.moveTo(x,y);
+    }
+    g.stroke();
+  }
+  const col=getComputedStyle(document.documentElement).getPropertyValue('--teal').trim()||'#3fe0b4';
+  g.fillStyle=col;
+  for(let b=0;b<NB;b++){
+    const bh=SPEC.smooth[b]*h;
+    if(bh<1)continue;
+    g.globalAlpha=.55+SPEC.smooth[b]*.45;
+    g.fillRect(b*bw,h-bh,Math.max(1,bw-1),bh);
+  }
+  g.globalAlpha=1;
+  g.fillStyle='rgba(255,255,255,.5)';
+  for(let b=0;b<NB;b++){const y=h-SPEC.peak[b]*h;if(SPEC.peak[b]>.02)g.fillRect(b*bw,y,Math.max(1,bw-1),1)}
+}
+function specTag(){
+  const el=$id('specTag');if(!el)return;
+  const t=masterView?'master':'trk '+(polyLead(cursor.t)+1);
+  const s=t+(SPEC.frozen?' · frozen':'');
+  if(SPEC.tag!==s){SPEC.tag=s;el.textContent=s}
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest||!e.target.closest('#specWrap'))return;
+  if(SPEC.frozen){SPEC.frozen=null;status('spectrum released')}
+  else if(SPEC.smooth){SPEC.frozen=Float32Array.from(SPEC.smooth);status('spectrum frozen — the amber line is the before')}
+  else{status('nothing to freeze yet — play something first');return}
+  $id('specWrap').classList.toggle('frozen',!!SPEC.frozen);
+  specTag();
+});
 function raf(){
   if(SEQ.playing&&AC){
     let cur=null;
@@ -1921,6 +2167,16 @@ function raf(){
       REC.mpk=Math.max(rpk,(REC.mpk||0)*.9);
       const rm=document.getElementById('recMeter');
       if(rm)rm.firstElementChild.style.transform='scaleX('+clamp(REC.mpk,0,1).toFixed(3)+')';
+    }
+  }
+  /* the spectrum runs at ~30 fps, not 60 — it's a mixing aid, and the grid gets the other half */
+  if(AC&&!(rafN%2)){specDraw();specTag()}
+  if(!(rafN%4)){ /* the clock only needs ~4 updates a second, and it's a text write */
+    const el=document.getElementById('songClock');
+    if(el&&song){
+      const p=songPos(),total=songSecs();
+      const s=p==null?fmtTime(total):fmtTime(p)+' / '+fmtTime(total);
+      if(s!==clockTxt){clockTxt=s;el.textContent=s;el.classList.toggle('run',p!=null)}
     }
   }
   requestAnimationFrame(raf);
@@ -2096,7 +2352,8 @@ function renderHead(){
       +'<span class="tname'+(ts.name?'':' unnamed')+'"><b class="tnum">'+(t+1)+'</b>'+(ts.name?esc(ts.name):'&#183;&#183;&#183;')+'</span>'
       +'<span class="thctl"><span class="tno">'+String(t+1).padStart(2,'0')+'</span>'
       +'<button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'" title="Mute'+(hk!=null?' (Alt+'+hk+')':'')+'">M</button>'
-      +'<button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'" title="Solo'+(hk!=null?' (Alt+Shift+'+hk+')':'')+'">S</button></span>'
+      +'<button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'" title="Solo'+(hk!=null?' (Alt+Shift+'+hk+')':'')+'">S</button>'
+      +'<button class="tbtn '+(scOn(ts)?'cON':'')+'" data-sc="'+t+'" title="'+scTitle(ts)+'">SC</button></span>'
       +'<span class="thmix"><input type="range" class="hv" min="0" max="100" value="'+Math.round(ts.vol*100)+'" data-hvol="'+t+'" title="'+hvTitle(ts)+'">'
       +'<input type="range" class="hp" min="-100" max="100" value="'+Math.round((ts.pan||0)*100)+'" data-hpan="'+t+'" title="'+hpTitle(ts)+'"></span>'
       +'<span class="thauto" data-ta="'+t+'"></span></span>';
@@ -2235,9 +2492,10 @@ ghead.addEventListener('click',e=>{
     setTracks(TRACKS+1);status('track '+TRACKS+' added');
     return;
   }
-  const m=e.target.dataset.mu,s=e.target.dataset.so;
+  const m=e.target.dataset.mu,s=e.target.dataset.so,sc=e.target.dataset.sc;
   if(m!=null){toggleMS(+m,'mute');return}
   if(s!=null){toggleMS(+s,'solo');return}
+  if(sc!=null){scToggle(+sc);return}
   /* click the track name/number selects the whole track · Shift+click extends the RANGE
      (everything in between comes along) · Ctrl+click toggles INDIVIDUAL columns in and
      out — tracks 2 and 5 without 3 and 4 */
@@ -2299,12 +2557,20 @@ function polyAddLane(t,follow,quiet){
     p.auto=remapKeysUp(p.auto,pos);
   });
   const nts=mkTs();nts.poly=true;
-  song.trackset.splice(pos,0,nts);
+  duckIns(pos);song.trackset.splice(pos,0,nts);
   song.lfos=remapKeysUp(song.lfos,pos);
   finishTrackChange(pos,quiet?'':'track '+(lanes[0]+1)+' is polyphonic — '+(lanes.length+1)+' lanes on one mixer channel (Alt+Y adds more)');
   if(!follow){cursor.t=keep;renderGrid();trackPanel()}
   return pos;
 }
+/* trackset[].duckSrc stores a TRACK INDEX, so every insert / delete / reorder has to move it
+   too — otherwise adding a track silently repoints your sidechain at the wrong drum. */
+function duckRemap(fn){
+  if(!song||!song.trackset)return;
+  song.trackset.forEach(ts=>{if(ts&&ts.duckSrc!=null&&ts.duckSrc>=0)ts.duckSrc=fn(ts.duckSrc)});
+}
+const duckIns=pos=>duckRemap(i=>i>=pos?i+1:i);
+const duckDel=pos=>duckRemap(i=>i===pos?-1:(i>pos?i-1:i)); /* the trigger itself went away → back to auto */
 function remapKeysDel(obj,pos){ /* drop t.param keys at pos, shift the higher tracks down */
   if(!obj)return obj;
   const out={};
@@ -2324,7 +2590,7 @@ function polyRemoveLane(t){
   if(used){status('lane '+(pos+1)+' still has notes — clear it, then Alt+Shift+Y');return}
   if(AC&&chans[pos]&&chans[pos].voice){chans[pos].voice.cut(AC.currentTime);chans[pos].voice=null}
   song.patterns.forEach(p=>{p.data.splice(pos,1);p.auto=remapKeysDel(p.auto,pos)});
-  song.trackset.splice(pos,1);
+  duckDel(pos);song.trackset.splice(pos,1);
   song.lfos=remapKeysDel(song.lfos,pos);
   TRACKS--;
   document.getElementById('trkN').value=TRACKS;
@@ -2341,7 +2607,7 @@ function insertTrackAt(pos){
     p.data.splice(pos,0,new Array(p.rows).fill(null));
     p.auto=remapKeysUp(p.auto,pos);
   });
-  song.trackset.splice(pos,0,mkTs());
+  duckIns(pos);song.trackset.splice(pos,0,mkTs());
   song.lfos=remapKeysUp(song.lfos,pos);
   finishTrackChange(pos,'empty track inserted at position '+(pos+1));
 }
@@ -2361,7 +2627,7 @@ function duplicateTrack(t){
       if(+k.slice(0,dot)===t&&p.auto[k])p.auto[pos+'.'+k.slice(dot+1)]=p.auto[k].slice();
     }
   });
-  song.trackset.splice(pos,0,tsCopy);
+  duckIns(pos);song.trackset.splice(pos,0,tsCopy);
   song.lfos=remapKeysUp(song.lfos,pos);
   if(song.lfos)for(const k in {...song.lfos}){
     const dot=k.indexOf('.');
@@ -2388,6 +2654,7 @@ function moveTrack(a,b){
     }
   });
   mv(song.trackset);
+  duckRemap(remap); /* a reordered trigger track keeps triggering the same channels */
   if(song.lfos){
     const nl={};
     for(const k in song.lfos){
@@ -2647,7 +2914,7 @@ async function deleteTrack(t){
       p.auto=na;
     }
   });
-  song.trackset.splice(t,1);
+  duckDel(t);song.trackset.splice(t,1);
   TRACKS--;
   cursor.t=Math.min(cursor.t,TRACKS-1);
   sel=null;
@@ -2689,8 +2956,11 @@ document.addEventListener('keydown',e=>{
       }else play(false,cursor.r);
     }
     else if(SEQ.playing)stop();
+    else if(armSong)play(true);                 /* Space follows the ARMED mode — the lit button */
     else play(false,!prPan.hidden&&PR.cursorRow!=null?PR.cursorRow:0);
     return}
+  /* \ (Song <-> Pattern) lives in the transport handler further down — that one has no #side
+     bail, so it still fires when a left-rail panel has focus */
   if(k==='Escape'){stop();return}
   /* mute/solo hotkeys: Alt+1..0 mute trk 1-10, +Shift solo, Alt+M/S current trk, Alt+X clear all */
   if(e.altKey&&!e.ctrlKey&&!e.metaKey){
@@ -2742,8 +3012,13 @@ document.addEventListener('keydown',e=>{
   }
   if(k==='ArrowUp'){e.preventDefault();moveCursor(0,-1,0);return}
   if(k==='ArrowDown'){e.preventDefault();moveCursor(0,1,0);return}
+  /* Ctrl+←/→ walks the song sections — works while playing, so you can skip to the drop */
+  if((e.ctrlKey||e.metaKey)&&!e.altKey&&(k==='ArrowLeft'||k==='ArrowRight')){
+    e.preventDefault();secGo(k==='ArrowLeft'?-1:1);return;
+  }
   if(k==='ArrowLeft'){e.preventDefault();moveCursor(0,0,-1);return}
   if(k==='ArrowRight'){e.preventDefault();moveCursor(0,0,1);return}
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.code==='KeyM'){e.preventDefault();secAdd();return}
   if(k==='Tab'){e.preventDefault();cursor.c=0;moveCursor(e.shiftKey?-1:1,0,0);renderRow(cursor.r);return}
   /* Alt+PgDn / PgUp (or Ctrl+ where the browser allows): next / previous note on this track */
   if((e.altKey||e.ctrlKey||e.metaKey)&&(k==='PageDown'||k==='PageUp')){
@@ -3337,9 +3612,9 @@ document.getElementById('instList').addEventListener('keydown',e=>{
     e.preventDefault();renameInstrument(instKfoc>=0?instKfoc:curInst);return;
   }
   if(e.key==='Escape'){focusGrid();return}
-  if(e.key===' '){ /* Space plays the pattern (not page-scroll, not "load") */
+  if(e.key===' '){ /* Space plays in the armed mode (not page-scroll, not "load") */
     e.preventDefault();
-    SEQ.playing?stop():play(false);
+    SEQ.playing?stop():play(armSong);
     return;
   }
   /* the piano keys audition the highlighted instrument at the pitch you press, so you can
@@ -3768,6 +4043,43 @@ function renderMasterPanel(){
   const secT=document.querySelector('.sec-trk');
   if(secT)secT.style.setProperty('--trkcol','var(--amber)');
 }
+/* Sidechain, as one decision: point this channel at the channel whose notes should push it down.
+   Amount and Release only exist once you've done that — before then they're two knobs answering
+   a question nobody asked yet. `duck` is the stored depth; 0 means off, whatever duckSrc says. */
+function scOn(ts){return ts.duck>0}
+function scTitle(ts){
+  return scOn(ts)
+    ?'Sidechain ON — pushed down by '+(ts.duckSrc<0?'any kick instrument':'track '+(ts.duckSrc+1))
+      +' at '+Math.round(ts.duck*100)+'%. Click to switch off.'
+    :'Sidechain off. Click to switch on'+(ts.duckSet?' at '+Math.round(ts.duckSet*100)+'%':'')+'.';
+}
+/* One click on / off, keeping whatever depth you had dialled in. duckSet is that memory —
+   without it, switching off and on again would silently reset your mix to the default. */
+function scToggle(t){
+  const ts=song.trackset[polyLead(t)];normTs(ts);
+  if(scOn(ts)){ts.duckSet=ts.duck;ts.duck=0}
+  else ts.duck=ts.duckSet||SC_DEF;
+  renderHead();if(!mixer.hidden)renderMixer();
+  if(polyLead(cursor.t)===polyLead(t))trackPanel();
+  saveSoon();
+  status('track '+(polyLead(t)+1)+' sidechain '+(scOn(ts)?'ON — '+(ts.duckSrc<0?'any kick':'from track '+(ts.duckSrc+1))+' at '+Math.round(ts.duck*100)+'%':'off'));
+}
+function sidechainHTML(ts,t){
+  const on=scOn(ts);
+  const opts='<option value="">off</option>'
+    +song.trackset.map((o,i)=>i===t?'':'<option value="'+i+'"'+(on&&ts.duckSrc===i?' selected':'')+'>'
+      +esc((i+1)+(o.name?' · '+o.name:''))+'</option>').join('')
+    +'<option value="-1"'+(on&&ts.duckSrc<0?' selected':'')+'>any kick (classic)</option>';
+  return '<div class="param"><span class="pn">Sidechain</span>'
+    +'<select id="scSel" style="flex:1;min-width:0" title="Whose notes push this track down. Pick the channel your kick is on. A muted trigger still works.">'+opts+'</select>'
+    +'<span class="pv"></span></div>'
+    +(on?'<div class="param"><span class="pn" style="padding-left:10px;opacity:.75">Amount</span>'
+        +'<input type="range" min="0" max="100" value="'+Math.round(ts.duck*100)+'" data-tk="duck">'
+        +'<span class="pv">'+tkPv(ts,'duck')+'</span></div>'
+      +'<div class="param"><span class="pn" style="padding-left:10px;opacity:.75">Release</span>'
+        +'<input type="range" min="0" max="100" value="'+Math.round(ts.duckRel*100)+'" data-tk="duckRel">'
+        +'<span class="pv">'+tkPv(ts,'duckRel')+'</span></div>':'');
+}
 function trackPanel(){
   if(masterView){renderMasterPanel();return}
   /* on a poly child lane, the panel shows the LEADER's channel — that's the strip the
@@ -3781,12 +4093,15 @@ function trackPanel(){
     +(cursor.t!==t?' (lane '+(cursor.t+1)+')':polyGrouped(t)?' · poly ×'+polyLanes(t).length:'');
   const el=document.getElementById('trackMix');
   normTs(ts);
-  const rows=[['vol','Volume'],['pan','Pan',-100],['dly','Delay'],['rvb','Reverb'],['duck','Duck'],['cmp','Comp'],['drv','Drive'],['fltF','Filter'],['fltQ','F.Res']];
+  const rows=[['vol','Volume'],['pan','Pan',-100],['dly','Delay'],['rvb','Reverb'],
+    ['cmp','Comp'],['drv','Drive'],['fltF','Filter'],['fltQ','F.Res'],['swing','Swing']];
   el.innerHTML=rows.map(([k,lbl,mn])=>
-    '<div class="param"><span class="pn">'+lbl+'</span>'
-    +'<input type="range" min="'+(mn||0)+'" max="100" value="'+Math.round(ts[k]*100)+'" data-tk="'+k+'">'
+    '<div class="param"'+(k==='swing'?' title="This channel\'s swing. Double-click to hand it back to the song\'s setting — that\'s what “global” means. Straight kick under shuffled hats is exactly this."':'')+'>'
+    +'<span class="pn">'+lbl+'</span>'
+    +'<input type="range" min="'+(mn||0)+'" max="100" value="'+Math.round(tkNum(ts,k)*100)+'" data-tk="'+k+'">'
     +'<span class="pv">'+tkPv(ts,k)+'</span></div>'
   ).join('')
+  +sidechainHTML(ts,t)
   +[['l','EQ Low'],['m','EQ Mid'],['h','EQ High']].map(([k,lbl])=>
     '<div class="param"><span class="pn">'+lbl+'</span>'
     +'<input type="range" min="-12" max="12" step="0.5" value="'+ts.eq[k]+'" data-teq="'+k+'">'
@@ -3884,11 +4199,20 @@ document.getElementById('trackMix').addEventListener('click',e=>{
 });
 function fmtDb(v){return(v>0?'+':'')+(+v).toFixed(1)}
 /* slider readout: filter rows show Hz / Q, everything else shows percent */
+/* the number a slider should SHOW: for an inherited swing that's the song's value */
+function tkNum(ts,k){
+  if(k==='swing')return ts.swing==null?(song.swing||0):ts.swing;
+  return ts[k]||0;
+}
 function tkPv(ts,k){
   if(k==='vol')return fmtVdb(ts.vol)+'dB';
   if(k==='fltF')return fmtHz(fltHz(ts.fltF==null?1:ts.fltF));
   if(k==='fltQ')return((ts.fltQ||0)*20).toFixed(1);
   if(k==='pan')return panTxt(ts.pan);
+  if(k==='duckRel')return Math.round((.03+(ts.duckRel||0)*.5)*1000)+'ms';
+  /* null swing = follow the song, and say so rather than showing a number that isn't this
+     track's own — otherwise nudging the global leaves every channel looking hand-set */
+  if(k==='swing')return ts.swing==null?'global '+Math.round((song.swing||0)*100)+'%':Math.round(ts.swing*100)+'%';
   return Math.round(ts[k]*100);
 }
 document.getElementById('trackMix').addEventListener('input',e=>{
@@ -3916,9 +4240,26 @@ document.getElementById('trackMix').addEventListener('input',e=>{
   }
   applyMix();saveSoon();
 });
-document.getElementById('trackMix').addEventListener('change',()=>{if(!mixer.hidden)renderMixer()});
+document.getElementById('trackMix').addEventListener('change',e=>{
+  if(e.target.id==='scSel'){
+    const t=polyLead(cursor.t),ts=song.trackset[t];
+    const v=e.target.value;
+    if(v===''){ts.duck=0;status('sidechain off for track '+(t+1))}
+    else{
+      ts.duckSrc=+v;
+      if(!(ts.duck>0))ts.duck=SC_DEF; /* off → on: land on something you can actually hear */
+      status('track '+(t+1)+' ducks from '+(ts.duckSrc<0?'any kick instrument'
+        :'track '+(ts.duckSrc+1)+(song.trackset[ts.duckSrc].name?' · '+song.trackset[ts.duckSrc].name:''))
+        +' — its notes, even when it is muted');
+    }
+    trackPanel();renderHead();saveSoon();
+  }
+  /* dragging Amount to zero IS switching it off — let the panel collapse to match */
+  if(e.target.dataset&&e.target.dataset.tk==='duck'){trackPanel();renderHead()}
+  if(!mixer.hidden)renderMixer();
+});
 /* dblclick a slider = reset to default */
-const TRK_DEF={vol:.85,pan:0,dly:0,rvb:0,duck:0,cmp:0,drv:0,fltF:1,fltQ:0};
+const TRK_DEF={vol:.85,pan:0,dly:0,rvb:0,duck:0,duckRel:.16,cmp:0,drv:0,fltF:1,fltQ:0,swing:null};
 document.getElementById('trackMix').addEventListener('dblclick',e=>{
   const ts=masterView?MHOST:song.trackset[cursor.t];
   if(e.target.dataset.fxp){ /* reset an FX param to its default */
@@ -3976,8 +4317,9 @@ function renderMixer(){
       +'<span class="mdb" title="Fader gain in dB">'+fmtVdb(ts.vol)+'</span>'
       +'<div class="mrow"><span class="l">PN</span><input type="range" min="-100" max="100" value="'+Math.round((ts.pan||0)*100)+'" data-mpan="1" title="Pan (dblclick = center)"></div>'
       +[['l','L'],['m','M'],['h','H']].map(([k,l])=>'<div class="mrow"><span class="l">'+l+'</span><input type="range" min="-12" max="12" step="0.5" value="'+ts.eq[k]+'" data-meq="'+k+'" title="EQ '+l+'"></div>').join('')
-      +[['dly','DL'],['rvb','RV'],['duck','DK'],['cmp','CP'],['drv','DR'],['fltF','FL'],['fltQ','FQ']].map(([k,l])=>'<div class="mrow"><span class="l">'+l+'</span><input type="range" min="0" max="100" value="'+Math.round(ts[k]*100)+'" data-msend="'+k+'" title="'+({dly:'Delay send',rvb:'Reverb send',duck:'Kick duck',cmp:'Compressor',drv:'Drive / saturation',fltF:'Channel filter cutoff',fltQ:'Channel filter resonance'})[k]+'"></div>').join('')
-      +'<div class="msbtns"><button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'">M</button><button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'">S</button></div>'
+      +[['dly','DL'],['rvb','RV'],['duck','SC'],['cmp','CP'],['drv','DR'],['fltF','FL'],['fltQ','FQ']].map(([k,l])=>'<div class="mrow"><span class="l">'+l+'</span><input type="range" min="0" max="100" value="'+Math.round(ts[k]*100)+'" data-msend="'+k+'" title="'+({dly:'Delay send',rvb:'Reverb send',duck:'Sidechain depth — pick what triggers it in the Track panel',cmp:'Compressor',drv:'Drive / saturation',fltF:'Channel filter cutoff',fltQ:'Channel filter resonance'})[k]+'"></div>').join('')
+      +'<div class="msbtns"><button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'">M</button><button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'">S</button>'
+      +'<button class="tbtn '+(scOn(ts)?'cON':'')+'" data-sc="'+t+'" title="'+scTitle(ts)+'">SC</button></div>'
       +'</div>';
   }
   const mv=Math.round((song.masterVol==null?.75:song.masterVol)*100);
@@ -4026,9 +4368,10 @@ mixch.addEventListener('input',e=>{
   if(t===cursor.t)trackPanel();
 });
 mixch.addEventListener('click',e=>{
-  const m=e.target.dataset.mu,s=e.target.dataset.so;
+  const m=e.target.dataset.mu,s=e.target.dataset.so,sc=e.target.dataset.sc;
   if(m!=null){toggleMS(+m,'mute');return}
   if(s!=null){toggleMS(+s,'solo');return}
+  if(sc!=null){scToggle(+sc);return}
   /* click a channel = glow it + select its grid column */
   if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;
   const mchEl=e.target.closest('.mch');if(!mchEl)return;
@@ -4131,8 +4474,140 @@ try{const c=JSON.parse(localStorage.getItem('volt.vault.cfg')||'{}');VAULT.auto=
 try{VAULT.local=JSON.parse(localStorage.getItem('volt.vault.ideas')||'[]')}catch(e){}
 function vaultCfgSave(){try{localStorage.setItem('volt.vault.cfg',JSON.stringify({auto:VAULT.auto,copy:VAULT.copy}))}catch(e){}}
 function vaultLocalSave(){try{localStorage.setItem('volt.vault.ideas',JSON.stringify(VAULT.local))}catch(e){status('idea library full — pick a real library folder in Settings (⚙)')}}
+/* which build is this — "volt" (stable) or "voltbeta"? The beta shim at the top of the file sets
+   VOLT_NS; everything that touches persistent storage keys off it so the two can never collide. */
+const VNS=(typeof VOLT_NS==='string'&&VOLT_NS)||'volt';
+
+/* ================= sample store — content-addressed, in OPFS =================
+   Samples used to live as base64 inside the song JSON. That meant every autosave rewrote the
+   entire sample library, and localStorage's ~5 MB ceiling was the real limit on how big a
+   project could get ("samples too big for autosave"). Now each sample is written ONCE as a file
+   named after the SHA-256 of its bytes, and songs only carry the hash. Two songs using the same
+   kick share one file; re-saving a song writes notes and nothing else.
+
+   Storage is the Origin Private File System — real files, hundreds of MB, and (measured with
+   tools/opfs-probe.html) it works in Firefox as well as Chrome, on file:// as well as https.
+   The trade is that it's invisible in Explorer: export is how samples get out.
+
+   Every path degrades: no OPFS or no WebCrypto and SS.ok stays false, at which point saving and
+   loading behave exactly as they did before. */
+const SS={ok:false,dir:null,ready:null,seen:{},lastErr:''};
+function ssInit(){
+  if(SS.ready)return SS.ready;
+  SS.ready=(async()=>{
+    try{
+      if(!navigator.storage||!navigator.storage.getDirectory)throw new Error('no OPFS');
+      if(!self.crypto||!crypto.subtle||!crypto.subtle.digest)throw new Error('no WebCrypto (insecure context?)');
+      const root=await navigator.storage.getDirectory();
+      const base=await root.getDirectoryHandle(VNS,{create:true});
+      SS.dir=await base.getDirectoryHandle('samples',{create:true});
+      SS.ok=true;
+    }catch(e){SS.ok=false;SS.lastErr=(e&&e.message)||String(e)}
+    return SS.ok;
+  })();
+  return SS.ready;
+}
+async function ssHash(ab){
+  const d=await crypto.subtle.digest('SHA-256',ab);
+  return Array.from(new Uint8Array(d)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,40);
+}
+/* returns the hash, having made sure the bytes are on disk. Identical audio hashes identically,
+   so the second song to use a sample writes nothing at all. */
+async function ssPut(b64){
+  if(!b64||!await ssInit())return null;
+  try{
+    const ab=b64ToAb(b64);
+    const sha=await ssHash(ab);
+    if(SS.seen[sha])return sha;
+    let there=false;
+    try{await SS.dir.getFileHandle(sha);there=true}catch(e){}
+    if(!there){
+      const fh=await SS.dir.getFileHandle(sha,{create:true});
+      const w=await fh.createWritable();
+      await w.write(ab);await w.close();
+    }
+    SS.seen[sha]=1;
+    return sha;
+  }catch(e){SS.lastErr=(e&&e.message)||String(e);return null}
+}
+async function ssGet(sha){
+  if(!sha||!await ssInit())return null;
+  try{
+    const f=await(await SS.dir.getFileHandle(sha)).getFile();
+    return abToB64(await f.arrayBuffer());
+  }catch(e){return null}
+}
+async function ssList(){
+  if(!await ssInit())return [];
+  const out=[];
+  try{
+    for await(const h of SS.dir.values()){
+      if(h.kind!=='file')continue;
+      try{out.push({sha:h.name,size:(await h.getFile()).size})}catch(e){}
+    }
+  }catch(e){SS.lastErr=(e&&e.message)||String(e)}
+  return out;
+}
+/* every hash any saved project (or anything open right now) still points at. Read straight out
+   of the stored JSON so a project that isn't loaded still protects its samples. */
+function ssRefs(){
+  const keep=new Set();
+  const scan=j=>{
+    if(!j)return;
+    const re=/"sampleSha":"([0-9a-f]+)"/g;let m;
+    while((m=re.exec(j)))keep.add(m[1]);
+  };
+  try{
+    /* NOTE: enumeration sees the RAW keys — the beta shim rewrites getItem/setItem, not key().
+       Reading them back by their real name skips the shim, which is what we want here. */
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k&&k.indexOf('volt.proj.')>=0)scan(localStorage.getItem(k));
+    }
+  }catch(e){}
+  try{if(song&&song.instruments)song.instruments.forEach(i=>{if(i&&i.sampleSha)keep.add(i.sampleSha)})}catch(e){}
+  try{for(const id in projCache){const s=projCache[id];
+    if(s&&s.instruments)s.instruments.forEach(i=>{if(i&&i.sampleSha)keep.add(i.sampleSha)})}}catch(e){}
+  return keep;
+}
+async function ssGC(){
+  if(!await ssInit())return{removed:0,freed:0};
+  const keep=ssRefs(),all=await ssList();
+  let removed=0,freed=0;
+  for(const f of all){
+    if(keep.has(f.sha))continue;
+    try{await SS.dir.removeEntry(f.sha);removed++;freed+=f.size;delete SS.seen[f.sha]}catch(e){}
+  }
+  return{removed,freed};
+}
+async function ssStats(){
+  const all=await ssList(),keep=ssRefs();
+  let bytes=0,dead=0;
+  all.forEach(f=>{bytes+=f.size;if(!keep.has(f.sha))dead++});
+  let quota=0,usage=0;
+  try{const e=await navigator.storage.estimate();quota=e.quota||0;usage=e.usage||0}catch(e){}
+  return{ok:SS.ok,n:all.length,bytes,quota,usage,unused:dead,err:SS.lastErr};
+}
+/* make sure every sampler in the song has its audio on disk and knows its hash. Called before
+   an autosave; if the store is off it does nothing and samples stay inline as before. */
+async function ssSyncSong(s){
+  if(!await ssInit())return false;
+  const list=(s||song||{}).instruments||[];
+  for(const ins of list){
+    if(!ins||!ins.sampleB64)continue;
+    /* _shaSrc remembers WHICH audio the hash was taken from. Comparing against it means a
+       reversed/normalized/re-sliced sample gets re-hashed, while an untouched one costs nothing.
+       Trusting sampleSha alone would have quietly saved a stale hash after any edit. */
+    if(ins.sampleSha&&ins._shaSrc===ins.sampleB64)continue;
+    const sha=await ssPut(ins.sampleB64);
+    if(!sha)return false;
+    ins.sampleSha=sha;ins._shaSrc=ins.sampleB64;
+  }
+  return true;
+}
+
 /* directory handles survive reloads in IndexedDB (localStorage can't hold them) */
-function idbOpen(){return new Promise((res,rej)=>{const q=indexedDB.open('volt.fs',1);q.onupgradeneeded=()=>q.result.createObjectStore('h');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
+function idbOpen(){return new Promise((res,rej)=>{const q=indexedDB.open(VNS+'.fs',1);q.onupgradeneeded=()=>q.result.createObjectStore('h');q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function idbGet(k){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction('h').objectStore('h').get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error)}))}
 function idbSet(k,v){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction('h','readwrite').objectStore('h').put(v,k);t.onsuccess=()=>res();t.onerror=()=>rej(t.error)}))}
 function idbDel(k){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction('h','readwrite').objectStore('h').delete(k);t.onsuccess=()=>res();t.onerror=()=>rej(t.error)}))}
@@ -4420,6 +4895,38 @@ function ideaProblem(idea){
   if(idea&&idea.patterns)return 'that’s a full song file — use Import to open it as a project';
   return 'that file isn’t a VOLT idea';
 }
+/* An idea stashed at 4 rows/beat is a bar of music, not 16 rows — drop it into a song running
+   at 8 rows/beat and those 16 rows are suddenly half a bar, at double speed. So stretch the
+   phrase to the host's grid, carrying sub-row positions across as Txx exactly like setLpb does.
+   Ideas saved before this carried no lpb; they're assumed to be 4, which is what VOLT used. */
+function ideaRescale(data,from,to){
+  if(!from||!to||from===to||!data.length)return{data,moved:0,lost:0};
+  const f=to/from;
+  let W=0;data.forEach(r=>{if(r.length>W)W=r.length});
+  const nr=Math.max(1,Math.min(512,Math.round(data.length*f)));
+  const out=[];
+  for(let r=0;r<nr;r++){const row=[];for(let t=0;t<W;t++)row.push({});out.push(row)}
+  let lost=0;
+  for(let r=0;r<data.length;r++)for(let t=0;t<data[r].length;t++){
+    const c=data[r][t];
+    if(!c||(c.n===undefined&&c.i===undefined&&c.v===undefined&&c.c===undefined))continue;
+    const tick=c.c==='T'?Math.min(c.x||0,191)/192:0;
+    const pos=(r+tick)*f;
+    const nrow=Math.floor(pos+1e-6);
+    if(nrow>=nr){lost++;continue}
+    const dst=out[nrow][t];
+    if(dst.n!==undefined||dst.c!==undefined){lost++;continue} /* two rows squeezed onto one */
+    const o=Object.assign({},c);
+    const frac=pos-nrow,ticks=Math.round(frac*192);
+    /* a real command (Sxx, Gxx…) outranks the timing nudge — one command per cell */
+    if(!c.c||c.c==='T'){
+      if(ticks>0&&ticks<192){o.c='T';o.x=clamp(ticks,1,191)}
+      else if(c.c==='T'){o.c=null;o.x=0}
+    }
+    out[nrow][t]=o;
+  }
+  return{data:out,moved:1,lost};
+}
 /* loading an idea = filling the normal clipboard, so Ctrl+V and cross-project
    instrument mapping behave exactly like copy/paste between tabs */
 async function ideaToClip(idea){
@@ -4432,7 +4939,11 @@ async function ideaToClip(idea){
     normInst(ins);
     insts[k]=ins;
   }
-  clip={data:idea.data,song:null,insts};
+  const from=idea.lpb||4,to=song.lpb||4;
+  const rs=ideaRescale(idea.data,from,to);
+  clip={data:rs.data,song:null,insts};
+  if(rs.moved)status('“'+(idea.name||'idea')+'” was written at '+from+' rows/beat — stretched to '
+    +to+' ('+idea.data.length+' → '+rs.data.length+' rows)'+(rs.lost?', '+rs.lost+' note'+(rs.lost>1?'s':'')+' too tight to fit':''));
 }
 /* ---- idea preview: plays the phrase through the cursor track's channel(s), like Ctrl+click on an instrument ---- */
 let VPRE=null;
@@ -4493,8 +5004,17 @@ function renderSettings(){
     +'<label class="schk"><input type="checkbox" id="sCopy"'+(VAULT.copy?' checked':'')+(VAULT.proj?'':' disabled')+'> Copy samples into a “&lt;project&gt; samples” subfolder</label>'
     +'<div class="vhint">'+(VAULT.fsOk
       ?'Ideas (Ctrl+Shift+G) are saved as .json files in the library folder — its subfolders show up as Vault folders. Auto-save rewrites “&lt;song name&gt;.json” shortly after every change. Sample-copy mirrors every recording, drop and Everything result into a subfolder beside the project.'
-      :'This browser can&#8217;t open real folders (Chrome / Edge can). Ideas are kept in isolated browser storage instead — everything else works the same.')+'</div>';
+      :'This browser can&#8217;t open real folders (Chrome / Edge can). Ideas are kept in isolated browser storage instead — everything else works the same.')+'</div>'
+    +'<div class="srow"><span>Sample store</span><span class="sv" id="ssStat">checking&#8230;</span>'
+      +'<span><button id="ssGc" style="font-size:10px;padding:2px 8px" title="Delete stored samples no saved project points at any more">Clean up</button></span></div>'
+    +'<div class="vhint" id="ssHint">Samples are kept once each, by content, so projects stay small and auto-save never has to drop them. Works in every browser. They live in private browser storage — use Export to get them out as files.</div>';
   $id('sClose').onclick=toggleSettings;
+  ssRenderStat();
+  $id('ssGc').onclick=async()=>{
+    const r=await ssGC();
+    status(r.removed?'sample store: removed '+r.removed+' unused sample'+(r.removed>1?'s':'')+', freed '+fmtBytes(r.freed):'sample store: nothing to clean up');
+    ssRenderStat();
+  };
   if($id('sLib'))$id('sLib').onclick=async()=>{
     try{const h=await showDirectoryPicker({mode:'readwrite'});VAULT.lib=h;idbSet('lib',h).catch(()=>{});renderSettings();if(!vaultPan.hidden)renderVault();status('library folder: '+h.name)}catch(e){}
   };
@@ -4512,6 +5032,23 @@ function renderSettings(){
     VAULT.copy=ev.target.checked;vaultCfgSave();
     status(VAULT.copy?'samples will be copied into a “<project> samples” subfolder':'sample copying off');
   };
+}
+const fmtBytes=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B';
+async function ssRenderStat(){
+  const el=$id('ssStat');if(!el)return;
+  const s=await ssStats();
+  if(!$id('ssStat'))return; /* panel closed while we were counting */
+  if(!s.ok){
+    $id('ssStat').textContent='off — samples kept inside the project';
+    const h=$id('ssHint');
+    if(h)h.textContent='This browser won’t give VOLT its private file store'+(s.err?' ('+s.err+')':'')+', so samples stay inside the project file as before. Everything works — big sample sets just risk the old “too big for autosave” warning.';
+    const b=$id('ssGc');if(b)b.disabled=true;
+    return;
+  }
+  $id('ssStat').textContent=s.n+' sample'+(s.n===1?'':'s')+' · '+fmtBytes(s.bytes)
+    +(s.unused?' · '+s.unused+' unused':'')
+    +(s.quota?' · '+fmtBytes(s.quota)+' available':'');
+  const b=$id('ssGc');if(b)b.disabled=!s.unused;
 }
 function toggleSettings(){
   setPan.hidden=!setPan.hidden;
@@ -5468,13 +6005,157 @@ function ordCurrent(){
   if(ordPos>=0&&ordPos<song.order.length&&song.order[ordPos]===curPat)return ordPos;
   return song.order.indexOf(curPat);
 }
+/* ================= song sections =================
+   Intro / build / drop, over the top of the slot strip. A section is just a start marker plus a
+   name and a colour — it owns every slot up to the next marker, so there are no ranges to keep
+   consistent when you drag slots around. Ctrl+←/→ walks them, which is the actual point: you
+   stop hunting for "where does the drop start" in a strip of thirty numbered chips. */
+/* ---- how long is this thing ----
+   Every pattern's length is rows / (lpb x bpm), so the song's length is just the sum over the
+   order. Worth having on screen: until now there was no way to know whether a track was three
+   minutes or seven without rendering it. */
+function patSecs(pi){
+  const p=song.patterns[pi];
+  return p?p.rows*60/song.bpm/(song.lpb||4):0;
+}
+function songSecs(){let s=0;for(const pi of song.order)s+=patSecs(pi);return s}
+function secSecs(s){let t=0;for(let k=s.a;k<=s.b&&k<song.order.length;k++)t+=patSecs(song.order[k]);return t}
+function fmtTime(s){
+  if(!isFinite(s)||s<0)s=0;
+  const m=Math.floor(s/60);
+  return m+':'+String(Math.floor(s%60)).padStart(2,'0');
+}
+/* where the playhead is in the whole arrangement, for the running clock */
+function songPos(){
+  if(!SEQ.playing||!SEQ.songMode||!lastQ||lastQ.ord==null||!AC)return null;
+  const k=lastQ.ord%song.order.length;
+  let t=0;for(let i=0;i<k;i++)t+=patSecs(song.order[i]);
+  return t+(lastQ.row+(AC.currentTime-lastQ.t)/rowDur())*rowDur();
+}
+const SEC_HUES=[168,262,42,330,200,96,14,286];
+function secs(){return song.sections||(song.sections=[])}
+function secSort(){secs().sort((x,y)=>x.a-y.a)}
+function secAt(slot){for(const s of secs())if(slot>=s.a&&slot<=s.b)return s;return null}
+function secIndexOf(slot){const s=secAt(slot);return s?secs().indexOf(s):-1}
+function secColor(s){return s?'hsl('+s.hue+',70%,60%)':''}
+/* sections are real ranges, so they must never overlap — clamp a resize to its neighbours
+   rather than letting two of them claim the same slot */
+function secBounds(i){
+  const l=secs();
+  return{lo:i>0?l[i-1].b+1:0,hi:i+1<l.length?l[i+1].a-1:song.order.length-1};
+}
+function secTidy(){
+  secSort();
+  song.sections=secs().filter(s=>s&&s.b>=s.a&&s.a>=0&&s.a<song.order.length)
+    .map(s=>({a:clamp(s.a,0,song.order.length-1),b:clamp(s.b,0,song.order.length-1),name:s.name,hue:s.hue}));
+  let prev=-1;
+  song.sections=song.sections.filter(s=>{if(s.a<=prev)s.a=prev+1;if(s.b<s.a)return false;prev=s.b;return true});
+}
+/* Slots came, went or moved — put every section back around the music it still holds.
+   Remap each slot the section covered, then take min..max of the survivors. A section is a
+   CONTIGUOUS stretch of the arrangement, so closing up is the whole point: pull a pattern out of
+   the intro and the intro shrinks with no hole left behind; drop that pattern into the middle of
+   the drop and the drop simply grew by one.
+   `moved` is the slot being dragged. It's excluded from the span of the section it came FROM —
+   without that, a pattern dragged to the far end would stretch its old section across everything
+   in between instead of leaving it. `absorb` is the section that should take it in: the one that
+   owned the slot it displaced. Min..max alone can only swallow an arrival in the middle, so a
+   pattern dropped onto a section's very first slot would otherwise sit just outside it. */
+function secShift(fn,moved,absorb){
+  if(!song.sections)return;
+  song.sections.forEach(s=>{
+    const pos=[];let owned=false;
+    for(let k=s.a;k<=s.b;k++){
+      if(moved!=null&&k===moved){owned=true;continue}
+      const n=fn(k);if(n>=0)pos.push(n);
+    }
+    if(s===absorb&&moved!=null){const n=fn(moved);if(n>=0)pos.push(n)}
+    /* the section was nothing but the slot you dragged: let it travel with it */
+    if(!pos.length){const n=owned?fn(moved):-1;s.a=s.b=n;return}
+    s.a=Math.min.apply(null,pos);s.b=Math.max.apply(null,pos);
+  });
+  song.sections=song.sections.filter(s=>s.a>=0);
+  secTidy();
+}
+/* Bars are positioned over the chips themselves, so they line up with the patterns they cover.
+   The strip wraps, so a section that spans a line break is drawn as one bar per visual row —
+   measured from the chips, which is the only thing that can't drift out of sync with them. */
+function renderSections(){
+  const layer=document.getElementById('secLayer'),tools=document.getElementById('secTools');
+  if(!layer)return;
+  secTidy();
+  const list=secs(),chips=document.getElementById('ordChips').children;
+  const cur=ordCurrent();
+  const playing=SEQ.playing&&SEQ.songMode&&lastQ&&lastQ.ord!=null?lastQ.ord%song.order.length:-1;
+  const playSec=playing>=0?secAt(playing):null;
+  let h='';
+  list.forEach((s,i)=>{
+    let run=null;
+    const flush=()=>{
+      if(!run)return;
+      const w=Math.max(18,run.r-run.l);
+      h+='<div class="secBar'+(s===playSec?' playing':'')+'" data-s="'+i+'" style="--sc:'+secColor(s)
+        +';left:'+run.l+'px;top:'+(run.t-16)+'px;width:'+w+'px" title="'+esc(s.name)+' &#183; slots '+(s.a+1)+'&#8211;'+(s.b+1)
+        +' &#183; click to jump &#183; drag either end to resize &#183; dblclick to rename &#183; right-click for more">'
+        +(run.first?'<b>'+esc(s.name)+'</b><i>'+(s.b-s.a+1)+' &#183; '+fmtTime(secSecs(s))+'</i>':'&#8230;')
+        +(run.first?'<span class="secGrip" data-g="L" data-s="'+i+'" style="left:-3px"></span>':'')
+        +(run.last?'<span class="secGrip" data-g="R" data-s="'+i+'" style="right:-3px"></span>':'')
+        +'</div>';
+      run=null;
+    };
+    for(let k=s.a;k<=s.b;k++){
+      const el=chips[k];if(!el)continue;
+      if(run&&el.offsetTop!==run.t)flush();
+      if(!run)run={t:el.offsetTop,l:el.offsetLeft,r:el.offsetLeft+el.offsetWidth,first:k===s.a,last:false};
+      else run.r=el.offsetLeft+el.offsetWidth;
+      run.last=(k===s.b);
+    }
+    flush();
+  });
+  layer.innerHTML=h;
+  if(tools)tools.innerHTML=(list.length?'':'<span class="none">no sections yet — mark one with Ctrl+Shift+M</span>')
+    +'<button id="secAdd" title="Make the slot you are on a named section (Ctrl+Shift+M). Drag its ends to cover more slots.">+ section</button>'
+    +'<span id="songClock" title="Total length of the arrangement at the current BPM">'+fmtTime(songSecs())+'</span>';
+  clockTxt='';
+}
+async function secAdd(at){
+  if(!song.order.length){status('add a pattern to the song first');return}
+  const slot=clamp(at!=null?at:Math.max(0,ordCurrent()),0,song.order.length-1);
+  if(secAt(slot)){status('slot '+(slot+1)+' is already inside “'+secAt(slot).name+'”');return}
+  const n=await askText('Name this section (slot '+(slot+1)+'):','');
+  if(!n)return;
+  secs().push({a:slot,b:slot,name:n.slice(0,24),hue:SEC_HUES[secs().length%SEC_HUES.length]});
+  secTidy();renderOrder();saveSoon();
+  status('“'+n+'” — drag its right edge to cover more slots · Ctrl+←/→ jumps between sections');
+}
+function secGo(dir){
+  const list=secs();
+  if(!list.length){status('no sections yet — “+ section” on the song strip, or Ctrl+Shift+M');return}
+  const here=SEQ.playing&&SEQ.songMode&&lastQ&&lastQ.ord!=null?lastQ.ord%song.order.length:Math.max(0,ordCurrent());
+  const cur=secAt(here);
+  let i;
+  /* going back from inside a section returns to its start first — like a CD track skip */
+  if(dir<0&&cur&&here>cur.a)i=list.indexOf(cur);
+  else if(cur)i=clamp(list.indexOf(cur)+dir,0,list.length-1);
+  else{ /* between sections: step to the next one in that direction */
+    i=dir>0?list.findIndex(s=>s.a>here):-1;
+    if(dir<0)for(let j=list.length-1;j>=0;j--)if(list[j].b<here){i=j;break}
+    if(i<0)i=dir>0?list.length-1:0;
+  }
+  const s=list[i];if(!s)return;
+  if(SEQ.playing&&SEQ.songMode)jumpToOrd(s.a);
+  else{ordPos=s.a;curPatSet(song.order[s.a]);renderOrder()}
+  status('▸ '+s.name+' · slots '+(s.a+1)+'–'+(s.b+1));
+}
 function renderOrder(){
   const el=document.getElementById('ordChips');
   const cur=ordCurrent();
-  el.innerHTML=song.order.map((pi,k)=>
-    '<span class="chip'+(k===cur?' cur':pi===curPat?' same':'')+'" draggable="true" data-k="'+k+'" style="--pc:hsl('+patHue(pi)+',75%,62%)" title="Slot '+(k+1)+': pattern '+esc(patLabel(pi))+' &#8212; click to edit &#183; scroll to swap pattern &#183; dblclick to rename &#183; drag to reorder">'
-    +'<span class="slot">'+(k+1)+'</span><b>'+esc(patLabel(pi))+'</b><u data-x="'+k+'" title="Remove from song">&#215;</u></span>'
-  ).join('');
+  el.innerHTML=song.order.map((pi,k)=>{
+    const s=secAt(k),starts=s&&s.a===k;
+    return '<span class="chip'+(k===cur?' cur':pi===curPat?' same':'')+(starts?' secStart':'')+(ordSel.has(k)?' msel':'')+'" draggable="true" data-k="'+k+'" style="--pc:hsl('+patHue(pi)+',75%,62%)'+(s?';--sc:'+secColor(s):'')+'" title="Slot '+(k+1)+': pattern '+esc(patLabel(pi))+(s?' &#183; '+esc(s.name):'')+' &#8212; click to edit &#183; scroll to swap pattern &#183; dblclick to rename &#183; drag to reorder">'
+    +'<span class="slot">'+(k+1)+'</span><b>'+esc(patLabel(pi))+'</b><u data-x="'+k+'" title="Remove from song">&#215;</u></span>';
+  }).join('');
+  renderSections();
 }
 /* scroll a song chip to swap which pattern that slot plays — the pattern itself is untouched */
 document.getElementById('ordChips').addEventListener('wheel',e=>{
@@ -5510,10 +6191,16 @@ document.getElementById('ordChips').addEventListener('dragover',e=>{if(dragK!=nu
 document.getElementById('ordChips').addEventListener('drop',e=>{
   const ch=e.target.closest('.chip');if(!ch||dragK==null)return;
   e.preventDefault();
-  const to=+ch.dataset.k;
-  const v=song.order.splice(dragK,1)[0];
+  const to=+ch.dataset.k,from=dragK;
+  /* who owns the destination BEFORE the move — that's the section the pattern is joining */
+  const absorb=secAt(to);
+  const v=song.order.splice(from,1)[0];
   song.order.splice(to,0,v);
-  dragK=null;renderOrder();saveSoon();status('song reordered');
+  /* sections close up behind the pattern and open up around where it landed */
+  secShift(i=>i===from?to:(from<to&&i>from&&i<=to)?i-1:(from>to&&i>=to&&i<from)?i+1:i,from,absorb);
+  dragK=null;renderOrder();saveSoon();
+  const land=secAt(to);
+  status('song reordered'+(land?' — slot '+(to+1)+' is now in “'+land.name+'” ('+(land.b-land.a+1)+' patterns)':''));
 });
 document.addEventListener('dragend',()=>{dragK=null});
 /* jump song playback to a slot: reschedule cleanly instead of letting the grid-follow
@@ -5527,27 +6214,231 @@ function jumpToOrd(k){
   curPatSet(song.order[k]);
   status('jumped to slot '+(k+1));
 }
+/* Ctrl+drag anywhere on the strip draws a lasso. Chips are draggable for reordering, so the
+   drag has to be suppressed while Ctrl is down or the browser starts a drag instead. */
+let ordLasso=null;
+document.getElementById('ordChips').addEventListener('dragstart',e=>{if(e.ctrlKey||e.metaKey)e.preventDefault()},true);
+document.getElementById('ordCol').addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  if(e.target.closest('.secBar')||e.target.closest('.secGrip'))return;
+  const onChip=e.target.closest('.chip');
+  if(onChip&&!(e.ctrlKey||e.metaKey))return;      /* plain click on a chip = the normal click path */
+  e.preventDefault();ordFocus();
+  const box=document.getElementById('ordCol').getBoundingClientRect();
+  /* Ctrl+drag starts a FRESH lasso (Ctrl is only there to beat the chips' own drag-to-reorder);
+     hold Shift as well to add what you cross to what's already picked */
+  ordLasso={x0:e.clientX,y0:e.clientY,box,add:e.shiftKey,base:new Set(ordSel),moved:false};
+  const el=document.createElement('div');el.id='ordLasso';
+  document.getElementById('ordCol').appendChild(el);
+});
+addEventListener('mousemove',e=>{
+  if(!ordLasso)return;
+  const el=document.getElementById('ordLasso');if(!el)return;
+  const l=Math.min(e.clientX,ordLasso.x0),r=Math.max(e.clientX,ordLasso.x0);
+  const t=Math.min(e.clientY,ordLasso.y0),b=Math.max(e.clientY,ordLasso.y0);
+  if(r-l>3||b-t>3)ordLasso.moved=true;
+  const bx=ordLasso.box;
+  el.style.left=(l-bx.left)+'px';el.style.top=(t-bx.top)+'px';
+  el.style.width=(r-l)+'px';el.style.height=(b-t)+'px';
+  const hit=new Set(ordLasso.add?ordLasso.base:[]);
+  const chips=document.getElementById('ordChips').children;
+  for(let k=0;k<chips.length;k++){
+    const c=chips[k].getBoundingClientRect();
+    if(c.right>=l&&c.left<=r&&c.bottom>=t&&c.top<=b)hit.add(k);
+  }
+  if(hit.size!==ordSel.size||[...hit].some(k=>!ordSel.has(k))){ordSel=hit;renderOrder()}
+});
+addEventListener('mouseup',()=>{
+  if(!ordLasso)return;
+  const el=document.getElementById('ordLasso');if(el)el.remove();
+  const n=ordSel.size,moved=ordLasso.moved;
+  ordLasso=null;
+  if(moved&&n)ordSelStatus(n,'selected — Delete removes, Ctrl+X/C/V and Ctrl+D work here');
+  else if(moved){renderOrder()}
+});
+/* keys act on the strip only while it holds focus, so they can never eat the grid's own */
+document.getElementById('ordCol').addEventListener('keydown',e=>{
+  const ctrl=e.ctrlKey||e.metaKey;
+  const sel=ordSelSorted();
+  if(e.key==='Escape'){ordSel.clear();renderOrder();document.body.focus();return}
+  if(ctrl&&e.code==='KeyA'){e.preventDefault();ordSelSet(song.order.map((_,i)=>i));ordSelStatus(ordSel.size,'selected');return}
+  if(!sel.length)return;
+  if(e.key==='Delete'||e.key==='Backspace'){
+    e.preventDefault();e.stopPropagation();
+    const n=ordDelete(sel);
+    if(n)ordSelStatus(n,'removed from the song — the patterns themselves are untouched');
+    return;
+  }
+  if(ctrl&&(e.code==='KeyC'||e.code==='KeyX')){
+    e.preventDefault();e.stopPropagation();
+    ordClip=sel.map(k=>song.order[k]);
+    if(e.code==='KeyX'){const n=ordDelete(sel);ordSelStatus(n,'cut')}
+    else ordSelStatus(ordClip.length,'copied');
+    return;
+  }
+  if(ctrl&&e.code==='KeyV'&&ordClip&&ordClip.length){
+    e.preventDefault();e.stopPropagation();
+    const at=sel[sel.length-1]+1;
+    song.order.splice(at,0,...ordClip);
+    secShift(i=>i>=at?i+ordClip.length:i);
+    ordSelSet(ordClip.map((_,i)=>at+i));
+    saveSoon();ordSelStatus(ordClip.length,'pasted after slot '+at);
+    return;
+  }
+  if(ctrl&&e.code==='KeyD'){ /* duplicate the selected block right after itself */
+    e.preventDefault();e.stopPropagation();
+    const block=sel.map(k=>song.order[k]),at=sel[sel.length-1]+1;
+    song.order.splice(at,0,...block);
+    secShift(i=>i>=at?i+block.length:i);
+    ordSelSet(block.map((_,i)=>at+i));
+    saveSoon();ordSelStatus(block.length,'duplicated');
+    return;
+  }
+});
 document.getElementById('ordChips').addEventListener('click',e=>{
+  const chip=e.target.closest('.chip');
+  if(chip&&!e.target.dataset.x){
+    const k=+chip.dataset.k;
+    ordFocus();
+    if(e.shiftKey){
+      const lo=Math.min(ordAnchor,k),hi=Math.max(ordAnchor,k);
+      const run=[];for(let i=lo;i<=hi;i++)run.push(i);
+      ordSelSet(run);ordSelStatus(run.length,'selected');
+      return;
+    }
+    if(e.ctrlKey||e.metaKey){
+      ordSel.has(k)?ordSel.delete(k):ordSel.add(k);
+      ordAnchor=k;renderOrder();
+      if(ordSel.size)ordSelStatus(ordSel.size,'selected');
+      return;
+    }
+    ordAnchor=k;ordSel.clear();
+  }
   const x=e.target.dataset.x;
-  if(x!=null){if(song.order.length>1)song.order.splice(+x,1);renderOrder();saveSoon();return}
+  if(x!=null){
+    if(song.order.length>1){const k=+x;song.order.splice(k,1);secShift(i=>i===k?-1:(i>k?i-1:i))}
+    renderOrder();saveSoon();return;
+  }
   const ch=e.target.closest('.chip');
   if(!ch)return;
   const k=+ch.dataset.k;
   if(SEQ.playing&&SEQ.songMode)jumpToOrd(k);
   else{ordPos=k;curPatSet(song.order[k]);renderOrder()}
 });
+/* ---- multi-select on the song strip ----
+   Shift+click a range, Ctrl+click to toggle one, or Ctrl+drag a lasso across the strip. Then act
+   on the lot: Delete, Ctrl+X / C / V, Ctrl+D. The strip takes focus when you touch it, so these
+   keys only fire when you're actually working on the arrangement — the grid keeps its own. */
+let ordSel=new Set(),ordAnchor=0,ordClip=null;
+function ordSelSet(list){ordSel=new Set(list);renderOrder()}
+function ordSelSorted(){return[...ordSel].filter(k=>k<song.order.length).sort((a,b)=>a-b)}
+function ordFocus(){const c=document.getElementById('ordCol');if(c&&document.activeElement!==c)c.focus({preventScroll:true})}
+/* delete a set of slots, highest first so the lower indices stay valid, telling the sections
+   about each one as it goes */
+function ordDelete(list){
+  const ks=[...list].sort((a,b)=>b-a).filter(k=>k>=0&&k<song.order.length);
+  if(!ks.length)return 0;
+  if(song.order.length-ks.length<1){status('a song needs at least one slot');return 0}
+  ks.forEach(k=>{song.order.splice(k,1);secShift(i=>i===k?-1:(i>k?i-1:i))});
+  ordSel.clear();
+  ordPos=clamp(ordPos,0,song.order.length-1);
+  renderOrder();saveSoon();
+  return ks.length;
+}
+function ordSelStatus(n,what){status(n+' slot'+(n>1?'s':'')+' '+what)}
+/* which slot is under the pointer — resizing is done in SLOTS, not pixels, so the bar always
+   snaps to whole patterns and can never end up covering half a chip */
+function secSlotAt(x,y){
+  const chips=document.getElementById('ordChips').children;
+  let best=-1,bestD=Infinity;
+  for(let k=0;k<chips.length;k++){
+    const r=chips[k].getBoundingClientRect();
+    const dx=x<r.left?r.left-x:x>r.right?x-r.right:0;
+    const dy=y<r.top?r.top-y:y>r.bottom?y-r.bottom:0;
+    const d=dx+dy*4; /* a wrapped row below counts as far away */
+    if(d<bestD){bestD=d;best=k}
+  }
+  return best;
+}
+let secDrag=null;
+document.getElementById('secLayer').addEventListener('mousedown',e=>{
+  const g=e.target.closest('.secGrip');if(!g)return;
+  e.preventDefault();e.stopPropagation();
+  secDrag={i:+g.dataset.s,end:g.dataset.g,moved:false};
+  document.body.style.cursor='ew-resize';
+});
+addEventListener('mousemove',e=>{
+  if(!secDrag)return;
+  const s=secs()[secDrag.i];if(!s)return;
+  const k=secSlotAt(e.clientX,e.clientY);if(k<0)return;
+  const {lo,hi}=secBounds(secDrag.i);
+  if(secDrag.end==='L'){const na=clamp(k,lo,s.b);if(na===s.a)return;s.a=na}
+  else{const nb=clamp(k,s.a,hi);if(nb===s.b)return;s.b=nb}
+  secDrag.moved=true;
+  renderOrder();
+  status(s.name+' · slots '+(s.a+1)+'–'+(s.b+1)+' ('+(s.b-s.a+1)+' pattern'+(s.b-s.a?'s':'')+')');
+});
+addEventListener('mouseup',()=>{
+  if(!secDrag)return;
+  const moved=secDrag.moved;secDrag=null;
+  document.body.style.cursor='';
+  if(moved)saveSoon();
+});
+document.getElementById('secLayer').addEventListener('click',e=>{
+  if(e.target.closest('.secGrip'))return;
+  const bar=e.target.closest('.secBar');if(!bar)return;
+  const s=secs()[+bar.dataset.s];if(!s)return;
+  if(SEQ.playing&&SEQ.songMode)jumpToOrd(s.a);
+  else{ordPos=s.a;curPatSet(song.order[s.a]);renderOrder()}
+  status('▸ '+s.name+' · slots '+(s.a+1)+'–'+(s.b+1));
+});
+document.getElementById('secLayer').addEventListener('dblclick',async e=>{
+  const bar=e.target.closest('.secBar');if(!bar)return;
+  const s=secs()[+bar.dataset.s];if(!s)return;
+  const n=await askText('Section name:',s.name);
+  if(n){s.name=n.slice(0,24);renderOrder();saveSoon()}
+});
+document.getElementById('secLayer').addEventListener('contextmenu',e=>{
+  const bar=e.target.closest('.secBar');if(!bar)return;
+  e.preventDefault();
+  const i=+bar.dataset.s,s=secs()[i];if(!s)return;
+  const {lo,hi}=secBounds(i);
+  openCtx(e.clientX,e.clientY,[
+    {label:'✎ Rename “'+s.name+'”…',f:async()=>{const n=await askText('Section name:',s.name);if(n){s.name=n.slice(0,24);renderOrder();saveSoon()}}},
+    {label:'🎨 Next colour',f:()=>{s.hue=SEC_HUES[(SEC_HUES.indexOf(s.hue)+1)%SEC_HUES.length];renderOrder();saveSoon()}},
+    {label:'⇔ Cover everything up to the next section',f:()=>{s.a=lo;s.b=hi;renderOrder();saveSoon();status(s.name+' · slots '+(s.a+1)+'–'+(s.b+1))}},
+    {label:'✕ Remove section',f:()=>{secs().splice(i,1);renderOrder();saveSoon();status('section removed — the patterns stay put')}}
+  ]);
+});
+document.getElementById('secTools').addEventListener('click',e=>{if(e.target.id==='secAdd')secAdd()});
+/* the strip re-wraps when the window changes width — the bars are measured from it, so redraw */
+addEventListener('resize',()=>{if(song&&song.order)renderSections()});
 document.getElementById('ordAdd').onclick=()=>{song.order.push(curPat);renderOrder();saveSoon()};
-document.getElementById('playPat').onclick=()=>SEQ.playing&&!SEQ.songMode?stop():play(false);
-document.getElementById('playSong').onclick=()=>SEQ.playing&&SEQ.songMode?stop():play(true);
+/* the buttons and F4/F5 are the explicit "play this now" — they also arm that mode, so the
+   next Space repeats what you just heard */
+document.getElementById('playPat').onclick=()=>{armSet(false);SEQ.playing&&!SEQ.songMode?stop():play(false)};
+document.getElementById('playSong').onclick=()=>{armSet(true);SEQ.playing&&SEQ.songMode?stop():play(true)};
+playBtns(); /* show the armed dot on load */
 document.getElementById('stopBtn').onclick=()=>stop();
 document.getElementById('bpm').addEventListener('change',e=>{song.bpm=clamp(+e.target.value||170,40,300);setDelayTime();saveSoon()});
+document.getElementById('swing').addEventListener('input',e=>{
+  song.swing=clamp(+e.target.value||0,0,100)/100;
+  trackPanel();saveSoon();
+  status(song.swing?'swing '+Math.round(song.swing*100)+'% on the 1/'+(song.swingRes||8)+' — any channel can override it in the Track panel':'swing off — dead straight');
+});
+document.getElementById('swingRes').addEventListener('change',e=>{
+  song.swingRes=+e.target.value===16?16:8;
+  trackPanel();saveSoon();
+  status(swingUnit()?'swing lands on the 1/'+song.swingRes:'1/'+song.swingRes+' swing has nowhere to go at '+song.lpb+' rows/beat — raise R/Beat');
+});
 document.getElementById('oct').addEventListener('change',e=>{octave=clamp(+e.target.value||4,0,7)});
 document.getElementById('step').addEventListener('change',e=>{editStep=clamp(+e.target.value||0,0,16)});
 
 /* ================= save / load ================= */
-function serialize(withSamples){
-  song.v=song.v||1; /* stamp the format so a future VOLT knows what it's opening */
-  return JSON.stringify(song,(k,v)=>{
+function serialize(withSamples,target){
+  const s=target||song;
+  s.v=s.v||1; /* stamp the format so a future VOLT knows what it's opening */
+  return JSON.stringify(s,(k,v)=>{
     if(k==='buffer'||k[0]==='_')return undefined; /* live buffers + caches (_sid, _peaks…) */
     if(k==='sampleB64'&&!withSamples)return undefined;
     return v;
@@ -5565,7 +6456,7 @@ function sidFor(ins){
   return ins._sid;
 }
 const snapState=()=>JSON.stringify({
-  p:song.patterns,o:song.order,ts:song.trackset,bpm:song.bpm,lpb:song.lpb,
+  p:song.patterns,o:song.order,ts:song.trackset,bpm:song.bpm,lpb:song.lpb,sw:song.swing||0,swr:song.swingRes||8,sec:song.sections||[],
   m:song.masterFx||[],mv:song.masterVol,l:song.lfos||{},
   i:song.instruments.map(ins=>{
     const o={name:ins.name,type:ins.type,params:Object.assign({},ins.params)};
@@ -5620,6 +6511,9 @@ function applyState(s){
   }
   if(st.bpm){song.bpm=st.bpm;document.getElementById('bpm').value=st.bpm;if(AC)setDelayTime()}
   if(st.lpb){song.lpb=st.lpb;document.getElementById('lpbSel').value=st.lpb} /* rows/beat is undoable too */
+  if(st.sw!==undefined){song.swing=st.sw;document.getElementById('swing').value=Math.round(st.sw*100)}
+  if(st.swr!==undefined){song.swingRes=st.swr;document.getElementById('swingRes').value=st.swr}
+  if(st.sec!==undefined)song.sections=st.sec;
   if(st.m!==undefined)song.masterFx=st.m;
   if(st.mv!==undefined)song.masterVol=st.mv;
   if(st.l!==undefined)song.lfos=st.l;
@@ -5679,12 +6573,28 @@ function saveSoon(){
   },700);
 }
 let saveLossy=false; /* autosave had to drop the samples (localStorage quota) — closing the browser tab would lose them */
+/* Autosave, two ways.
+   With the sample store: push the audio to OPFS first, then write a JSON that carries only
+   hashes. That's kilobytes instead of megabytes, so it can never hit the quota and never has to
+   drop your samples. Without it: exactly the old behaviour, samples inline, lossy fallback. */
 function flushSave(){
   clearTimeout(saveT);
   if(!song||!PM.active)return;
-  try{localStorage.setItem('volt.proj.'+PM.active,serialize(true));saveLossy=false}
-  catch(e){try{localStorage.setItem('volt.proj.'+PM.active,serialize(false));saveLossy=true;status('samples too big for autosave — Ctrl+S or Export to keep them')}catch(e2){saveLossy=true}}
+  const id=PM.active;
+  if(SS.ok||SS.ready===null){
+    const target=song;
+    ssSyncSong(target).then(ok=>{
+      if(!ok)return flushSaveInline(id,target);
+      if(target!==song&&!projCache[id])return; /* the tab moved on and nothing holds this song */
+      try{localStorage.setItem('volt.proj.'+id,serialize(false,target));saveLossy=false}
+      catch(e){flushSaveInline(id,target)}
+    }).catch(()=>flushSaveInline(id,target));
+  }else flushSaveInline(id,song);
   vaultAutoSave(); /* mirror to the projects folder when enabled in ⚙ */
+}
+function flushSaveInline(id,target){
+  try{localStorage.setItem('volt.proj.'+id,serialize(true,target));saveLossy=false}
+  catch(e){try{localStorage.setItem('volt.proj.'+id,serialize(false,target));saveLossy=true;status('samples too big for autosave — Ctrl+S or Export to keep them')}catch(e2){saveLossy=true}}
 }
 async function loadSong(s){
   stop();
@@ -5693,6 +6603,17 @@ async function loadSong(s){
      defaults they predate, so a future format change has something to migrate FROM */
   song.v=song.v||1;
   song.lpb=clamp(+song.lpb||4,2,16);
+  song.swing=clamp(+song.swing||0,0,1);
+  /* sections: ranges now. `at` was the earlier start-marker shape — carry it forward rather than
+     dropping someone's arrangement labels on the floor. */
+  song.sections=Array.isArray(song.sections)?song.sections.filter(s=>s&&typeof s==='object').map(s=>{
+    const a=(s.a!=null?s.a:s.at)|0;
+    return{a,b:(s.b!=null?s.b:a)|0,name:String(s.name||'section').slice(0,24),hue:Number.isFinite(+s.hue)?+s.hue:SEC_HUES[0]};
+  }).filter(s=>s.a>=0&&s.a<song.order.length):[];
+  secTidy();
+  song.swingRes=song.swingRes===16?16:8;
+  document.getElementById('swing').value=Math.round(song.swing*100);
+  document.getElementById('swingRes').value=song.swingRes;
   TRACKS=clamp((song.patterns&&song.patterns[0]&&song.patterns[0].data.length)||8,2,MAXTRACKS);
   song.trackset=song.trackset||mkTrackset();
   while(song.trackset.length<TRACKS)song.trackset.push(mkTs());
@@ -5702,6 +6623,7 @@ async function loadSong(s){
   if(song.masterVol==null)song.masterVol=.75;
   song.lfos=song.lfos||{};
   masterView=false;
+  if(typeof ordSel!=='undefined')ordSel.clear(); /* a new song, not the last one's selection */
   document.getElementById('trkN').value=TRACKS;
   genCtCSS();genColorCSS();
   if(AC)ensureChans(TRACKS);
@@ -5712,6 +6634,12 @@ async function loadSong(s){
   if(AC){applyMix();setDelayTime();applyFxAll()}
   for(const ins of song.instruments){
     normInst(ins);
+    /* a lean autosave carries the hash instead of the audio — fetch the bytes back out of the
+       sample store. Songs saved the old way still have their base64 inline and skip this. */
+    if((ins.type==='sampler'||ins.type==='sliced')&&!ins.sampleB64&&ins.sampleSha){
+      const b=await ssGet(ins.sampleSha);
+      if(b){ins.sampleB64=b;SS.seen[ins.sampleSha]=1}
+    }
     if((ins.type==='sampler'||ins.type==='sliced')&&ins.sampleB64&&!ins.buffer){
       try{audio();ins.buffer=await AC.decodeAudioData(b64ToAb(ins.sampleB64))}catch(e){}
     }
@@ -6861,8 +7789,17 @@ document.addEventListener('keydown',e=>{
     return;
   }
   /* F-row transport: F5 = play/stop SONG (refresh is blocked), F4 = play/stop pattern, F3 = Vault, F10 = recorder */
-  if(k==='F5'){e.preventDefault();e.stopImmediatePropagation();SEQ.playing&&SEQ.songMode?stop():play(true);return}
-  if(k==='F4'){e.preventDefault();e.stopImmediatePropagation();SEQ.playing&&!SEQ.songMode?stop():play(false);return}
+  /* Firefox opens its Quick Find bar on / and ' and then eats every keystroke after it. The grid
+     handler above already claims / as a note key; everywhere else in the app, swallow both so the
+     bar can never appear over the tracker. (Chrome has no such shortcut — this is Firefox-only.) */
+  if((k==='/'||k==="'")&&!e.ctrlKey&&!e.metaKey&&!e.altKey)e.preventDefault();
+  /* Song <-> Pattern. Matched on the PHYSICAL key as well, so it still works on layouts where
+     that key prints something other than a backslash. */
+  if((k==='\\'||e.code==='Backslash')&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+    e.preventDefault();e.stopImmediatePropagation();flipMode();return;
+  }
+  if(k==='F5'){e.preventDefault();e.stopImmediatePropagation();armSet(true);SEQ.playing&&SEQ.songMode?stop():play(true);return}
+  if(k==='F4'){e.preventDefault();e.stopImmediatePropagation();armSet(false);SEQ.playing&&!SEQ.songMode?stop():play(false);return}
   if(k==='F3'){e.preventDefault();e.stopImmediatePropagation();toggleVault();return}
   if(k==='F10'){e.preventDefault();e.stopImmediatePropagation();recToggle();return}
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&low==='m'){e.preventDefault();e.stopImmediatePropagation();metToggle();return}
@@ -7637,8 +8574,9 @@ const COMMANDS=[
   {n:'Clear cell / selection',k:'Del',kw:'delete erase remove note',f:()=>{
     if(sel){eraseRect(selRect(),true);clearSel();saveSoon()}
     else{song.patterns[curPat].data[cursor.t][cursor.r]=null;renderRow(cursor.r);saveSoon()}}},
-  {n:'Play pattern',k:'Space',kw:'start loop',f:()=>play(false)},
-  {n:'Play song',kw:'start all order',f:()=>play(true)},
+  {n:'Play pattern',k:'F4',kw:'start loop',f:()=>{armSet(false);play(false)}},
+  {n:'Play song',k:'F5',kw:'start all order arrangement',f:()=>{armSet(true);play(true)}},
+  {n:'Switch Song / Pattern mode',k:'\\',kw:'toggle flip arm space transport arrangement live',f:flipMode},
   {n:'Stop playback',k:'Esc',kw:'halt',f:()=>stop()},
   {n:'Toggle follow playback',kw:'scroll autoscroll playhead lock',f:()=>{setFollow(!followPlay);status('follow '+(followPlay?'on':'off'))}},
   {n:'New pattern',k:'Ctrl+⏎',kw:'add create',f:newPattern},
@@ -9751,9 +10689,18 @@ window.addEventListener('beforeunload',e=>{
 
 /* ================= help (F1) — the manual, minus the boredom ================= */
 const HELP=[
- ['Transport','Play / stop','Space / F4 / F5','Space or F4 plays the pattern, F5 plays the song (browser refresh is blocked — use the reload button if you really mean it). Esc also stops.'],
- ['Transport','Play the song','▶ Song','Plays the pattern chain from the SONG strip, left to right.'],
+ ['Transport','Play / stop','Space','Plays whichever of the two transport buttons is ARMED — the one with the little dot. Song is armed by default. Esc also stops.'],
+ ['Transport','Song ⇄ Pattern','\\','Swaps the armed mode. Press it WHILE PLAYING and it switches without a restart: → Song carries on from the slot holding the pattern you were looping, → Pattern loops whatever is sounding right now. The change lands on the next row, so it happens on the beat.'],
+ ['Transport','Play one, explicitly','F4 / F5','F4 = pattern, F5 = song (browser refresh is blocked — use the reload button if you really mean it). Both also arm that mode, so the next Space repeats it.'],
+ ['Transport','Play from the cursor','Shift+Space','Pattern, starting at the cursor row. Pressing it again while playing stops AND parks the cursor there. Never changes what Space is armed to.'],
+ ['Transport','Play the song','▶ Song','Plays the pattern chain from the SONG strip — starting at the slot you are editing, not always from the top.'],
  ['Transport','Follow','Follow btn','Off = the grid stops chasing the playhead so you can edit in peace while it plays.'],
+ ['Song','Select many slots','Shift/Ctrl+click · Ctrl+drag','Shift+click takes a range, Ctrl+click adds or drops one, Ctrl+drag lassoes everything you cross (add Shift to keep what was already picked). Then Delete removes them from the song, Ctrl+X / C / V cut, copy and paste them, and Ctrl+D duplicates the block in place. The patterns themselves are never touched — only the arrangement. Esc clears the selection.'],
+ ['Song','How long is it','Song strip','The clock at the end of the strip shows the whole arrangement’s length at the current BPM, and counts up as the song plays. Every section bar carries its own length too.'],
+ ['Song','Sections','Ctrl+Shift+M · Ctrl+←/→','Name the parts of your song — intro, build, drop. “+ section” (or Ctrl+Shift+M) marks the slot you are on; the coloured bar sits directly over the patterns it covers. DRAG EITHER END to stretch it over more slots — it snaps to whole patterns and stops dead at the next section rather than overlapping it. Ctrl+← / → jumps between sections and works WHILE PLAYING, so you can skip straight to the drop; going back from the middle of a section returns to its start first, like skipping tracks on a CD. Double-click a bar to rename, right-click for colour / remove / “cover everything up to the next section”. Sections stay glued to their patterns when you drag the arrangement around.'],
+ ['Mixing','Spectrum','Track panel','The strip above the sliders shows what the channel your cursor is on is actually putting out — move the cursor, it follows. In master view it shows the whole mix. Click it to FREEZE the current curve in amber, make an EQ move, and see exactly what changed; click again to release.'],
+ ['Mixing','Swing','Toolbar + Track panel','Song-wide swing next to BPM: 0 is dead straight, 100 is a full triplet shuffle, and “on” chooses whether it lands on the 1/8 or the 1/16. It moves the FEEL, not your notes — the grid still reads straight, so you can dial it while a loop plays. Any channel can go its own way: the Track panel’s Swing slider overrides the song (straight kick under shuffled hats), and double-clicking it hands control back to the song.'],
+ ['Mixing','Sidechain','Track panel','One control: go to the channel you want to pump, set “Sidechain” to the channel your kick is on. Done — Amount and Release appear underneath if you want to shape it. It follows NOTES, not audio, so the timing is exact and a MUTED trigger still works (the ghost-kick trick: an inaudible kick pattern that only pumps everything else). Every channel starts sidechained to “any kick” — the C button next to M and S switches it off (and remembers your depth for when you switch it back). Old songs keep whatever they were saved with.'],
  ['Transport','Render to WAV','Alt+W','Bounces the whole song offline — automation, FX, everything. A warm-up pre-roll is rendered and trimmed so beat 1 hits at full force.'],
  ['Grid','Enter notes','Z–M / Q–P','Two piano rows. Oct sets the base octave, [ and ] shift it. A writes a note-OFF (cuts the voice).'],
  ['Grid','The four columns','note·in·vol·fx','Each cell: note, instrument (hex), volume 00–40, effect. Park the cursor and type hex right over them.'],

@@ -14,6 +14,12 @@ const SUITES={
   syntax:require('./syntax.test'),
   lpb:require('./lpb.test'),
   arp:require('./arp.test'),
+  store:require('./store.test'),
+  duck:require('./duck.test'),
+  vault:require('./vault.test'),
+  swing:require('./swing.test'),
+  spectrum:require('./spectrum.test'),
+  sections:require('./sections.test'),
   ui:require('./ui.test'),
   perf:require('./perf.test')
 };

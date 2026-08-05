@@ -1,0 +1,107 @@
+<!doctype html><html><head><meta charset="utf-8"><title>VOLT · OPFS probe</title>
+<style>
+ body{background:#0d0f13;color:#c9d1d9;font:13px/1.6 ui-monospace,Consolas,monospace;margin:0;padding:24px}
+ h1{font-size:15px;letter-spacing:.15em;color:#3fe0b4;margin:0 0 4px}
+ p.sub{color:#6b7684;margin:0 0 18px}
+ table{border-collapse:collapse;width:100%;max-width:820px}
+ td{padding:5px 10px;border-bottom:1px solid #1c2129;vertical-align:top}
+ td:first-child{color:#6b7684;white-space:nowrap;width:210px}
+ .ok{color:#3fe0b4}.bad{color:#ff4d6b}.warn{color:#ffb03a}
+ #verdict{margin-top:20px;padding:12px 14px;border:1px solid #1c2129;border-radius:6px;max-width:820px;white-space:pre-wrap}
+</style></head><body>
+<h1>VOLT · OPFS PROBE</h1>
+<p class="sub">Open this in Firefox. Once from <code>file:///</code>, once from the hosted page if you can.</p>
+<table id="t"></table>
+<div id="verdict">running…</div>
+<script>
+const T=document.getElementById('t');
+const row=(k,v,cls)=>{const tr=T.insertRow();tr.insertCell().textContent=k;
+  const c=tr.insertCell();c.textContent=v;if(cls)c.className=cls};
+const mb=n=>(n/1048576).toFixed(1)+' MB';
+
+(async()=>{
+  row('browser',navigator.userAgent);
+  row('origin',location.origin==='null'?'null  (file:// — opaque origin)':location.origin,
+      location.origin==='null'?'warn':'ok');
+  row('secure context',isSecureContext?'yes':'no',isSecureContext?'ok':'warn');
+
+  /* --- can we even get the root? --- */
+  let root=null,why='';
+  try{
+    if(!navigator.storage||!navigator.storage.getDirectory)throw new Error('navigator.storage.getDirectory is missing');
+    root=await navigator.storage.getDirectory();
+  }catch(e){why=e&&e.message||String(e)}
+  row('OPFS available',root?'YES':'NO — '+why,root?'ok':'bad');
+
+  /* --- quota --- */
+  try{
+    const est=await navigator.storage.estimate();
+    row('quota',mb(est.quota)+'  (using '+mb(est.usage)+')');
+  }catch(e){row('quota','estimate() failed: '+e.message,'warn')}
+  try{row('persistent storage',await navigator.storage.persisted()?'granted':'not granted')}catch(e){row('persistent storage','?','warn')}
+
+  /* --- the real test: write something sample-sized, read it back, delete it --- */
+  let wrote=0,readBack=false,delOk=false,err='';
+  if(root){
+    try{
+      const dir=await root.getDirectoryHandle('volt-probe',{create:true});
+      const fh=await dir.getFileHandle('blob.bin',{create:true});
+      const w=await fh.createWritable();
+      const chunk=new Uint8Array(1048576);          /* 1 MB at a time, 24 MB total */
+      for(let i=0;i<chunk.length;i++)chunk[i]=i&255;
+      for(let i=0;i<24;i++){await w.write(chunk);wrote+=chunk.length}
+      await w.close();
+      const f=await fh.getFile();
+      const head=new Uint8Array(await f.slice(0,4).arrayBuffer());
+      readBack=f.size===wrote&&head[1]===1&&head[3]===3;
+      row('wrote + read back',mb(f.size)+(readBack?'  · contents verified':'  · MISMATCH'),readBack?'ok':'bad');
+      await dir.removeEntry('blob.bin');
+      await root.removeEntry('volt-probe',{recursive:true});
+      delOk=true;
+      row('cleanup','deleted','ok');
+    }catch(e){err=e&&e.message||String(e);row('write test','FAILED — '+err,'bad')}
+  }
+
+  /* --- does anything SURVIVE a reload? on file:// the origin is opaque, which may mean a
+         fresh, empty store every single time — fatal for a library if so --- */
+  let persist='—';
+  if(root){
+    try{
+      const dir=await root.getDirectoryHandle('volt-persist',{create:true});
+      let prev=null;
+      try{
+        const old=await dir.getFileHandle('stamp.txt');
+        prev=await (await old.getFile()).text();
+      }catch(e){}
+      const fh=await dir.getFileHandle('stamp.txt',{create:true});
+      const w=await fh.createWritable();
+      await w.write('written '+new Date().toLocaleTimeString());
+      await w.close();
+      persist=prev?'FOUND the file from a previous visit — "'+prev+'"':'nothing from before — stamp written, RELOAD this page now';
+      row('survives a reload',persist,prev?'ok':'warn');
+    }catch(e){row('survives a reload','failed: '+e.message,'bad')}
+  }
+
+  /* --- what VOLT falls back to today --- */
+  let ls=0;
+  try{
+    const K='__probe__',blk='x'.repeat(65536);
+    let s='';
+    for(let i=0;i<200;i++){try{localStorage.setItem(K,s+blk);s+=blk;ls=s.length*2}catch(e){break}}
+    localStorage.removeItem(K);
+  }catch(e){}
+  row('localStorage headroom',ls?mb(ls)+'  (what the library shares today)':'blocked','warn');
+
+  const v=document.getElementById('verdict');
+  if(root&&readBack&&delOk){
+    v.innerHTML='<span class="ok">GOOD — OPFS works here.</span>\n'+
+      'Real files, '+mb(wrote)+' written and verified in one go. Worth building on.';
+  }else if(root){
+    v.innerHTML='<span class="warn">PARTIAL — the root opened but the write test failed:</span>\n'+err+
+      '\nTell Claude exactly this line.';
+  }else{
+    v.innerHTML='<span class="bad">NO OPFS here.</span>\n'+why+
+      '\nIf this says file:// above, try the hosted page before writing it off.';
+  }
+})();
+</script></body></html>

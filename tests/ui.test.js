@@ -114,6 +114,80 @@ module.exports=async function(){
     S.ck('  hiding never touches mute state',r.mutes1,r.mutes0);
     S.ck('  and it all comes back',[r.restored,r.focus],[8,null]);
 
+    S.head('armed transport mode: Space plays what the lit button says');
+    r=await page.evaluate(async()=>{
+      await loadSong(KITS['mine'].make());
+      /* an arrangement with the same pattern twice, so "which slot" is a real question */
+      while(song.patterns.length<2)newPattern();
+      song.order=[0,1,0];renderOrder();
+      const lit=()=>({pat:$id('playPat').classList.contains('armed'),song:$id('playSong').classList.contains('armed')});
+      armSet(true);
+      const armedSong=lit();
+      /* park the edit cursor on slot 3 (pattern 0 again) and play the song from there */
+      ordPos=2;curPatSet(song.order[2]);
+      play(true);
+      const startedAt=SEQ.ord;                 /* must be 2, NOT 0 */
+      stop();
+      armSet(false);
+      const armedPat=lit();
+      return{armedSong,armedPat,startedAt};
+    });
+    S.ck('arming Song lights the Song button only',[r.armedSong.song,r.armedSong.pat],[true,false]);
+    S.ck('  and arming Pattern swaps it',[r.armedPat.pat,r.armedPat.song],[true,false]);
+    S.ck('song play starts at the slot you are editing',r.startedAt,2);
+
+    S.head('\\ flips mode without stopping the transport');
+    r=await page.evaluate(async()=>{
+      const out={};
+      armSet(false);
+      curPatSet(1);
+      play(false);
+      await new Promise(x=>setTimeout(x,220));
+      out.patRunning=SEQ.playing&&!SEQ.songMode;
+      const t0=SEQ.next;
+      flipMode();                               /* → SONG */
+      out.stillPlaying=SEQ.playing;
+      out.nowSong=SEQ.songMode;
+      out.noRestart=SEQ.next===t0;              /* nothing was rescheduled */
+      out.slot=SEQ.ord;                         /* slot 2 holds pattern 1 */
+      out.armed=$id('playSong').classList.contains('armed');
+      await new Promise(x=>setTimeout(x,220));
+      flipMode();                               /* → PATTERN, onto whatever is sounding */
+      out.backToPat=SEQ.playing&&!SEQ.songMode;
+      out.locked=curPat===(lastQ?lastQ.pat:curPat);
+      stop();
+      /* empty arrangement must never leave you with silence */
+      song.order=[];armSet(true);
+      play(true);
+      out.emptyFallsBack=SEQ.playing&&!SEQ.songMode;
+      stop();
+      song.order=[0];renderOrder();
+      return out;
+    });
+    S.ok('pattern mode is running first',r.patRunning);
+    S.ck('\\ switches to song mid-flight',[r.stillPlaying,r.nowSong],[true,true]);
+    S.ok('  without rescheduling anything',r.noRestart);
+    S.ck('  landing on the slot that holds the playing pattern',r.slot,1);
+    S.ok('  and the Song button is armed',r.armed);
+    S.ok('\\ back to pattern keeps playing',r.backToPat);
+    S.ok('  locked onto the pattern that was sounding',r.locked);
+    S.ok('an empty song order falls back to the pattern',r.emptyFallsBack);
+
+    /* everything above drove flipMode() directly — prove the key itself is wired, from the grid,
+       where every other letter is a note */
+    await page.evaluate(()=>{song.order=[0,1];renderOrder();armSet(false);cursor.c=0;cursor.r=0;document.body.focus()});
+    await page.keyboard.press('Backslash');
+    r=await page.evaluate(()=>({armed:armSong,cell:JSON.stringify(cellAt(cursor.t,cursor.r))}));
+    S.ok('the \\ key itself flips the armed mode',r.armed===true);
+    S.ck('  and never writes a note',r.cell,'null');
+    await page.keyboard.press('Backslash');
+    S.ok('  and flips back',await page.evaluate(()=>armSong===false));
+    /* the left rail owns the keyboard for edit keys — transport keys must still get through */
+    await page.evaluate(()=>{const b=document.querySelector('#side button');b&&b.focus()});
+    await page.keyboard.press('Backslash');
+    S.ok('  and works with a left-rail panel focused',await page.evaluate(()=>armSong===true));
+    await page.evaluate(()=>{document.body.focus();armSet(false)});
+
     S.head('crashes are visible, songs are stamped');
     r=await page.evaluate(async()=>{
       dispatchEvent(new ErrorEvent('error',{error:new Error('test blow-up'),message:'test blow-up'}));

@@ -86,6 +86,12 @@ chasing it, get the same *result* a different way:
       processed twice; level is matched by measuring the result. Same key thaws it, restoring
       notes, mixer and lanes. Per pattern. `tests/bounce.test.js`.
 
+- [x] **GLTCH-9 glitch percussion** — done 2026-08-08. A note is a ratchet of grains (hits / gap /
+      accel), four sources (noise, FM metal, pulse, sine zap), sweep, fall, crush, resonant
+      bandpass zap and chaos, with 8 presets. Deterministic per note so renders match playback —
+      which also meant seeding the shared noise buffer, fixing a long-standing mismatch for hats,
+      snares and claps. `tests/glitch.test.js`.
+
 ## Editing / workflow
 
 - ~~Interpolate between two values~~ — **rejected 2026-08-04.** Mickey: the automation lanes

@@ -23,6 +23,7 @@ const SUITES={
   disable:require('./disable.test'),
   bounce:require('./bounce.test'),
   roll:require('./roll.test'),
+  glitch:require('./glitch.test'),
   ui:require('./ui.test'),
   perf:require('./perf.test')
 };

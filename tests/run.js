@@ -24,6 +24,8 @@ const SUITES={
   bounce:require('./bounce.test'),
   roll:require('./roll.test'),
   glitch:require('./glitch.test'),
+  master:require('./master.test'),
+  autolane:require('./autolane.test'),
   ui:require('./ui.test'),
   perf:require('./perf.test')
 };

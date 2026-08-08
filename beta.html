@@ -184,6 +184,19 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #masterPan{position:fixed;z-index:60;top:44px;right:8px;width:300px;max-height:70vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:4px;box-shadow:0 10px 34px rgba(0,0,0,.55);padding:8px 10px}
 #masterPan .mphead{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
 #masterPan .mphint{font-size:9px;color:var(--faint);margin-top:6px}
+#mstNums{display:flex;gap:10px;align-items:baseline;font-size:9px;color:var(--dim);letter-spacing:.06em;margin-bottom:5px}
+#mstNums b{font-family:var(--mono);font-size:12px;color:var(--txt);font-weight:600;margin-left:3px}
+#mstNums b.warn{color:var(--amber)}
+#mstNums b.bad{color:var(--mag)}
+#mstNums u{margin-left:auto;font-size:9px;color:var(--faint);text-decoration:none;cursor:pointer}
+#mstNums u:hover{color:var(--teal)}
+#mstBands{display:flex;gap:3px;height:62px;align-items:flex-end}
+#mstBands .mb{position:relative;flex:1;height:100%;background:var(--sunk,rgba(0,0,0,.28));border-radius:2px;overflow:hidden}
+#mstBands .mb i{position:absolute;left:0;right:0;bottom:0;height:0;
+  background:linear-gradient(180deg,var(--teal),var(--blue));opacity:.85}
+#mstBands .mb u{position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--amber);opacity:.9}
+#mstBands .mb em{position:absolute;left:0;right:0;bottom:1px;font-style:normal;font-size:7px;
+  text-align:center;color:var(--faint);letter-spacing:.04em;pointer-events:none}
 .mprow{display:grid;grid-template-columns:18px 76px 1fr 42px;gap:6px;align-items:center;padding:2px 0;cursor:pointer;border-radius:2px}
 .mprow:hover{background:var(--raised)}
 .mprow .no{font-family:var(--mono);font-size:9px;color:var(--faint)}
@@ -470,7 +483,21 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 .alane .al u:hover{color:var(--mag)}
 #autoGrip{height:6px;margin:-4px 0 4px;border-radius:3px;cursor:ns-resize}
 #autoGrip:hover{background:var(--teal-dim)}
-.astep{display:block;width:16px;height:var(--astepH,44px);flex:none;border:1px solid var(--line);border-radius:2px;background:var(--bg);position:relative;cursor:crosshair;overflow:hidden}
+.astep{display:block;width:var(--astepW,16px);height:var(--astepH,44px);flex:none;border:1px solid var(--line);border-radius:2px;background:var(--bg);position:relative;cursor:crosshair;overflow:hidden}
+#autoBar .zoom{display:inline-flex;gap:3px;margin-left:8px}
+#autoBar .zoom button{font-size:10px;line-height:14px;padding:0 6px;border-radius:3px;border:1px solid var(--line);background:var(--raised);color:var(--dim);cursor:pointer}
+#autoBar .zoom button:hover{border-color:var(--teal);color:var(--teal)}
+.alane .al u.lfx{margin-right:8px;color:var(--dim)}
+.alane .al u.lfx:hover{color:var(--teal)}
+.shapePop{min-width:230px}
+.shapePop .shrow{display:flex;flex-wrap:wrap;gap:3px;margin:5px 0 7px}
+.shapePop .shrow button{flex:1 0 auto;font-size:9px;line-height:16px;padding:0 6px;border-radius:3px;
+  border:1px solid var(--line);background:var(--raised);color:var(--dim);cursor:pointer}
+.shapePop .shrow button.on{border-color:var(--teal);color:var(--teal);background:var(--teal-dim)}
+.shapePop label{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim);margin:3px 0}
+.shapePop label input[type=range]{flex:1;min-width:0}
+.shapePop label i{font-style:normal;font-family:var(--mono);font-size:10px;color:var(--amber);
+  min-width:38px;text-align:right}
 .astep.b4{background:var(--raised)}
 .astep.bar{margin-left:7px}
 .astep.nte{box-shadow:inset 0 3px 0 rgba(63,224,180,.5)}
@@ -525,10 +552,21 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 
 /* ---- track FX chain ---- */
 #fxChain{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
-.fxrow{border:1px solid var(--line);border-left:3px solid var(--fxcol,var(--teal));border-radius:4px;padding:5px 6px;margin-bottom:6px;background:var(--well)}
+/* Each unit wears its own colour: a tinted header band, a glyph and a plain-language subtitle,
+   so a rack of six reads as six different machines rather than six grey boxes. */
+.fxrow{border:1px solid var(--line);border-left:3px solid var(--fxcol,var(--teal));border-radius:4px;
+  padding:0 0 5px;margin-bottom:6px;background:var(--well);overflow:hidden}
+.fxrow .param{padding:0 6px}
 .fxrow.fxoff{opacity:.45}
-.fxhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
-.fxhead b{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--fxcol,var(--teal));font-weight:600}
+.fxhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;
+  padding:4px 6px;background:color-mix(in srgb,var(--fxcol,var(--teal)) 13%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--fxcol,var(--teal)) 25%,transparent)}
+.fxhead b{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--fxcol,var(--teal));
+  font-weight:600;display:flex;align-items:baseline;gap:6px;min-width:0}
+.fxhead b .fxg{font-style:normal;font-size:12px;letter-spacing:0;opacity:.95;flex:0 0 auto}
+/* the plain-language line gets its own row — squeezed beside the name it collided with the
+   buttons and wrapped the titles in a narrow panel */
+.fxsub{font-size:8px;color:var(--faint);padding:0 6px;margin:-2px 0 4px;letter-spacing:.02em}
 .fxhead u{text-decoration:none;color:var(--faint);font-size:10px;padding:0 4px;cursor:pointer}
 .fxhead u:hover{color:var(--mag)}
 .fxrow.fxoff .fxhead b{color:var(--dim)}
@@ -806,7 +844,26 @@ let TRACKS=8;
 const MAXTRACKS=32, OFF=-1; /* was 16 — an old guardrail; 32 channel strips are still cheap for Web Audio */
 const NOTENAMES=['C-','C#','D-','D#','E-','F-','F#','G-','G#','A-','A#','B-'];
 /* per-effect theme colors for the FX chain rows */
-const FX_COLORS={crush:'#ff9a3c',flanger:'#b08cff',chorus:'#5eead4',phaser:'#ff4d9d',widen:'#6aaeff',superdrive:'#ff4d4d',sausage:'#ffb84d',autofilter:'#3fe0b4',verb:'#8fd3ff',echo:'#ffd166',comp:'#7dff9a',pitch:'#ff8cf0'};
+const FX_COLORS={crush:'#ff9a3c',flanger:'#b08cff',chorus:'#5eead4',phaser:'#ff4d9d',widen:'#6aaeff',superdrive:'#ff4d4d',sausage:'#ffb84d',autofilter:'#3fe0b4',verb:'#8fd3ff',echo:'#ffd166',comp:'#7dff9a',pitch:'#ff8cf0',softclip:'#ffcf5c',limit:'#ff6b6b',pulteq:'#c9a227'};
+/* Each unit gets its own face in the rack: a glyph, a colour and a one-line "what am I looking
+   at". Racks of identical grey boxes are how you end up turning the wrong knob. */
+const FX_FACE={
+  verb:      ['◟◞','a room around it'],
+  echo:      ['⋯|','repeats, ping-ponged'],
+  comp:      ['▼▲','holds the loud bits down'],
+  pitch:     ['♯♭','shifts it in semitones'],
+  crush:     ['▚▚','fewer bits, more grit'],
+  flanger:   ['≈≋','jet-sweep whoosh'],
+  chorus:    ['❙❙❙','a few of it, slightly apart'],
+  autofilter:['◢◣','filter that moves on its own'],
+  phaser:    ['◐◑','notches sliding through'],
+  widen:     ['↔','pushes the sides out'],
+  superdrive:['⚡','overdrive with a tone control'],
+  sausage:   ['▓▒░','fat, coloured, pumping'],
+  softclip:  ['⌒','rounds the peaks off'],
+  limit:     ['▬','the wall nothing crosses'],
+  pulteq:    ['◠◡','boost AND cut the lows — the trick']
+};
 const hex2=n=>n.toString(16).toUpperCase().padStart(2,'0');
 const noteName=n=>n===OFF?'OFF':NOTENAMES[n%12]+Math.floor(n/12);
 const nfreq=n=>440*Math.pow(2,(n-57)/12);
@@ -882,7 +939,7 @@ function ensureCellIn(pi,t,r){const d=song.patterns[pi].data;if(!d[t][r])d[t][r]
 function pruneCellIn(pi,t,r){const c=cellIn(pi,t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null&&!c.d)song.patterns[pi].data[t][r]=null}
 
 /* ================= audio engine ================= */
-let AC=null, master, chans=[], noiseBuf, dlyIn, dlyL, dlyR, rvbIn, masterAn=null, masterAnL=null, masterAnR=null, MCH=null, masterComp=null, metOut=null;
+let AC=null, master, chans=[], noiseBuf, dlyIn, dlyL, dlyR, rvbIn, masterAn=null, masterAnL=null, masterAnR=null, MCH=null, masterComp=null, metOut=null, loudAn=null, loudHP=null;
 function audio(){
   if(AC)return AC;
   AC=new (window.AudioContext||window.webkitAudioContext)();
@@ -912,6 +969,14 @@ function buildGraph(){
   metOut.threshold.value=0;metOut.knee.value=0;metOut.ratio.value=1;metOut.attack.value=.003;metOut.release.value=.25;
   metOut.connect(AC.destination);
   masterAn=AC.createAnalyser();masterAn.fftSize=2048;comp.connect(masterAn);
+  /* Loudness tap. LUFS isn't RMS: the standard (ITU BS.1770) runs the signal through two filters
+     first — a high-pass that stops sub rumble counting as loudness, and a high shelf standing in
+     for the way a head makes the top end read louder. Metering off the raw signal would flatter a
+     bass-heavy psy mix by several dB, which is exactly the mix that needs telling the truth. */
+  loudHP=AC.createBiquadFilter();loudHP.type='highpass';loudHP.frequency.value=38;loudHP.Q.value=.5;
+  const loudSh=AC.createBiquadFilter();loudSh.type='highshelf';loudSh.frequency.value=1500;loudSh.gain.value=4;
+  loudAn=AC.createAnalyser();loudAn.fftSize=2048;
+  comp.connect(loudHP);loudHP.connect(loudSh);loudSh.connect(loudAn);
   /* stereo metering: split the master into L/R analysers */
   const msp=AC.createChannelSplitter(2);
   comp.connect(msp);
@@ -1141,6 +1206,140 @@ const FX_TYPES={
       if(k==='bits')r.ws.curve=crushCurve(v);
       else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
     }},
+  /* ---- PULTEQ: the boost-and-cut trick ----
+     The famous thing about a Pultec is that you are meant to do the "wrong" thing — turn LOW UP
+     and LOW DOWN at the same time. The boost and the cut are centred at slightly different
+     frequencies, so they don't cancel: you get a lift right at the bottom and a scoop just above
+     it. That is the sound of a big, clean low end that still leaves room for everything else,
+     and it is why the trick has outlived the valves it was invented on.
+     AIR is the other half: a wide, gentle lift up top that opens a mix without making it hiss. */
+  pulteq:{label:'PULTEQ',p:{lowHz:[20,200,60],lowUp:[0,10,0],lowDown:[0,10,0],airHz:[2000,16000,10000],airUp:[0,10,0]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain();
+      const up=AC.createBiquadFilter();up.type='lowshelf';
+      up.frequency.value=p.lowHz;up.gain.value=p.lowUp;
+      /* The cut is a DIP sitting above the boost, not a second shelf. A shelf would pull down
+         everything below its corner — including the bottom the boost just lifted — and the two
+         would very nearly cancel, which is exactly what makes people think the trick is a myth.
+         A dip above leaves the sub alone and takes out the mud, which is the actual sound. */
+      const dn=AC.createBiquadFilter();dn.type='peaking';
+      dn.frequency.value=p.lowHz*2.2;dn.Q.value=.8;dn.gain.value=-p.lowDown;
+      const air=AC.createBiquadFilter();air.type='peaking';
+      air.frequency.value=p.airHz;air.Q.value=.7;air.gain.value=p.airUp;
+      inG.connect(up);up.connect(dn);dn.connect(air);air.connect(out);
+      return{in:inG,out,nodes:[inG,out,up,dn,air],refs:{up,dn,air}};
+    },
+    tune:(r,k,v,t)=>{
+      if(k==='lowHz'){r.up.frequency.setTargetAtTime(v,t,.02);r.dn.frequency.setTargetAtTime(v*2.2,t,.02)}
+      else if(k==='lowUp')r.up.gain.setTargetAtTime(v,t,.02);
+      else if(k==='lowDown')r.dn.gain.setTargetAtTime(-v,t,.02);
+      else if(k==='airHz')r.air.frequency.setTargetAtTime(v,t,.02);
+      else if(k==='airUp')r.air.gain.setTargetAtTime(v,t,.02);
+    }},
+  /* ---- L2-style look-ahead brickwall ----
+     The master's built-in safety compressor reacts AFTER a transient has already gone past it, so
+     it overshoots and its ratio tops out. A real mastering limiter delays the audio by a couple of
+     milliseconds and looks at what is coming, so the gain is already down by the time the peak
+     arrives — nothing exceeds the ceiling, ever, and there is no attack smear.
+
+     Web Audio has no node for this, and AudioWorklet cannot load a module from file:// (blob and
+     data URLs are both refused), which is where VOLT is edited. ScriptProcessorNode is deprecated
+     but it works from file://, from https, and — importantly — inside OfflineAudioContext, so a
+     render and a bounce get exactly the limiting you heard. The cost is that it runs on the main
+     thread; a long stall could tick. Keep the buffer generous and the per-sample work small. */
+  /* Two knobs, because that is how many decisions there actually are: how hard to push, and how
+     high it may go. Release, auto-release and look-ahead are fixed at values that suit a mix —
+     they were knobs nobody could answer, and a control you can't answer is worse than no control. */
+  limit:{label:'Limiter L∞',p:{loud:[0,100,35],ceil:[-6,0,-.3]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain();
+      const sr=AC.sampleRate;
+      const LOOK=Math.max(8,Math.round(1.5/1000*sr));      /* 1.5 ms: enough to catch a transient */
+      const st={
+        /* LOUD is just the threshold in disguise: 0 leaves it alone, 100 drives it 18 dB in */
+        thresh:Math.pow(10,-(p.loud/100*18)/20),
+        ceil:Math.pow(10,p.ceil/20),
+        rel:.12,arc:1,
+        buf:[new Float32Array(LOOK),new Float32Array(LOOK)],   /* the delay line */
+        pk:new Float32Array(LOOK),                             /* peak seen at each slot */
+        i:0,gain:1,env:1,gr:0,look:LOOK,sr
+      };
+      /* 1024 frames: long enough that a redraw can't starve it, short enough to stay responsive */
+      const sp=AC.createScriptProcessor(1024,2,2);
+      sp.onaudioprocess=e=>{
+        const nch=Math.min(2,e.inputBuffer.numberOfChannels);
+        const iL=e.inputBuffer.getChannelData(0),iR=e.inputBuffer.getChannelData(nch>1?1:0);
+        const oL=e.outputBuffer.getChannelData(0),oR=e.outputBuffer.getChannelData(1);
+        const n=oL.length,L=st.look;
+        let grMax=0;
+        for(let s=0;s<n;s++){
+          const l=iL[s],r=iR[s];
+          /* what comes out is L samples old; the arriving sample is written AFTER the gain is
+             worked out. Writing it first overwrites the outgoing sample's own peak — the window
+             then no longer knows about the very sample it is about to let through, and release
+             can lift the gain just enough for it to poke over the ceiling. */
+          const idx=st.i;
+          const dl=st.buf[0][idx],dr=st.buf[1][idx];
+          /* the loudest thing anywhere inside the look-ahead window decides the gain NOW — every
+             slot, not every fourth, or a lone sample could slip through and that is precisely the
+             one thing a brickwall is not allowed to do */
+          let peak=0;
+          for(let k=0;k<L;k++){const v=st.pk[k];if(v>peak)peak=v}
+          const inPk=Math.max(Math.abs(l),Math.abs(r));
+          if(inPk>peak)peak=inPk;                            /* the arrival counts too */
+          const want=peak>st.thresh?st.thresh/peak:1;
+          if(want<st.env)st.env=want;                        /* clamp instantly: no overshoot */
+          else{
+            /* ARC: recover faster after a short spike than after sustained loudness, which is
+               what stops a limiter breathing all over a busy mix */
+            const rl=st.arc>0?st.rel*(.25+.75*(1-st.gr))/(1+st.arc):st.rel;
+            const c=Math.exp(-1/(Math.max(.001,rl)*st.sr));
+            st.env=want+(st.env-want)*c;
+          }
+          st.gr=1-st.env;
+          if(st.gr>grMax)grMax=st.gr;
+          /* Threshold is the drive: everything is brought back up by 1/threshold so that a
+             signal sitting at the threshold lands exactly on the ceiling. Pull the threshold
+             down and the mix gets louder, which is the whole point of the control. */
+          const gOut=st.env*st.ceil/st.thresh;
+          oL[s]=dl*gOut;oR[s]=dr*gOut;
+          st.buf[0][idx]=l;st.buf[1][idx]=r;st.pk[idx]=inPk;
+          st.i=(idx+1)%L;
+        }
+        st.grDisp=grMax;
+      };
+      inG.connect(sp);sp.connect(out);
+      return{in:inG,out,nodes:[inG,out,sp],refs:{st,sp}};
+    },
+    tune:(r,k,v,t)=>{
+      const st=r.st;
+      if(k==='loud')st.thresh=Math.pow(10,-(v/100*18)/20);
+      else if(k==='ceil')st.ceil=Math.pow(10,v/20);
+    }},
+  /* Soft clip: the last thing before the limiter. Rounds peaks off instead of squaring them, so
+     you can push a couple of dB more into a mix without the limiter grabbing at it. `knee` is how
+     far down the rounding starts — at 0 it's a hard wall, at 1 it's shaping the whole signal. */
+  softclip:{label:'Soft Clip',p:{drive:[1,8,1.4],knee:[0,1,.6],ceil:[-12,0,-.3],mix:[0,1,1]},
+    build:p=>{
+      const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
+      const pre=AC.createGain();pre.gain.value=p.drive;
+      const ws=AC.createWaveShaper();ws.curve=softClipCurve(p.knee);ws.oversample='4x';
+      const post=AC.createGain();post.gain.value=Math.pow(10,p.ceil/20)/Math.max(1,Math.sqrt(p.drive));
+      dry.gain.value=1-p.mix;wet.gain.value=p.mix;
+      inG.connect(pre);pre.connect(ws);ws.connect(post);post.connect(wet);wet.connect(out);
+      inG.connect(dry);dry.connect(out);
+      return{in:inG,out,nodes:[inG,out,dry,wet,pre,ws,post],refs:{dry,wet,pre,ws,post,p}};
+    },
+    tune:(r,k,v,t)=>{
+      r.p[k]=v;
+      if(k==='knee')r.ws.curve=softClipCurve(v);
+      else if(k==='drive')r.pre.gain.setTargetAtTime(v,t,.02);
+      else if(k==='mix'){r.dry.gain.setTargetAtTime(1-v,t,.02);r.wet.gain.setTargetAtTime(v,t,.02)}
+      /* the drive has to be taken back out again or "more drive" would just mean "louder",
+         and you could never hear what the shaping itself is doing */
+      if(k==='ceil'||k==='drive')
+        r.post.gain.setTargetAtTime(Math.pow(10,r.p.ceil/20)/Math.max(1,Math.sqrt(r.p.drive)),t,.02);
+    }},
   flanger:{label:'Flanger',p:{rate:[.05,5,.3],depth:[0,1,.7],fb:[0,.9,.5],mix:[0,1,.5]},
     build:p=>{
       const inG=AC.createGain(),out=AC.createGain(),dry=AC.createGain(),wet=AC.createGain();
@@ -1315,6 +1514,17 @@ function applyFxAll(){
   if(!AC||!song)return;
   chans.forEach((ch,t)=>buildFx(ch,song.trackset[t]&&song.trackset[t].fx));
   if(MCH)buildFx(MCH,song.masterFx);
+  /* The built-in safety limiter sits after the master FX chain, and Chrome's DynamicsCompressor
+     quietly applies its own makeup gain — about 1.3 dB at these settings. Harmless while it is
+     the only thing there, but it would add that back on top of a real limiter's ceiling, so a
+     ceiling of -0.3 would actually leave at +1.0 dBFS. When you put a Limiter on the master it
+     becomes the last word and the safety net steps out of the way. */
+    if(masterComp){
+    const own=(song.masterFx||[]).some(f=>f&&f.on!==false&&f.type==='limit');
+    masterComp.threshold.value=own?0:-3;
+    masterComp.ratio.value=own?1:12;
+    masterComp.knee.value=own?0:2;
+  }
 }
 /* ---- LFOs: tempo-synced modulators. vol = persistent osc riding the channel fader;
    cutoff = an osc born with each voice, wobbling its filter (dies with the note) ---- */
@@ -1355,6 +1565,16 @@ function driveCurveArr(amt){const n=512,c=new Float32Array(n);const k=1+amt*24;
 function mkShaper(amt){const ws=AC.createWaveShaper();ws.curve=driveCurveArr(amt);ws.oversample='2x';return ws}
 /* bit reduction as a staircase transfer curve: 16 bits' worth of steps down to about 2. It's the
    quantising half of a bitcrusher — the half you can hear — without an AudioWorklet. */
+/* linear until it nears the ceiling, then rounded — the opposite of a hard clip, which corners
+   the waveform and throws off a spray of high harmonics */
+function softClipCurve(knee){
+  const n=2048,c=new Float32Array(n),th=1-Math.min(.98,knee*.9);
+  for(let i=0;i<n;i++){
+    const x=i/(n-1)*2-1,a=Math.abs(x),s=x<0?-1:1;
+    c[i]=a<=th?x:s*(th+(1-th)*Math.tanh((a-th)/(1-th)));
+  }
+  return c;
+}
 function mkCrush(amt){
   if(amt<=.01)return null;
   const steps=Math.max(2,Math.round(Math.pow(2,1+(1-amt)*6)));
@@ -1603,54 +1823,69 @@ function trig(inst,note,t,tr,vel,off,ov,rev,pan){
        a sine to begin with. Without this, switching preset jumps 8x in level. */
     const srcGain=p.src<.5?1.9:p.src<1.5?1:p.src<2.5?.7:1;
     g.gain.value=srcGain*(bandy?1+(p.res-12)*.34:1)*(1+p.crush*.25);
-    let ti=t,gap=p.gap,total=0;
+    /* ONE set of sources for the whole burst, not one per grain.
+       Building fresh oscillators for every grain cost 46 audio nodes for a 14-hit note — and an
+       Rxx of 16 fires sixteen of those inside a single row, so 736 nodes land in 86 ms and the
+       audio thread starts stuttering. The grains are short, so a shared oscillator whose
+       frequency is re-scheduled at each grain sounds the same and costs a handful of nodes
+       however many hits you ask for. */
+    const gg=AC.createGain();gg.gain.setValueAtTime(0,t);gg.connect(lp);
+    let bp=null,car=null,mod=null,md=null,o1=null,o2=null;
+    if(p.src<.5){
+      const s=AC.createBufferSource();s.buffer=noiseBuf;s.loop=true;
+      bp=AC.createBiquadFilter();bp.type='bandpass';bp.Q.value=1+p.res*.3;
+      s.connect(bp);bp.connect(gg);srcs.push(s);
+    }else if(p.src<1.5){
+      car=osc('sine',f0);mod=osc('sine',f0*1.41);
+      md=AC.createGain();md.gain.value=0;
+      mod.connect(md);md.connect(car.frequency);
+      car.connect(gg);srcs.push(car,mod);
+    }else if(p.src<2.5){
+      o1=osc('square',f0);o2=osc('sawtooth',f0*1.005);
+      const og=AC.createGain();og.gain.value=.5;
+      o1.connect(gg);o2.connect(og);og.connect(gg);srcs.push(o1,o2);
+    }else{
+      o1=osc('sine',f0);o1.connect(gg);srcs.push(o1);
+    }
+    let ti=t,gap=p.gap,total=0,first=null;
     /* accel>0 tightens each gap (a burst that runs away), accel<0 drags it out */
     const ratio=Math.pow(2,-p.accel*.9);
     for(let k=0;k<n;k++){
       const jitterT=ch2*(rnd()-.5)*gap*.9;
       const at=Math.max(t,ti+jitterT);
+      if(first===null)first=at;
       /* grains fade across the burst by `fall`, and each is knocked about by chaos */
       const lvl=vel*(1-p.fall*(k/Math.max(1,n-1)))*(1-ch2*.55*rnd());
       const dec=Math.max(.004,p.decay*(1-p.fall*.5*(k/Math.max(1,n-1)))*(1+ch2*(rnd()-.5)));
       const detune=1+ch2*(rnd()-.5)*1.2;                 /* up to about an octave of scatter */
       const f=clamp(f0*detune*(1+k*.03*p.accel),20,18000);
-      const gg=AC.createGain();
+      /* the envelope IS the grain — a fresh attack cuts whatever the last one left ringing,
+         which is exactly what a retrigger does anyway */
       gg.gain.setValueAtTime(0,at);
       gg.gain.linearRampToValueAtTime(lvl,at+.0008);     /* near-instant attack: that's the click */
       gg.gain.setTargetAtTime(0,at+.0012,dec/3.2);
-      gg.connect(lp);
-      const kill=at+dec*4+.02;
-      if(p.src<.5){                                       /* 0 — noise burst, the classic tick */
-        const s=mkNoise(at,dec*4+.02);
-        const bp=AC.createBiquadFilter();bp.type='bandpass';
-        bp.frequency.setValueAtTime(f*4,at);
+      if(bp){                                             /* 0 — noise burst, the classic tick */
+        bp.frequency.setValueAtTime(clamp(f*4,40,18000),at);
         bp.frequency.exponentialRampToValueAtTime(clamp(f*4*Math.pow(2,p.sweep*3),40,18000),at+dec*1.4);
-        bp.Q.value=1+p.res*.3;
-        s.connect(bp);bp.connect(gg);srcs.push(s);
-      }else if(p.src<1.5){                                /* 1 — FM metal: clangs and bells */
-        const car=osc('sine',f);
-        const mod=osc('sine',f*(1.41+ch2*rnd()*3));
-        const md=AC.createGain();md.gain.setValueAtTime(f*(3+6*Math.abs(p.sweep)),at);
+      }else if(car){                                      /* 1 — FM metal: clangs and bells */
+        car.frequency.setValueAtTime(f,at);
+        mod.frequency.setValueAtTime(clamp(f*(1.41+ch2*rnd()*3),20,18000),at);
+        md.gain.setValueAtTime(f*(3+6*Math.abs(p.sweep)),at);
         md.gain.setTargetAtTime(f*.4,at+.001,dec/2.5);
-        mod.connect(md);md.connect(car.frequency);
-        car.connect(gg);car.start(at);mod.start(at);
-        car.stop(kill);mod.stop(kill);srcs.push(car,mod);
-      }else if(p.src<2.5){                                /* 2 — pulse: buzzy, vocal, rude */
-        const o=osc('square',f);
-        o.frequency.setValueAtTime(f,at);
-        o.frequency.exponentialRampToValueAtTime(clamp(f*Math.pow(2,p.sweep*4),20,18000),at+dec*1.6);
-        const o2=osc('sawtooth',f*1.005);
-        const og=AC.createGain();og.gain.value=.5;
-        o.connect(gg);o2.connect(og);og.connect(gg);
-        o.start(at);o2.start(at);o.stop(kill);o2.stop(kill);srcs.push(o,o2);
+      }else if(o2){                                       /* 2 — pulse: buzzy, vocal, rude */
+        o1.frequency.setValueAtTime(f,at);
+        o1.frequency.exponentialRampToValueAtTime(clamp(f*Math.pow(2,p.sweep*4),20,18000),at+dec*1.6);
+        o2.frequency.setValueAtTime(f*1.005,at);
       }else{                                              /* 3 — sine zap: psy blips and lasers */
-        const o=osc('sine',f);
-        o.frequency.setValueAtTime(clamp(f*Math.pow(2,-p.sweep*2.5),20,18000),at);
-        o.frequency.exponentialRampToValueAtTime(clamp(f*Math.pow(2,p.sweep*2.5),20,18000),at+dec*1.8);
-        o.connect(gg);o.start(at);o.stop(kill);srcs.push(o);
+        o1.frequency.setValueAtTime(clamp(f*Math.pow(2,-p.sweep*2.5),20,18000),at);
+        o1.frequency.exponentialRampToValueAtTime(clamp(f*Math.pow(2,p.sweep*2.5),20,18000),at+dec*1.8);
       }
       total=Math.max(total,at-t+dec*4+.02);
       ti+=gap;gap=clamp(gap*ratio,.002,.5);
+    }
+    {
+      const st=first==null?t:first,kill=t+total+.05;
+      srcs.forEach(s=>{try{s.start(st)}catch(e){}try{s.stop(kill)}catch(e){}});
     }
     v=baseVoice(g,srcs,note,p.rel);
     v.filter=lp;
@@ -2241,6 +2476,33 @@ function raf(){
     }
     styleIf(mpEls[0].bar,'transform','scaleX('+clamp((20*Math.log10(Math.max(mmPk,1e-4))+48)/48,0,1).toFixed(2)+')');
     if(!(rafN%8))mpEls[0].db.textContent=mmPk>.001?(20*Math.log10(mmPk)).toFixed(1):'-∞';
+    /* the analysis block: bands every frame so they move with the music, numbers 8x slower
+       because a readout that flickers is a readout you can't read */
+    const st=masterStats();
+    if(st&&mstEls){
+      for(let b=0;b<mstEls.bars.length;b++){
+        const f=clamp((st.bands[b]+72)/66,0,1),hd=clamp((st.hold[b]+72)/66,0,1);
+        styleIf(mstEls.bars[b].fill,'height',(f*100).toFixed(1)+'%','h');
+        styleIf(mstEls.bars[b].hold,'bottom',(hd*100).toFixed(1)+'%','b');
+      }
+      if(!(rafN%8)){
+        mstEls.lufs.textContent=st.lufs>-69?st.lufs.toFixed(1):'-∞';
+        mstEls.peak.textContent=st.peak>.0005?(20*Math.log10(st.peak)).toFixed(1):'-∞';
+        mstEls.peak.className=st.clip?'bad':st.peak>.95?'warn':'';
+        mstEls.corr.textContent=st.corr.toFixed(2);
+        mstEls.corr.className=st.corr<0?'bad':st.corr<.3?'warn':'';
+        /* gain reduction, straight off the limiter's own state — only shown when there is one */
+        const lim=MCH&&MCH._fxLive&&Object.values(MCH._fxLive).find(f=>f.type==='limit');
+        const grOn=!!(lim&&lim.refs&&lim.refs.st);
+        if(mstEls.grWrap.hidden===grOn)mstEls.grWrap.hidden=!grOn;
+        if(grOn){
+          const g=lim.refs.st.grDisp||0;
+          const db=g>0?-20*Math.log10(Math.max(1e-4,1-g)):0;
+          mstEls.gr.textContent=db.toFixed(1);
+          mstEls.gr.className=db>10?'bad':db>5?'warn':'';
+        }
+      }
+    }
   }
   /* instrument activity dots: each channel lights the instrument it last played */
   if(AC&&!(rafN%2)){
@@ -4354,12 +4616,14 @@ function fxChainHTML(ts){
     +(ts.fx||[]).map((fx,fi)=>{
       const ft=FX_TYPES[fx.type];if(!ft)return'';
       const on=fx.on!==false;
-      return '<div class="fxrow'+(on?'':' fxoff')+'" data-f="'+fi+'" style="--fxcol:'+(FX_COLORS[fx.type]||'var(--teal)')+'">'
-        +'<div class="fxhead"><b>'+ft.label+'</b><span>'
+      const face=FX_FACE[fx.type]||['◆',''];
+      return '<div class="fxrow fx-'+fx.type+(on?'':' fxoff')+'" data-f="'+fi+'" style="--fxcol:'+(FX_COLORS[fx.type]||'var(--teal)')+'">'
+        +'<div class="fxhead"><b><i class="fxg">'+face[0]+'</i>'+ft.label+'</b><span>'
         +'<u data-fxup="'+fi+'" title="Move earlier in the chain">&#9650;</u>'
         +'<u data-fxdn="'+fi+'" title="Move later in the chain">&#9660;</u>'
         +'<u data-fxon="'+fi+'" title="Enable / bypass">'+(on?'on':'off')+'</u>'
         +'<u data-fxdel="'+fi+'" title="Remove effect">&#215;</u></span></div>'
+        +(face[1]?'<div class="fxsub">'+face[1]+'</div>':'')
         +Object.keys(ft.p).map(k=>{
           const[mn,mx,df]=ft.p[k];
           const v=fx.p&&fx.p[k]!=null?fx.p[k]:df;
@@ -4377,6 +4641,21 @@ function fxRebuildCur(){
   if(!AC)return;
   if(masterView){if(MCH)buildFx(MCH,song.masterFx);return}
   if(chans[cursor.t])buildFx(chans[cursor.t],song.trackset[cursor.t].fx);
+}
+/* Turning a knob used to rebuild the WHOLE chain — every node destroyed and made again — which
+   is why the sound dropped out while you were moving it. Every effect already carries a tune()
+   for exactly this: nudge the live node and leave the graph alone. Rebuilding is for when the
+   chain's SHAPE changes: adding, removing, reordering or bypassing an effect. */
+function fxTuneLive(fi,key,v){
+  if(!AC)return false;
+  const ch=masterView?MCH:chans[cursor.t];
+  if(!ch||!ch._fxLive)return false;
+  const live=ch._fxLive[fi];
+  if(!live)return false;                       /* bypassed or not built — nothing to nudge */
+  const ft=FX_TYPES[live.type];
+  if(!ft||!ft.tune)return false;
+  try{ft.tune(live.refs,key,v,AC.currentTime);return true}
+  catch(e){return false}
 }
 /* Automation lanes and LFOs address FX params by SLOT ("3.fx0.mix"), not by effect —
    so reordering or deleting an effect silently retargeted them to whatever effect fell
@@ -4462,7 +4741,8 @@ document.getElementById('trackMix').addEventListener('input',e=>{
     const v=mn+(mx-mn)*(+e.target.value/1000);
     (fx.p=fx.p||{})[fk]=v;
     e.target.parentElement.querySelector('.pv').textContent=fmtP(v);
-    fxRebuildCur();saveSoon();
+    if(!fxTuneLive(+e.target.dataset.fxi,fk,v))fxRebuildCur(); /* only if it can't be nudged */
+    saveSoon();
     return;
   }
   const q=e.target.dataset.teq;
@@ -4668,9 +4948,72 @@ function toggleMixer(){
 document.getElementById('mixBtn').onclick=toggleMixer;
 /* ---- master bus summary: click the master meter → live per-channel levels ---- */
 const masterPan=document.getElementById('masterPan');
-let mpEls=null,mpClickT=0;
+let mpEls=null,mpClickT=0,mstEls=null;
+/* ---- master analysis ----
+   The one screen that answers "is this actually finished": how loud it really is, whether it
+   clips, whether it survives mono, and where the energy sits. Eight bands rather than a smooth
+   spectrum, because a mastering decision is "too much low mid", not "a bump at 340 Hz". */
+const MBANDS=[[20,60,'SUB'],[60,120,'BASS'],[120,300,'LO-M'],[300,800,'MID'],
+              [800,2000,'HI-M'],[2000,5000,'PRES'],[5000,10000,'BRIL'],[10000,20000,'AIR']];
+const MST={buf:null,tl:null,tr:null,win:[],peak:0,clip:0,hold:new Array(MBANDS.length).fill(0),lufsPk:-70};
+function masterStats(){
+  if(!loudAn||!masterAn)return null;
+  const n=loudAn.fftSize;
+  if(!MST.buf||MST.buf.length!==n)MST.buf=new Float32Array(n);
+  loudAn.getFloatTimeDomainData(MST.buf);
+  let ms=0;for(let i=0;i<n;i++)ms+=MST.buf[i]*MST.buf[i];
+  ms/=n;
+  /* momentary loudness = the last ~400 ms, which is what the standard calls "momentary" and
+     what your ear agrees with when you nudge the master fader */
+  MST.win.push(ms);
+  const keep=Math.max(1,Math.round(.4/(n/AC.sampleRate)));
+  while(MST.win.length>keep)MST.win.shift();
+  let avg=0;MST.win.forEach(x=>avg+=x);avg/=MST.win.length;
+  const lufs=avg>1e-12?-.691+10*Math.log10(avg):-70;
+  if(lufs>MST.lufsPk)MST.lufsPk=lufs;
+
+  /* true peak and correlation, from the L/R analysers */
+  const m=masterAnL.fftSize;
+  if(!MST.tl||MST.tl.length!==m){MST.tl=new Float32Array(m);MST.tr=new Float32Array(m)}
+  masterAnL.getFloatTimeDomainData(MST.tl);masterAnR.getFloatTimeDomainData(MST.tr);
+  let pk=0,sl=0,sr=0,slr=0;
+  for(let i=0;i<m;i++){
+    const l=MST.tl[i],r=MST.tr[i];
+    if(Math.abs(l)>pk)pk=Math.abs(l);
+    if(Math.abs(r)>pk)pk=Math.abs(r);
+    sl+=l*l;sr+=r*r;slr+=l*r;
+  }
+  if(pk>MST.peak)MST.peak=pk;
+  if(pk>=.997)MST.clip++;
+  const corr=(sl>1e-9&&sr>1e-9)?slr/Math.sqrt(sl*sr):1;
+
+  /* band energies from the FFT — sum the bins that fall inside each band */
+  const bins=masterAn.frequencyBinCount;
+  if(!MST.fbuf||MST.fbuf.length!==bins)MST.fbuf=new Float32Array(bins);
+  masterAn.getFloatFrequencyData(MST.fbuf);
+  const nyq=AC.sampleRate/2,bands=[];
+  for(let b=0;b<MBANDS.length;b++){
+    const[lo,hi]=MBANDS[b];
+    const i0=Math.max(0,Math.floor(lo/nyq*bins)),i1=Math.min(bins-1,Math.ceil(hi/nyq*bins));
+    let e=0,c=0;
+    for(let i=i0;i<=i1;i++){const db=MST.fbuf[i];if(db>-140){e+=Math.pow(10,db/10);c++}}
+    const db=c?10*Math.log10(e/c):-140;
+    bands.push(db);
+    MST.hold[b]=Math.max(db,MST.hold[b]-.35);
+  }
+  return{lufs,peak:MST.peak,clip:MST.clip,corr,bands,hold:MST.hold};
+}
 function renderMasterPan(){
-  let h='<div class="mphead">Master bus — what each channel feeds it</div>';
+  let h='<div class="mphead">Output</div>'
+    +'<div id="mstNums">'
+      +'<span title="Momentary loudness, K-weighted like a LUFS meter. Club masters tend to sit near -8, streaming wants about -14.">LUFS <b id="mstLufs">-∞</b></span>'
+      +'<span title="Highest sample peak since you last reset. Anything at 0.0 is clipping.">PEAK <b id="mstPeak">-∞</b></span>'
+      +'<span title="How well the mix survives being folded to mono. 1 is mono, 0 is very wide, below 0 means parts will cancel out on a club system.">CORR <b id="mstCorr">1.00</b></span>'
+      +'<span id="mstGrWrap" hidden title="How hard the Limiter on your master is working. A steady 3-6 dB is a loud master; 10+ and it is squashing.">GR <b id="mstGr">0.0</b></span>'
+      +'<u id="mstReset" title="Reset the peak and clip counters">reset</u>'
+    +'</div>'
+    +'<div id="mstBands">'+MBANDS.map(b=>'<span class="mb"><i></i><u></u><em>'+b[2]+'</em></span>').join('')+'</div>'
+    +'<div class="mphead" style="margin-top:8px">Master bus — what each channel feeds it</div>';
   h+='<div class="mprow mast"><span class="no">&#931;</span><span class="nm">master</span><span class="bar"><i></i></span><span class="db">-&#8734;</span></div>';
   for(let t=0;t<TRACKS;t++){
     const ts=song.trackset[t];
@@ -4683,6 +5026,10 @@ function renderMasterPan(){
   h+='<div class="mphint">post-fader &#183; peak dB &#183; muted tracks are dimmed</div>';
   masterPan.innerHTML=h;
   mpEls=[...masterPan.querySelectorAll('.mprow')].map(r=>({bar:r.querySelector('.bar i'),db:r.querySelector('.db')}));
+  mstEls={lufs:$id('mstLufs'),peak:$id('mstPeak'),corr:$id('mstCorr'),gr:$id('mstGr'),grWrap:$id('mstGrWrap'),
+          bars:[...masterPan.querySelectorAll('#mstBands .mb')].map(b=>({fill:b.querySelector('i'),hold:b.querySelector('u')}))};
+  const rs=$id('mstReset');
+  if(rs)rs.onclick=()=>{MST.peak=0;MST.clip=0;MST.lufsPk=-70;status('peak and clip counters reset')};
 }
 function toggleMasterPan(){
   masterPan.hidden=!masterPan.hidden;
@@ -10834,13 +11181,20 @@ function renderAuto(){
     autoLanes.innerHTML='<div id="autoHint">No automation in this pattern yet — right-click any slider in the side panel and choose “Automate”. Left-drag paints &#183; Shift+drag draws a straight line &#183; right-drag erases &#183; Ctrl+drag selects a range (then Ctrl+C / Ctrl+V / Ctrl+D / Del).</div>';
     return;
   }
-  let h='<div id="autoBar"><label title="When on, painting only lands on rows where that track plays a note — the rest stay untouched"><input type="checkbox" id="autoLockN"'+(AUTO_LOCK?' checked':'')+'> lock to notes</label><span class="abhint">teal tick = note here &#183; Ctrl+drag selects · Ctrl+C/V/D copy·paste·dup · Del clears</span></div>';
+  let h='<div id="autoBar"><label title="When on, painting only lands on rows where that track plays a note — the rest stay untouched"><input type="checkbox" id="autoLockN"'+(AUTO_LOCK?' checked':'')+'> lock to notes</label>'
+    +'<span class="zoom"><button id="azOut" title="Zoom out (Ctrl+wheel)">&#8722;</button>'
+    +'<button id="azIn" title="Zoom in (Ctrl+wheel)">+</button>'
+    +'<button id="azFit" title="Fit the whole pattern on screen (Ctrl+right-click, like the piano roll)">fit</button></span>'
+    +'<span class="abhint">teal tick = note here &#183; Ctrl+drag selects · Ctrl+C/V/D copy·paste·dup · Del clears</span></div>';
   for(const k of keys.sort()){
     const dot=k.indexOf('.');const isM=k.indexOf('M.')===0;
     const tr=isM?-1:+k.slice(0,dot),p=k.slice(dot+1);
     const arr=pat.auto[k];
     const td=(!isM&&pat.data[tr])||[];
-    h+='<div class="alane" data-k="'+k+'"><div class="al"><b>'+(isM?'MASTER':'T'+(tr+1))+' &#183; '+esc(autoLabel(p))+'</b><span><u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
+    h+='<div class="alane" data-k="'+k+'"><div class="al"><b>'+(isM?'MASTER':'T'+(tr+1))+' &#183; '+esc(autoLabel(p))+'</b><span>'
+      +'<u class="lfx" data-lfo="'+k+'" title="Draw a shape across this lane — sine, triangle, saw, square or random. Beats painting a slope by hand.">&#8767; shape</u>'
+      +'<u class="lfx" data-scale="'+k+'" title="Take what is already here and stretch, shift or curve it">&#8597; scale</u>'
+      +'<u data-x="'+k+'" title="Delete this lane">&#215; remove</u></span></div>';
     for(let r=0;r<pat.rows;r++){
       let cls='astep';if(r%4===0)cls+=' b4';if(r%16===0&&r)cls+=' bar';
       const c=td[r];
@@ -10853,15 +11207,171 @@ function renderAuto(){
   autoLanes.innerHTML=h;
   const lk=$id('autoLockN');
   if(lk)lk.onchange=()=>{AUTO_LOCK=lk.checked;try{localStorage.setItem('volt.autoLock',AUTO_LOCK?'1':'0')}catch(e){};status(AUTO_LOCK?'painting locked to notes':'painting anywhere')};
+  if($id('azIn'))$id('azIn').onclick=()=>autoZoom(1.3);
+  if($id('azOut'))$id('azOut').onclick=()=>autoZoom(1/1.3);
+  if($id('azFit'))$id('azFit').onclick=autoFit;
+  autoApplyZoom();
   if(autoSel&&!keys.includes(autoSel.k))autoSel=null; /* its lane went away */
   paintAutoSel(); /* keep the range highlight across re-renders */
 }
 let AUTO_LOCK=false;try{AUTO_LOCK=localStorage.getItem('volt.autoLock')==='1'}catch(e){}
+/* ---- lane zoom ----
+   A 128-row pattern at 16 px a step is two metres of scrolling. Narrow the steps and the whole
+   shape fits on screen, which is the only way to see what a curve is actually doing. */
+let AZOOM=16;try{AZOOM=clamp(+localStorage.getItem('volt.azoom')||16,3,48)}catch(e){}
+function autoApplyZoom(){
+  autoLanes.style.setProperty('--astepW',AZOOM+'px');
+  try{localStorage.setItem('volt.azoom',AZOOM)}catch(e){}
+}
+function autoZoom(f){
+  AZOOM=clamp(Math.round(AZOOM*f*10)/10,3,48);
+  autoApplyZoom();
+  status('lane zoom '+AZOOM.toFixed(1)+'px a row');
+}
+function autoFit(){
+  if(!song)return;
+  const rows=song.patterns[curPat].rows;
+  const lane=autoLanes.querySelector('.alane');
+  const label=lane&&lane.querySelector('.al');
+  const avail=autoPan.clientWidth-(label?label.offsetWidth:0)-40;
+  AZOOM=clamp(Math.floor(avail/rows*10)/10,3,48);
+  autoApplyZoom();
+  status('fitted '+rows+' rows — '+AZOOM.toFixed(1)+'px a row');
+}
+/* Ctrl+wheel zooms, Ctrl+right-click fits — the same pair the piano roll uses */
+autoPan.addEventListener('wheel',e=>{
+  if(!(e.ctrlKey||e.metaKey))return;
+  e.preventDefault();
+  autoZoom(e.deltaY<0?1.18:1/1.18);
+},{passive:false});
+autoPan.addEventListener('contextmenu',e=>{
+  if(!(e.ctrlKey||e.metaKey))return;
+  e.preventDefault();e.stopPropagation();
+  autoFit();
+});
 function laneNoteAt(k,r){
   const dot=k.indexOf('.');const tr=+k.slice(0,dot);
   const c=song.patterns[curPat].data[tr]&&song.patterns[curPat].data[tr][r];
   return !!(c&&c.n!=null&&c.n!==OFF);
 }
+/* ================= lane shaping =================
+   Painting a slope by hand is fine for four rows and miserable for sixty-four. These two do the
+   drawing for you: SHAPE writes a waveform across the lane, SCALE takes whatever is already
+   there and stretches, shifts or bends it. Both work on the selected range when there is one,
+   and on the whole lane when there isn't, so you can shape a bar without touching the rest. */
+function laneRange(k){
+  const rows=song.patterns[curPat].rows;
+  if(autoSel&&autoSel.k===k)return{a:Math.min(autoSel.a,autoSel.b),b:Math.max(autoSel.a,autoSel.b)};
+  return{a:0,b:rows-1};
+}
+const LFO_SHAPES=['sine','tri','saw','ramp','square','random'];
+function lfoValue(shape,ph,seed){
+  const x=ph-Math.floor(ph);
+  switch(shape){
+    case 'tri':return x<.5?x*2:2-x*2;
+    case 'saw':return 1-x;
+    case 'ramp':return x;
+    case 'square':return x<.5?1:0;
+    case 'random':{const r=seedRnd(Math.floor(ph)*2654435761^seed);return r()}
+    default:return .5-.5*Math.cos(x*Math.PI*2);
+  }
+}
+const ASHAPE={shape:'sine',cycles:1,phase:0,lo:0,hi:1};
+function laneShapeDlg(k,x,y){
+  const arr=song.patterns[curPat].auto[k];if(!arr)return;
+  const rng=laneRange(k);
+  const S=ASHAPE;
+  const row=(lab,id,min,max,step,val,fmt)=>'<label>'+lab
+    +'<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'">'
+    +'<i id="'+id+'v">'+fmt+'</i></label>';
+  ctxMenu.innerHTML='<div class="lfoPop shapePop"><b>&#8767; Shape &#183; '+esc(autoLabel(k.slice(k.indexOf('.')+1)))
+    +' &#183; rows '+rng.a+'&#8211;'+rng.b+'</b>'
+    +'<div class="shrow">'+LFO_SHAPES.map(s=>'<button data-sh="'+s+'"'+(S.shape===s?' class="on"':'')+'>'+s+'</button>').join('')+'</div>'
+    +row('Cycles','shC',.25,16,.25,S.cycles,S.cycles+'')
+    +row('Phase','shP',0,1,.01,S.phase,Math.round(S.phase*360)+'&deg;')
+    +row('Low','shL',0,1,.01,S.lo,S.lo.toFixed(2))
+    +row('High','shH',0,1,.01,S.hi,S.hi.toFixed(2))
+    +'<div class="btnrow"><button id="shRst">Reset</button><button id="shApply" class="primary">Apply</button></div>'
+    +'<div class="vhint">Applies to the selected range, or the whole lane when nothing is selected.</div></div>';
+  ctxMenu.style.left=Math.min(x,innerWidth-260)+'px';
+  ctxMenu.style.top=Math.min(y,innerHeight-300)+'px';
+  ctxMenu.hidden=false;
+  const sync=()=>{
+    $id('shCv').textContent=S.cycles;
+    $id('shPv').innerHTML=Math.round(S.phase*360)+'&deg;';
+    $id('shLv').textContent=S.lo.toFixed(2);
+    $id('shHv').textContent=S.hi.toFixed(2);
+    [...ctxMenu.querySelectorAll('[data-sh]')].forEach(b=>b.classList.toggle('on',b.dataset.sh===S.shape));
+  };
+  ctxMenu.querySelectorAll('[data-sh]').forEach(b=>b.onclick=()=>{S.shape=b.dataset.sh;sync()});
+  $id('shC').oninput=e=>{S.cycles=+e.target.value;sync()};
+  $id('shP').oninput=e=>{S.phase=+e.target.value;sync()};
+  $id('shL').oninput=e=>{S.lo=+e.target.value;sync()};
+  $id('shH').oninput=e=>{S.hi=+e.target.value;sync()};
+  $id('shRst').onclick=()=>{S.shape='sine';S.cycles=1;S.phase=0;S.lo=0;S.hi=1;
+    $id('shC').value=1;$id('shP').value=0;$id('shL').value=0;$id('shH').value=1;sync()};
+  $id('shApply').onclick=()=>{
+    const n=rng.b-rng.a+1;
+    for(let i=0;i<n;i++){
+      const ph=S.phase+(i/Math.max(1,n))*S.cycles;
+      const w=lfoValue(S.shape,ph,rng.a+i);
+      arr[rng.a+i]=Math.round((S.lo+(S.hi-S.lo)*w)*100)/100;
+    }
+    ctxMenu.hidden=true;
+    renderAuto();markAuto();saveSoon();
+    status('drew '+S.cycles+' cycle'+(S.cycles===1?'':'s')+' of '+S.shape+' across rows '+rng.a+'–'+rng.b);
+  };
+}
+const ASCALE={mult:1,off:0,center:.5,tension:0};
+function laneScaleDlg(k,x,y){
+  const arr=song.patterns[curPat].auto[k];if(!arr)return;
+  const rng=laneRange(k);
+  const before=arr.slice();
+  const S=ASCALE;
+  const row=(lab,id,min,max,step,val,fmt,tip)=>'<label title="'+tip+'">'+lab
+    +'<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'">'
+    +'<i id="'+id+'v">'+fmt+'</i></label>';
+  ctxMenu.innerHTML='<div class="lfoPop shapePop"><b>&#8597; Scale &#183; rows '+rng.a+'&#8211;'+rng.b+'</b>'
+    +row('Multiply','scM',0,2,.01,S.mult,S.mult.toFixed(2),'Stretches everything away from the centre, or squashes it toward it')
+    +row('Centre','scC',0,1,.01,S.center,S.center.toFixed(2),'The value it stretches around')
+    +row('Offset','scO',-1,1,.01,S.off,S.off.toFixed(2),'Shifts the whole lane up or down')
+    +row('Tension','scT',-1,1,.01,S.tension,S.tension.toFixed(2),'Bends the curve — negative digs it out, positive fills it in')
+    +'<div class="btnrow"><button id="scRst">Reset</button><button id="scApply" class="primary">Apply</button></div>'
+    +'<div class="vhint">Live preview — Reset puts it back.</div></div>';
+  ctxMenu.style.left=Math.min(x,innerWidth-260)+'px';
+  ctxMenu.style.top=Math.min(y,innerHeight-300)+'px';
+  ctxMenu.hidden=false;
+  const apply=()=>{
+    for(let r=rng.a;r<=rng.b;r++){
+      const v0=before[r];
+      if(v0==null)continue;
+      let v=S.center+(v0-S.center)*S.mult+S.off;
+      if(S.tension){const e=Math.pow(2,-S.tension*2);v=Math.pow(clamp(v,0,1),e)}
+      arr[r]=Math.round(clamp(v,0,1)*100)/100;
+    }
+    $id('scMv').textContent=S.mult.toFixed(2);
+    $id('scCv').textContent=S.center.toFixed(2);
+    $id('scOv').textContent=S.off.toFixed(2);
+    $id('scTv').textContent=S.tension.toFixed(2);
+    renderAuto();
+  };
+  $id('scM').oninput=e=>{S.mult=+e.target.value;apply()};
+  $id('scC').oninput=e=>{S.center=+e.target.value;apply()};
+  $id('scO').oninput=e=>{S.off=+e.target.value;apply()};
+  $id('scT').oninput=e=>{S.tension=+e.target.value;apply()};
+  $id('scRst').onclick=()=>{
+    S.mult=1;S.off=0;S.center=.5;S.tension=0;
+    for(let r=rng.a;r<=rng.b;r++)arr[r]=before[r];
+    $id('scM').value=1;$id('scC').value=.5;$id('scO').value=0;$id('scT').value=0;
+    apply();
+  };
+  $id('scApply').onclick=()=>{ctxMenu.hidden=true;markAuto();saveSoon();status('lane scaled, rows '+rng.a+'–'+rng.b)};
+}
+autoLanes.addEventListener('click',e=>{
+  const lf=e.target.dataset.lfo,sc=e.target.dataset.scale;
+  if(lf!=null){e.stopPropagation();laneShapeDlg(lf,e.clientX,e.clientY);return}
+  if(sc!=null){e.stopPropagation();laneScaleDlg(sc,e.clientX,e.clientY);return}
+},true);
 function renderAutoIfOpen(){if(autoPan.hidden||autoPaint)return;clearTimeout(autoT2);autoT2=setTimeout(renderAuto,250)}
 function autoToggle(){
   autoPan.hidden=!autoPan.hidden;
@@ -11474,6 +11984,13 @@ const HELP=[
  ['Transport','Render to WAV','Alt+W','Bounces the whole song offline — automation, FX, everything. A warm-up pre-roll is rendered and trimmed so beat 1 hits at full force.'],
  ['Grid','Enter notes','Z–M / Q–P','Two piano rows. Oct sets the base octave, [ and ] shift it. A writes a note-OFF (cuts the voice).'],
  ['Grid','The four columns','note·in·vol·fx','Each cell: note, instrument (hex), volume 00–40, effect. Park the cursor and type hex right over them.'],
+ ['Automation','Zoom the lanes','Ctrl+wheel · fit','A long pattern is metres of scrolling at the default width. Ctrl+wheel over the lanes zooms, the − / + buttons do the same, and “fit” (or Ctrl+right-click, like the piano roll) squeezes the whole pattern onto the screen so you can see the shape of a curve instead of a slice of it.'],
+ ['Automation','Draw a shape','∿ shape','Writes a waveform across the lane instead of you painting a slope by hand: sine, triangle, saw, ramp, square or random, with however many cycles, a phase offset, and a low and high to keep it inside. Random is repeatable — the same settings always give the same pattern, so a render matches what you heard. If you have a range selected (Ctrl+drag on the lane) it only draws there, so you can shape one bar and leave the rest.'],
+ ['Automation','Reshape what is there','↕ scale','Takes the curve you already have and bends it. MULTIPLY stretches it away from the centre or squashes it toward it — pull it to 0 and everything flattens, push it up and the moves get bigger. CENTRE is the value it stretches around, OFFSET shifts the lot up or down, and TENSION curves it: negative digs the middle out, positive fills it in. It previews live as you drag, and Reset puts it back exactly as it was.'],
+ ['Mixing','Mastering readouts','click the top meter','Opens the master panel. Along the top: LUFS (how loud it really is — club masters sit near -8, streaming wants about -14), PEAK with a clip warning, and CORR, which is whether the mix survives being folded to mono — 1 is mono, near 0 is very wide, below 0 means parts will cancel on a club rig. Under that, eight bands from SUB to AIR with peak-hold lines, so you can see at a glance that there is too much low mid rather than guessing. The loudness reading is K-weighted like a real LUFS meter: it discounts deep sub and lifts the top, because a plain RMS meter flatters a bass-heavy psy mix by several dB.'],
+ ['Mixing','Limiter L∞','master FX','Two knobs. LOUD is how hard you push — turn it up and the whole mix gets louder without ever getting bigger than CEIL, which is the hard limit nothing crosses. That is the entire instrument.\n\nUnderneath it is a proper look-ahead brickwall, the L2 kind: it delays the audio a millisecond and a half and looks at what is coming, so the gain is already down before the transient lands. Nothing overshoots and nothing smears. Release and auto-release are fixed at values that suit a mix — they were knobs with no good answer. The GR readout in the master panel shows how hard it is working: a steady 3-6 dB is a loud master, 10+ is squashing.\n\nWhile a Limiter is on the master, VOLT’s own safety compressor stands down so yours has the last word — it was adding about 1.3 dB of its own makeup, which would otherwise sit on top of your ceiling. It runs on the main thread, so if you ever hear a tick under heavy load, that is what it is: take it off and the safety net comes back.'],
+ ['Mixing','PULTEQ','master FX or any track','The old trick, and it is the reason this EQ is famous: turn LOW UP and LOW DOWN at the SAME TIME. They are centred at different frequencies, so instead of cancelling you get a lift right at the bottom and a scoop just above it — big clean low end with the mud taken out. At 60 Hz with both at 8 that is about +7 dB at 30 Hz and -7 dB at 120. Do it on the master for weight, or on a bass or kick to make room for each other.\n\nLOW HZ picks where it happens, AIR HZ and AIR UP are a wide gentle lift up top that opens a mix without making it hiss. Everything at zero is completely transparent.'],
+ ['Mixing','Soft Clip','master FX','Rounds peaks off instead of letting them square, so you can push a couple more dB into a mix before the limiter starts grabbing. DRIVE pushes harder (its gain is taken back out again, so you hear the shaping and not just "louder"), CEIL sets the output ceiling, and KNEE is how early the rounding starts: at 0 it stays perfectly clean until full scale and then walls, at 1 it is gently shaping the whole signal. Put it last in the master chain, before the built-in limiter.'],
  ['Instruments','GLTCH-9','+ Add → Glitch','Burst percussion for psy and IDM. One note is not one sound but a RATCHET of little grains: “hits” is how many, “gap” how far apart, and “accel” whether the burst runs away from you or drags. That is where machine-gun snares, stuttered ticks and Aphex-style rolls come from. “src” picks what the grains are made of — noise (classic ticks), FM metal (clangs and bells), pulse (buzzy and rude) or a sine zap (psy blips and lasers). “sweep” bends each grain up or down, “fall” fades the burst out across its length, “crush” bit-reduces it, and past 12 the resonance turns the filter into a narrow bandpass zap. “chaos” throws the grains apart from one another.\n\nIt is deliberately repeatable: the same note and velocity always make the same burst, so the WAV you render is the one you heard. Play it up the keyboard and each pitch mangles differently — that is how you get variation, rather than hoping. Eight presets to start from, and Cxx sweeps the filter across a burst.'],
  ['Piano roll','Hear what you touch','click · drag · Alt+right-drag','Clicking a note plays it, before you drag it anywhere. Dragging it up or down plays each new pitch as you land on it — through that note’s own instrument and lane, so a chord’s lower voice doesn’t audition as the lead. And holding ALT with the RIGHT button turns your mouse into a playhead you drag by hand: a line follows the pointer, and every note it crosses fires and lights up. Height is ignored — sweep along at any level and you still hear everything you pass, chords and all. Drag back the other way to hear them in reverse, and flick quickly to play everything in between rather than only where you landed. Plain right-click still erases, as it always did.'],
  ['Instruments','Bounce to a sample','Alt+R','Renders the channel your cursor is on down to audio and adds it as a new sampler instrument — its EQ, filter, insert FX, drive, pan, its sidechain ducking and its swing, all baked in. Choose how much: the selected rows, the pattern, a song section, or the whole mix. Master FX are left out (they apply to the finished mix, so baking them into one channel would apply them twice) — except for “Whole mix”, which is your stem. The WAV is written next to the project in the “<song> samples” folder when the browser allows it, and downloaded when it doesn’t. Use it to free CPU on a heavy chain, or to resample: bounce it, then chop and mangle the result. “→ New channel” puts the bounce on its own track right beside the original and touches nothing — no settings moved, no notes switched off — so it is the safe way to layer or resample. The new channel is set to full volume with no sends or sidechain, because the source channel’s fader, sends and ducking are already inside the audio.'],

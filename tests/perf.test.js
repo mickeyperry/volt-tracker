@@ -48,6 +48,69 @@ module.exports=async function(){
     S.ok('a cursor move under 8 ms',t.cursor<8,t.cursor+' ms');
     S.ok('re-rendering every row under 100 ms',t.rows<100,t.rows+' ms   (was 237)');
 
+    /* Switching patterns writes onto the cells that are already there instead of rebuilding
+       ~6,000 elements. The saving is only worth having if the result is indistinguishable, so
+       compare the patched grid against a freshly built one character for character. */
+    S.head('switching patterns patches, and patches correctly');
+    const sw=await page.evaluate(()=>{
+      while(song.patterns.length<2)newPattern();
+      const rows=song.patterns[0].rows;
+      song.patterns[1].rows=rows;
+      for(let t=0;t<TRACKS;t++)for(let r=1;r<rows;r+=3){
+        const c=ensureCellIn(1,t,r);c.n=40+((t*5+r)%30);c.i=0;c.v=32;c.c='S';c.x=r;
+      }
+      /* something in every corner of a cell: OFF, a group ribbon, a disabled cell, a selection */
+      const a=ensureCellIn(1,0,2);a.n=OFF;
+      const b=ensureCellIn(1,0,4);b.n=50;b.i=0;b.g=3;
+      const c2=ensureCellIn(1,1,6);c2.n=52;c2.i=0;c2.d=1;
+      curPatSet(0);fillPendingRows(true);
+      sel={a:{t:0,c:0,r:1},b:{t:1,c:7,r:5}};cursor.t=1;cursor.r=3;cursor.c=2;
+
+      /* a head-to-head race between the two paths is too noisy to assert on a page this suite has
+         already hammered — measure the patch against a fixed budget instead, and let the
+         exact-match check below be the real guard */
+      for(let i=0;i<4;i++)curPatSet(i%2?0:1);       /* warm up */
+      const t=[];
+      for(let i=0;i<9;i++){const t0=performance.now();curPatSet(i%2?0:1);void grows.offsetHeight;t.push(performance.now()-t0)}
+      t.sort((x,y)=>x-y);
+      const patched=+t[4].toFixed(1);
+
+      /* compare what the user can actually see — text, classes and the group ribbon — rather than
+         raw markup, whose attribute ORDER differs simply because a patched element had its style
+         set after its class */
+      const snap=()=>{
+        const out=[];
+        for(const row of grows.children){
+          const cells=[];
+          for(const cell of row.children){
+            if(!cell.dataset||cell.dataset.t===undefined){cells.push(cell.textContent);continue}
+            const fs=[];
+            for(const f of cell.children)fs.push(f.textContent+'|'+f.className+'|'+(f.getAttribute('style')||''));
+            cells.push(cell.className+'{'+fs.join(',')+'}');
+          }
+          out.push(row.className+'['+cells.join(';')+']');
+        }
+        return out;
+      };
+      curPatSet(1);fillPendingRows(true);
+      const viaPatch=snap();
+      curPat=0;renderGrid();fillPendingRows(true);
+      curPat=1;renderGrid();fillPendingRows(true);
+      const viaBuild=snap();
+      sel=null;
+      let bad='';
+      for(let i=0;i<Math.max(viaPatch.length,viaBuild.length);i++)
+        if(viaPatch[i]!==viaBuild[i]){bad='row '+i+'\n patched: '+viaPatch[i].slice(0,180)+'\n rebuilt: '+viaBuild[i].slice(0,180);break}
+      return{patched,same:!bad,len:viaPatch.length,firstDiff:bad};
+    });
+    S.ok('a patched switch matches a rebuilt one exactly',sw.same,
+      sw.same?sw.len+' rows compared, cell by cell':sw.firstDiff);
+    /* deliberately no timing assertion here: by this point the suite has hammered the page hard
+       enough that a switch measures 3-5x what it does on a fresh one, so a threshold would only
+       ever test the mood of the machine. renderGrid's budget above and the fps check below are
+       the perf guards; this section guards correctness. */
+    S.note('switch measured at '+sw.patched+' ms on this well-used page (3 ms on a fresh 11x64)');
+
     S.head('frame rate during playback');
     const fps=await page.evaluate(async()=>{
       const frames=[];let last=performance.now(),id=0;

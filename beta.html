@@ -65,7 +65,7 @@ body.norail #side{display:none} /* Alt+L — hand the whole width to the pattern
 #specWrap.frozen #specTag{color:var(--amber)}
 #side .sec-es h3::before{background:#ff9a3c}
 #side .sec h3{cursor:pointer;user-select:none}
-/* a left panel is "focused" when the keyboard is driving it (Alt+I/E/K/F, Ctrl+F).
+/* a left panel is "focused" when the keyboard is driving it (Alt+I/O/K/Q, Ctrl+F).
    :focus-within lights the whole section so it's obvious Tab now walks THIS panel's
    values, not the tracker columns. */
 #side .sec:focus-within{border-color:var(--teal);box-shadow:0 0 0 1px var(--glowb)}
@@ -239,15 +239,17 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #ghead .tname.unnamed{color:var(--faint);font-weight:400}
 #ghead .tnum{color:var(--dim);font-family:var(--mono);font-weight:400;margin-right:4px}
 #ghead .thead:hover .tnum{color:var(--teal)}
-#ghead .thctl{display:flex;align-items:center;gap:5px}
+#ghead .thctl{display:flex;align-items:center;gap:3px}
 #ghead .tno{color:var(--dim);font-size:10px}
-#ghead .tbtn{font-size:10px;font-weight:600;padding:0 6px;line-height:16px;border-radius:2px;border:1px solid var(--line);background:transparent;color:var(--faint);cursor:pointer}
+#ghead .tbtn{font-size:10px;font-weight:600;padding:0 5px;line-height:16px;border-radius:2px;border:1px solid var(--line);background:transparent;color:var(--faint);cursor:pointer}
 #ghead .tbtn:hover{border-color:var(--dim);color:var(--txt)}
 #ghead .tbtn.mON{background:var(--muteon);border-color:var(--mag);color:var(--mag)}
 #ghead .tbtn.sON{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
 /* sidechain: amber when on, and the same grey as M/S when off. Has to live here next to its
    siblings — a plain .tbtn.cON elsewhere loses to the #ghead .tbtn base rule above. */
 #ghead .tbtn.cON{background:rgba(255,176,58,.2);border-color:var(--amber);color:var(--amber)}
+#ghead .tbtn.fON,.mch .msbtns .tbtn.fON{background:rgba(127,208,255,.2);border-color:#7fd0ff;color:#7fd0ff}
+#ghead .tbtn[data-frz],.mch .msbtns .tbtn[data-frz]{padding:0 4px}
 #ghead .thead.hushed .tname,#ghead .thead.hushed .tno{color:var(--faint)}
 .inlineEd{width:78px;background:var(--bg);border:1px solid var(--teal);border-radius:2px;color:var(--txt);font:inherit;text-transform:none;padding:0 2px;outline:none}
 /* Rows are skipped by the browser while they're off-screen — with 32 tracks a single pattern is
@@ -258,6 +260,10 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #grows{line-height:0}
 .prow{display:inline-flex;white-space:pre;min-width:100%;line-height:normal;
   content-visibility:auto;contain-intrinsic-width:var(--roww,2000px);contain-intrinsic-height:var(--rowh,19.5px)}
+/* a row still waiting for the lazy fill. content-visibility already gives skipped rows their
+   intrinsic height, but a browser without it would collapse an empty row and jump the scrollbar,
+   so pin the height explicitly for the frame or two it exists. */
+.prow.pend{height:var(--rowh,19.5px)}
 .prow .rn{color:var(--faint);padding:0 8px 0 10px;user-select:none;cursor:pointer}
 .prow.b4 .rn{color:var(--dim)}
 .prow.b16 .rn{color:var(--amber)}
@@ -273,7 +279,9 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #ghead .thAdd button:hover{border:1px solid var(--teal);background:var(--teal-dim);box-shadow:0 0 14px var(--glowa),inset 0 0 8px var(--glowb);transform:scale(1.08)}
 #ghead .thAdd button:active{transform:scale(.96)}
 .prow.playrow .rn{color:var(--teal)}
-.tcell{padding:0 7px;border-left:1px solid var(--cellline)}
+/* channel width. The header is clamped to the grid column (syncHeadWidths), so the column has to
+   be wide enough for the row of buttons — M S SC ❄ — or they get clipped. */
+.tcell{padding:0 11px;border-left:1px solid var(--cellline)}
 .tcell.odd{background:var(--oddtrk)}
 .tcell i{font-style:normal;color:var(--faint);display:inline-block;overflow:hidden;vertical-align:bottom}
 /* hard-locked field widths — glyph quirks (like OFF) can never shift the columns */
@@ -320,6 +328,10 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #songClock{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.04em}
 #songClock.run{color:var(--teal)}
 /* multi-select on the song strip: pick a run of slots and act on all of them */
+/* disabled cells: still readable, obviously not playing. Struck through rather than merely
+   dimmed, so it can't be mistaken for a quiet note or a colour-scheme quirk. */
+.tcell.dis i{opacity:.34;text-decoration:line-through;text-decoration-thickness:1px}
+.tcell.dis i.cur,.tcell.dis i.ssel{opacity:.6}
 .chip.msel{box-shadow:0 0 0 2px var(--amber) inset}
 #ordLasso{position:absolute;border:1px solid var(--amber);background:rgba(255,176,58,.12);
   pointer-events:none;z-index:4;border-radius:2px}
@@ -362,7 +374,9 @@ kbd{font-family:var(--mono);background:var(--raised);border:1px solid var(--line
 /* ---- song strip / pattern loop progress ---- */
 #orderRow .hint{color:var(--faint);font-size:10px;margin-left:4px}
 .chip.playing{border-color:var(--teal)}
-#ghead::after{content:'';position:absolute;left:0;bottom:-1px;height:3px;width:100%;background:linear-gradient(90deg,var(--teal),var(--blue));transform-origin:0 50%;transform:scaleX(var(--pp,0));transition:transform .1s;pointer-events:none}
+/* The pattern-progress bar used to live here, right above row 000, sweeping left to right while
+   you worked. It sat in your eyeline and told you nothing the playhead wasn't already saying, so
+   it moved to the SONG strip, where "how far through are we" is the actual question. */
 
 /* ---- resizable side panel ---- */
 #dragbar{width:5px;cursor:ew-resize;background:transparent;flex:none}
@@ -829,12 +843,13 @@ function mkInst(type,name,over){const i={name,type,params:defParams(type)};if(ov
 /* songs saved before a param existed: backfill defaults so sliders/engine always have a value */
 function normInst(ins){const d=ITYPES[ins.type]&&ITYPES[ins.type].p;if(!d||!ins.params)return;
   for(const k in d)if(ins.params[k]==null)ins.params[k]=d[k][2]}
-/* Sidechain is ON for a new channel, pointed at "any kick instrument" — the pump is the default
-   sound rather than something you have to go and find. One click on the C button turns it off,
-   and that choice is remembered per track. Songs saved before this keep exactly what they had:
-   normTs never invents a duck value, only mkTs does. */
+/* Sidechain is OFF for a new channel — pumping is a choice, not something a channel should start
+   doing on its own. SC_DEF is the depth it lands on when you DO switch it on (the SC button or
+   the Track panel's Sidechain picker), so turning it on always gives you something audible rather
+   than a silent zero. vol .85 rather than 1 is deliberate headroom: eight channels summing at
+   full would clip the master before you'd mixed anything. */
 const SC_DEF=.45;
-function mkTs(){return{vol:.85,pan:0,dly:0,rvb:0,duck:SC_DEF,duckSrc:-1,duckRel:.16,mute:false,solo:false,name:'',eq:{l:0,m:0,h:0},cmp:0,drv:0,fltF:1,fltQ:0}}
+function mkTs(){return{vol:.85,pan:0,dly:0,rvb:0,duck:0,duckSrc:-1,duckRel:.16,mute:false,solo:false,name:'',eq:{l:0,m:0,h:0},cmp:0,drv:0,fltF:1,fltQ:0}}
 function normTs(ts){if(!ts.eq)ts.eq={l:0,m:0,h:0};if(ts.cmp==null)ts.cmp=0;if(ts.drv==null)ts.drv=0;if(ts.fltF==null)ts.fltF=1;if(ts.fltQ==null)ts.fltQ=0;if(ts.pan==null)ts.pan=0;
   /* who makes this track duck: -1 = "any kick-type instrument", which is what ducking did
      before it was configurable, so old songs keep sounding the same. 0..n = that track. */
@@ -844,11 +859,13 @@ function mkTrackset(){const a=[];for(let t=0;t<TRACKS;t++)a.push(mkTs());return 
 function blankSong(){TRACKS=8;return{name:'untitled',bpm:170,lpb:4,instruments:[mkInst('kick','Kick'),mkInst('snare','Snare'),mkInst('hat','Hat'),mkInst('reese','Reese')],patterns:[mkPattern(64)],order:[0],trackset:mkTrackset()}}
 function cellAt(t,r){return song.patterns[curPat].data[t][r]}
 function ensureCell(t,r){const d=song.patterns[curPat].data;if(!d[t][r])d[t][r]={n:null,i:null,v:null,c:null,x:0};return d[t][r]}
-function pruneCell(t,r){const c=cellAt(t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null)song.patterns[curPat].data[t][r]=null}
+/* NOTE the c.d test: a cell that's been disabled still has to survive, or a greyed-out note
+   would silently disappear the moment anything else in the row was edited */
+function pruneCell(t,r){const c=cellAt(t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null&&!c.d)song.patterns[curPat].data[t][r]=null}
 /* pattern-aware variants — MIDI live-record writes into whichever pattern is playing */
 function cellIn(pi,t,r){const d=song.patterns[pi].data[t];return d?d[r]:null}
 function ensureCellIn(pi,t,r){const d=song.patterns[pi].data;if(!d[t][r])d[t][r]={n:null,i:null,v:null,c:null,x:0};return d[t][r]}
-function pruneCellIn(pi,t,r){const c=cellIn(pi,t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null)song.patterns[pi].data[t][r]=null}
+function pruneCellIn(pi,t,r){const c=cellIn(pi,t,r);if(c&&c.n==null&&c.i==null&&c.v==null&&c.c==null&&!c.d)song.patterns[pi].data[t][r]=null}
 
 /* ================= audio engine ================= */
 let AC=null, master, chans=[], noiseBuf, dlyIn, dlyL, dlyR, rvbIn, masterAn=null, masterAnL=null, masterAnR=null, MCH=null, masterComp=null, metOut=null;
@@ -1833,7 +1850,7 @@ function schedRow(pi,row,t){
     const ts2=song.trackset[polyLead(tr)];
     if(!(ts2.mute||(soloed&&!ts2.solo)))continue;
     const cell=pat.data[tr][row];
-    if(!cell||cell.n==null||cell.n===OFF)continue;
+    if(!cell||cell.d||cell.n==null||cell.n===OFF)continue;
     const inst2=cell.i!=null?song.instruments[cell.i]:null;
     duck((cell.c==='T'?t+Math.min(cell.x||0,191)/192*rowDur():t)+swingOff(tr,row),tr,!!inst2&&inst2.type==='kick');
   }
@@ -1841,6 +1858,10 @@ function schedRow(pi,row,t){
     const ts=song.trackset[polyLead(tr)]; /* a poly lane follows its leader's mute/solo */
     if(ts.mute||(soloed&&!ts.solo))continue;
     const cell=pat.data[tr][row];if(!cell)continue;
+    /* a disabled cell is treated as if it weren't there at all — not as a note-off. The note
+       before it keeps ringing through the hole, which is the point: you pull a note out to hear
+       the phrase without it, and the phrase closes over rather than gapping. */
+    if(cell.d)continue;
     const ch=chans[tr];
     const vel=cell.v!=null?clamp(cell.v,0,64)/64:.8;
     const fxc=cell.c,fxv=cell.x||0;
@@ -1938,14 +1959,21 @@ function setPlayRow(r){
   const y=el.offsetTop-gw.clientHeight/2+40;
   gw.scrollTop=y;
 }
-let lastQ=null,animOn=false,lastPP=null;
+let lastQ=null,animOn=false;
 const meterBuf=new Uint8Array(512);
 const mmBuf=new Uint8Array(2048);
 let mmPk=0,mmPkL=0,mmPkR=0,mmClipT=0,rafN=0;
 let secLit=-2,clockTxt='';
 function songStrip(f){
   const chips=document.getElementById('ordChips').children;
-  const on=SEQ.playing&&SEQ.songMode&&lastQ&&lastQ.ord!=null?lastQ.ord%song.order.length:-1;
+  /* In song mode the playing slot is whichever the sequencer is on. Looping a single pattern used
+     to light nothing at all — but "how far through this pattern am I" is the same question, so the
+     slot holding it fills up too. That's where the progress lives now, instead of over row 000. */
+  let on=-1;
+  if(SEQ.playing&&lastQ){
+    on=SEQ.songMode&&lastQ.ord!=null?lastQ.ord%song.order.length
+      :song.order.indexOf(lastQ.pat!=null?lastQ.pat:curPat);
+  }
   /* light the section the playhead is inside — only when it actually changes, this runs at 60fps */
   const si=on>=0?secIndexOf(on):-1;
   if(si!==secLit){
@@ -2074,14 +2102,11 @@ function raf(){
       const f=clamp((lastQ.row+(AC.currentTime-lastQ.t)/rowDur())/song.patterns[curPat].rows,0,1);
       /* progress quantized to quarters: bar over the pattern + fill on the playing song slot */
       const qf=Math.min(1,(Math.floor(f*4)+1)/4);
-      const ppv=qf.toFixed(2);
-      if(lastPP!==ppv){lastPP=ppv;ghead.style.setProperty('--pp',ppv)}
       songStrip(qf);
       animOn=true;
     }
   }else if(animOn){
     animOn=false;lastQ=null;
-    if(lastPP!=='0'){lastPP='0';ghead.style.setProperty('--pp',0)}
     songStrip(0);
   }
   if(!mixer.hidden&&AC){
@@ -2231,7 +2256,7 @@ function cellHTML(t,r){
   const fx=c.c?c.c+hex2(c.x||0):'···';
   /* Shift+G group ribbon under the note, hue per group */
   const ga=c.g!=null?' style="box-shadow:inset 0 -2px 0 hsl('+(c.g*67%360)+',75%,60%)"':'';
-  return '<span class="tcell'+(t%2?' odd':'')+'" data-t="'+t+'">'
+  return '<span class="tcell'+(t%2?' odd':'')+(c.d?' dis':'')+'" data-t="'+t+'">'
     +sp(0,nT,nSet,nOff,ga)+' '
     +sp(1,i2[0],c.i!=null)+sp(2,i2[1],c.i!=null)+' '
     +sp(3,v2[0],c.v!=null)+sp(4,v2[1],c.v!=null)+' '
@@ -2245,7 +2270,9 @@ function rowInner(r){
   for(let t=0;t<TRACKS;t++)h+=cellHTML(t,r);
   return h;
 }
-function renderRow(r){const el=grows.children[r];if(el)el.innerHTML=rowInner(r)}
+/* also clears `pend` — a row someone edits before the lazy fill reaches it is now filled, and
+   must not be overwritten by the fill a frame later */
+function renderRow(r){const el=grows.children[r];if(el){el.innerHTML=rowInner(r);if(el.classList.contains('pend'))el.classList.remove('pend')}}
 /* Measure one REAL row and hand its size to the off-screen placeholder. Row 0 is forced to render
    for the measurement so we never measure a placeholder and lock in a wrong value; without this the
    skipped rows would be a different height and every scroll/offset calculation would drift. */
@@ -2294,9 +2321,13 @@ function calibrateRows(){
   el.style.contentVisibility='visible';
   const r=el.getBoundingClientRect();
   el.style.contentVisibility=prev;
-  if(r.height>2)grows.style.setProperty('--rowh',r.height+'px');
+  if(r.height>2){grows.style.setProperty('--rowh',r.height+'px');rowHpx=r.height}
   if(r.width>2)grows.style.setProperty('--roww',r.width+'px');
 }
+/* remembered here rather than read back with getComputedStyle: renderGrid needs the row height
+   before it writes anything, and asking the browser for a computed value forces it to flush all
+   pending style work first — which cost more than the render it was meant to speed up. */
+let rowHpx=19.5;
 addEventListener('resize',()=>{if(song&&grows.children.length)calibrateRows()}); /* browser zoom changes row metrics */
 function trackAudible(t){const sol=song.trackset.some(s=>s.solo);const ts=song.trackset[polyLead(t)];return !ts.mute&&(!sol||ts.solo)}
 const mixStyle=document.createElement('style');document.head.appendChild(mixStyle);
@@ -2353,7 +2384,11 @@ function renderHead(){
       +'<span class="thctl"><span class="tno">'+String(t+1).padStart(2,'0')+'</span>'
       +'<button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'" title="Mute'+(hk!=null?' (Alt+'+hk+')':'')+'">M</button>'
       +'<button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'" title="Solo'+(hk!=null?' (Alt+Shift+'+hk+')':'')+'">S</button>'
-      +'<button class="tbtn '+(scOn(ts)?'cON':'')+'" data-sc="'+t+'" title="'+scTitle(ts)+'">SC</button></span>'
+      +'<button class="tbtn '+(scOn(ts)?'cON':'')+'" data-sc="'+t+'" title="'+scTitle(ts)+'">SC</button>'
+      +'<button class="tbtn '+(frozenAt(t)?'fON':'')+'" data-frz="'+t+'" title="'+(frozenAt(t)
+         ?'Frozen in this pattern — playing a bounce of itself. Click to thaw: notes, mixer and automation all come back.'
+         :'Freeze this track in this pattern (Alt+Shift+R) — bounce it to audio and switch its notes off. Nothing is deleted.')
+       +'">&#10052;</button></span>'
       +'<span class="thmix"><input type="range" class="hv" min="0" max="100" value="'+Math.round(ts.vol*100)+'" data-hvol="'+t+'" title="'+hvTitle(ts)+'">'
       +'<input type="range" class="hp" min="-100" max="100" value="'+Math.round((ts.pan||0)*100)+'" data-hpan="'+t+'" title="'+hpTitle(ts)+'"></span>'
       +'<span class="thauto" data-ta="'+t+'"></span></span>';
@@ -2399,20 +2434,67 @@ function syncHeadWidths(){
     hcells[i].style.minWidth=w;hcells[i].style.maxWidth=w;hcells[i].style.boxSizing='border-box'}});
   if(rn&&hrn)hrn.style.minWidth=rw+'px';
 }
+/* Flipping between patterns has to feel instant, and the cost is not our maths — it's the browser
+   building and laying out every cell of a pattern you can only see thirty rows of. So write the
+   rows in view NOW and leave the rest as empty shells, filled over the next frames. The screen
+   updates on the first frame whatever the pattern's length; content-visibility already gives an
+   empty off-screen row its proper height, so nothing jumps and the scrollbar is right immediately.
+   (Measured in Chrome the whole thing is ~16 ms, but Firefox does markedly more work per node,
+   which is where the "waiting for the visuals" came from.) */
+let fillRAF=null,fillTO=null;
+function rowShell(r,inner){
+  let cls='prow';
+  if(r%16===0)cls+=' b16';else if(r%4===0)cls+=' b4';
+  if(inner===null)cls+=' pend';
+  return '<div class="'+cls+'" data-r="'+r+'">'+(inner===null?'':inner)+'</div>';
+}
+function fillPendingRows(now){
+  const cancel=()=>{
+    if(fillRAF){cancelAnimationFrame(fillRAF);fillRAF=null}
+    if(fillTO){clearTimeout(fillTO);fillTO=null}
+  };
+  const soon=()=>{
+    /* rAF is throttled to nothing in a background tab, so a timer runs alongside it — whichever
+       arrives first does the work and cancels the other. Without this a pattern switched while
+       the tab is hidden would still be full of empty rows when you came back. */
+    fillRAF=requestAnimationFrame(()=>step(false));
+    fillTO=setTimeout(()=>step(false),24);
+  };
+  const step=all=>{
+    cancel();
+    const list=grows.getElementsByClassName('pend');
+    if(!list.length){updateSelBox();return}
+    /* a chunk big enough that a normal pattern finishes on the very next frame, small enough
+       that a 256-row monster still can't stall one */
+    const n=all?list.length:Math.min(list.length,96);
+    for(let i=0;i<n;i++){
+      const el=list[0];                    /* live collection — removing the class shifts it */
+      el.innerHTML=rowInner(+el.dataset.r);
+      el.classList.remove('pend');
+    }
+    if(list.length)soon();else updateSelBox();
+  };
+  cancel();
+  if(now)step(true);else soon();
+}
 function renderGrid(){
   const pat=song.patterns[curPat];
   cursor.r=clamp(cursor.r,0,pat.rows-1);
+  const rh=rowHpx||19.5;
+  const top=gridwrap.scrollTop,vh=gridwrap.clientHeight||700;
+  /* a generous margin either side so a small scroll never lands on an unfilled row */
+  const a=Math.max(0,Math.floor(top/rh)-12),b=Math.min(pat.rows-1,Math.ceil((top+vh)/rh)+12);
   let h='';
-  for(let r=0;r<pat.rows;r++){
-    let cls='prow';
-    if(r%16===0)cls+=' b16';else if(r%4===0)cls+=' b4';
-    h+='<div class="'+cls+'" data-r="'+r+'">'+rowInner(r)+'</div>';
-  }
+  for(let r=0;r<pat.rows;r++)h+=rowShell(r,r>=a&&r<=b?rowInner(r):null);
   grows.innerHTML=h;playRowEl=null;
   calibrateRows();
   renderHead();updateSelBox();updateLoopVis();
   document.getElementById('patLen').value=pat.rows;
-  renderPatSel();renderOrder();renderBeatIfOpen();renderAutoIfOpen();prRenderIfOpen();markAuto();
+  renderPatSel();renderOrder();
+  fillPendingRows();
+  /* panels that aren't the grid can wait a frame — they're never what you're looking at when
+     you hit / or * */
+  requestAnimationFrame(()=>{renderBeatIfOpen();renderAutoIfOpen();prRenderIfOpen();markAuto()});
 }
 let lastCurRow=0;
 function moveCursor(dt,dr,dc){
@@ -2492,10 +2574,11 @@ ghead.addEventListener('click',e=>{
     setTracks(TRACKS+1);status('track '+TRACKS+' added');
     return;
   }
-  const m=e.target.dataset.mu,s=e.target.dataset.so,sc=e.target.dataset.sc;
+  const m=e.target.dataset.mu,s=e.target.dataset.so,sc=e.target.dataset.sc,fz=e.target.dataset.frz;
   if(m!=null){toggleMS(+m,'mute');return}
   if(s!=null){toggleMS(+s,'solo');return}
   if(sc!=null){scToggle(+sc);return}
+  if(fz!=null){freezeToggle(+fz);return}
   /* click the track name/number selects the whole track · Shift+click extends the RANGE
      (everything in between comes along) · Ctrl+click toggles INDIVIDUAL columns in and
      out — tracks 2 and 5 without 3 and 4 */
@@ -2973,6 +3056,8 @@ document.addEventListener('keydown',e=>{
       if(e.shiftKey)polyRemoveLane(cursor.t);else polyAddLane(cursor.t,true);
       return;
     }
+    /* Alt+N (disable notes) lives in the transport handler further down — that one has no #side
+       bail, so it still works after you've clicked something in the left rail */
     if(e.code==='KeyX'){e.preventDefault();clearMS();return}
     if(e.code==='KeyW'){e.preventDefault();renderWav();return}
     /* Alt+C closes the PROJECT tab (with the save prompt) — Ctrl+W is browser-owned
@@ -4319,7 +4404,8 @@ function renderMixer(){
       +[['l','L'],['m','M'],['h','H']].map(([k,l])=>'<div class="mrow"><span class="l">'+l+'</span><input type="range" min="-12" max="12" step="0.5" value="'+ts.eq[k]+'" data-meq="'+k+'" title="EQ '+l+'"></div>').join('')
       +[['dly','DL'],['rvb','RV'],['duck','SC'],['cmp','CP'],['drv','DR'],['fltF','FL'],['fltQ','FQ']].map(([k,l])=>'<div class="mrow"><span class="l">'+l+'</span><input type="range" min="0" max="100" value="'+Math.round(ts[k]*100)+'" data-msend="'+k+'" title="'+({dly:'Delay send',rvb:'Reverb send',duck:'Sidechain depth — pick what triggers it in the Track panel',cmp:'Compressor',drv:'Drive / saturation',fltF:'Channel filter cutoff',fltQ:'Channel filter resonance'})[k]+'"></div>').join('')
       +'<div class="msbtns"><button class="tbtn '+(ts.mute?'mON':'')+'" data-mu="'+t+'">M</button><button class="tbtn '+(ts.solo?'sON':'')+'" data-so="'+t+'">S</button>'
-      +'<button class="tbtn '+(scOn(ts)?'cON':'')+'" data-sc="'+t+'" title="'+scTitle(ts)+'">SC</button></div>'
+      +'<button class="tbtn '+(scOn(ts)?'cON':'')+'" data-sc="'+t+'" title="'+scTitle(ts)+'">SC</button>'
+      +'<button class="tbtn '+(frozenAt(t)?'fON':'')+'" data-frz="'+t+'" title="'+(frozenAt(t)?'Frozen — click to thaw':'Freeze this track in this pattern (Alt+Shift+R)')+'">&#10052;</button></div>'
       +'</div>';
   }
   const mv=Math.round((song.masterVol==null?.75:song.masterVol)*100);
@@ -4368,10 +4454,11 @@ mixch.addEventListener('input',e=>{
   if(t===cursor.t)trackPanel();
 });
 mixch.addEventListener('click',e=>{
-  const m=e.target.dataset.mu,s=e.target.dataset.so,sc=e.target.dataset.sc;
+  const m=e.target.dataset.mu,s=e.target.dataset.so,sc=e.target.dataset.sc,fz=e.target.dataset.frz;
   if(m!=null){toggleMS(+m,'mute');return}
   if(s!=null){toggleMS(+s,'solo');return}
   if(sc!=null){scToggle(+sc);return}
+  if(fz!=null){freezeToggle(+fz);return}
   /* click a channel = glow it + select its grid column */
   if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;
   const mchEl=e.target.closest('.mch');if(!mchEl)return;
@@ -4712,7 +4799,8 @@ function captureIdea(){
                   i:f.i?(c.i!=null?c.i:null):undefined,
                   v:f.v?(c.v!=null?c.v:null):undefined,
                   c:f.fx?(c.c||null):undefined,
-                  x:f.fx?(c.x||0):undefined});
+                  x:f.fx?(c.x||0):undefined,
+                  d:c.d?1:0});
       }
       data.push(row);
     }
@@ -7415,6 +7503,41 @@ function fieldsFor(t,s){
   const c1=lo-t*8,c2=hi-t*8;
   return{n:c1<=0&&0<=c2,i:c1<=2&&1<=c2,v:c1<=4&&3<=c2,fx:c1<=7&&5<=c2};
 }
+/* ================= disabled notes =================
+   A cell keeps everything it had and gains `d`; the scheduler steps over it. Nothing is deleted,
+   so you can strip a hat pattern for a break, try a bassline without its third, or silence a fill
+   without losing it — and put it all back with the same key. Freeze uses this too. */
+function cellsInSel(){
+  const s=selRect();
+  if(!s)return cursor.r<song.patterns[curPat].rows?[[cursor.t,cursor.r]]:[];
+  const t1=Math.floor(s.l1/8),t2=Math.floor(s.l2/8),out=[];
+  for(let t=t1;t<=t2;t++){
+    if(!fieldsFor(t,s))continue;
+    for(let r=s.r1;r<=s.r2;r++)out.push([t,r]);
+  }
+  return out;
+}
+function toggleDisable(force){
+  const list=cellsInSel();
+  if(!list.length)return;
+  const live=list.filter(([t,r])=>{const c=cellAt(t,r);return c&&(c.n!=null||c.i!=null||c.v!=null||c.c)});
+  if(!live.length){status('nothing to disable here — put some notes in first');return}
+  /* a mixed selection always ENABLES, so hitting the key twice can never leave you guessing
+     which half is playing */
+  const on=force!=null?force:live.every(([t,r])=>cellAt(t,r).d);
+  let n=0;
+  for(const[t,r]of live){
+    const c=cellAt(t,r);
+    if(on){if(c.d){delete c.d;n++}}
+    else if(!c.d){c.d=1;n++}
+  }
+  if(!n)return;
+  const s=selRect();
+  if(s)renderRows(s.r1,s.r2);else renderRow(cursor.r);
+  prRenderIfOpen();
+  saveSoon();
+  status(n+' cell'+(n>1?'s':'')+(on?' back on':' disabled — still there, just skipped (Alt+N)'));
+}
 function copySel(cut){
   let s=selRect();
   if(!s)s={l1:LIN(cursor.t,cursor.c),l2:LIN(cursor.t,cursor.c),r1:cursor.r,r2:cursor.r};
@@ -7428,6 +7551,9 @@ function copySel(cut){
                 v:f.v?(c.v!=null?c.v:null):undefined,
                 c:f.fx?(c.c||null):undefined,
                 x:f.fx?(c.x||0):undefined,
+                /* always emitted, not just when set — pasting a live note onto a disabled cell
+                   has to clear the flag, or the paste would land silently */
+                d:c.d?1:0,
                 g:f.n?(c.g!=null?c.g:null):undefined});
     }
     data.push(row);
@@ -7465,6 +7591,17 @@ function eraseRect(s,guard){
   renderRows(s.r1,s.r2);
 }
 /* ---- note groups (Shift+G): grouped notes travel together in the piano roll ---- */
+/* the roll's own Alt+N: same rule, but the selection is notes rather than a grid block */
+function prToggleDisable(){
+  const ns=prSelNotes();
+  if(!ns.length){status('select some notes first');return}
+  const cells=ns.map(x=>cellAt(prLaneOf(x),x.r)).filter(c=>c&&(c.n!=null||c.c));
+  if(!cells.length)return;
+  const on=cells.every(c=>c.d);
+  cells.forEach(c=>{if(on)delete c.d;else c.d=1});
+  prRepaint();renderRows(0,song.patterns[curPat].rows-1);saveSoon();
+  status(cells.length+' note'+(cells.length>1?'s':'')+(on?' back on':' disabled — still there, just skipped (Alt+N)'));
+}
 function nextGroupId(){
   let m=0;
   song.patterns[curPat].data.forEach(tr=>tr.forEach(c=>{if(c&&c.g>m)m=c.g}));
@@ -7646,6 +7783,7 @@ function pasteClip(){
       if(src.i!==undefined)cell.i=src.i!=null&&map&&map[src.i]!=null?map[src.i]:src.i;
       if(src.v!==undefined)cell.v=src.v;
       if(src.c!==undefined){cell.c=src.c;cell.x=src.x||0}
+      if(src.d!==undefined){if(src.d)cell.d=1;else delete cell.d}
       if(src.g!==undefined){if(src.g!=null)cell.g=src.g;else delete cell.g}
       pruneCell(t,r);
     }
@@ -7661,8 +7799,8 @@ function pasteClip(){
   status('pasted'+(added?' — copied '+added+' instrument'+(added>1?'s':'')+' over':'')+' · cursor moved below (Ctrl+V again tiles it)');
 }
 /* ===== keyboard jumps to the left panels =====
-   Alt+I instruments · Alt+E params (the instrument itself) · Alt+K track mixer ·
-   Alt+F sample search · Ctrl+F instrument filter. Runs in capture phase and does NOT
+   Alt+I instruments · Alt+O params (the instrument itself) · Alt+K track mixer ·
+   Alt+Q sample search · Ctrl+F instrument filter. Runs in capture phase and does NOT
    bail on input focus, so you can hop straight from one panel's box to another. Once a
    panel holds focus the section glows (:focus-within) and Tab walks THAT panel's values
    instead of the tracker columns — the grid's key handlers already stand down whenever a
@@ -7708,7 +7846,9 @@ function focusPanel(which){
 document.addEventListener('keydown',e=>{
   if(dlgOpen())return;
   if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){
-    const j={KeyI:'inst',KeyE:'params',KeyK:'track',KeyF:'search'}[e.code];
+    /* O and Q, not E and F: Alt+E is Firefox's Edit menu and Alt+F its File menu, and the page
+       can't reliably cancel them — those two panel jumps simply never worked in Firefox. */
+    const j={KeyI:'inst',KeyO:'params',KeyK:'track',KeyQ:'search'}[e.code];
     if(j){e.preventDefault();e.stopImmediatePropagation();focusPanel(j);return}
   }
   if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&e.code==='KeyF'){
@@ -7797,6 +7937,18 @@ document.addEventListener('keydown',e=>{
      that key prints something other than a backslash. */
   if((k==='\\'||e.code==='Backslash')&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
     e.preventDefault();e.stopImmediatePropagation();flipMode();return;
+  }
+  /* Alt+R, not Alt+B: Firefox binds Alt+B to its Bookmarks menu and won't reliably let a page
+     cancel it. Avoid Alt+F/E/V/S/T/H/B for the same reason — they're the menu-bar mnemonics. */
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&e.code==='KeyR'){
+    e.preventDefault();e.stopImmediatePropagation();
+    e.shiftKey?freezeToggle():bounceDlg();
+    return;
+  }
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.code==='KeyN'){
+    e.preventDefault();e.stopImmediatePropagation();
+    prPan.hidden||!PR.sel.length?toggleDisable():prToggleDisable();
+    return;
   }
   if(k==='F5'){e.preventDefault();e.stopImmediatePropagation();armSet(true);SEQ.playing&&SEQ.songMode?stop():play(true);return}
   if(k==='F4'){e.preventDefault();e.stopImmediatePropagation();armSet(false);SEQ.playing&&!SEQ.songMode?stop():play(false);return}
@@ -8169,6 +8321,15 @@ grows.addEventListener('contextmenu',e=>{
   const t=+cell.dataset.t,r=+row.dataset.r;
   const items=[];
   const c0=cellAt(t,r);
+  {
+    const s=selRect(),many=s&&(s.r2>s.r1||s.l2>s.l1);
+    const live=cellsInSel().map(([t2,r2])=>cellAt(t2,r2)).filter(c=>c&&(c.n!=null||c.i!=null||c.v!=null||c.c));
+    if(live.length){
+      const allOff=live.every(c=>c.d);
+      items.push({label:(allOff?'▶ Enable ':'⃠ Disable ')+(many?live.length+' cells':'this note')+'  (Alt+N)',
+        f:()=>toggleDisable(allOff)});
+    }
+  }
   if(c0&&c0.c&&COLCMDS[c0.c])items.push({label:'✎ Edit '+c0.c+hex2(c0.x||0)+' ('+COLCMDS[c0.c].label+')…',f:()=>cmdMenu(e.clientX,e.clientY,t,r,c0.c)});
   if(c0&&c0.c)items.push({label:'✕ Clear '+c0.c+hex2(c0.x||0)+' on this row',f:()=>{c0.c=null;c0.x=0;pruneCell(t,r);renderRow(r);saveSoon()}});
   for(const cmd in COLCMDS)if(!(c0&&c0.c===cmd))items.push({label:cmd+'xx — '+COLCMDS[cmd].label+'…',f:()=>cmdMenu(e.clientX,e.clientY,t,r,cmd)});
@@ -8493,6 +8654,327 @@ document.getElementById('params').addEventListener('drop',e=>{
     status('recording → replaced '+hex2(curInst)+' “'+ins.name+'”');
   }
 });
+/* ================= bounce =================
+   Render one channel — its whole chain, its sidechain ducking, its swing — down to audio and hand
+   it back as a sampler instrument. Two uses: freeing CPU on a heavy chain, and resampling, where
+   the bounce is the raw material you then chop and mangle.
+
+   Ducking survives because it reads NOTES, not audio: the other channels are muted (so nothing
+   of theirs is heard) but still scheduled, so the kick keeps pumping the bass while only the bass
+   is recorded. That's the ghost-kick path, reused.
+
+   Master FX are left out — they belong to the whole mix, and baking them into one channel would
+   double them up when it plays back through the master again. The Mix scope is the exception. */
+function bounceSteps(scope){
+  const ord=song.order.length?song.order:[curPat];
+  if(scope==='sel'){
+    const s=selRect();
+    const r1=s?s.r1:0,r2=s?s.r2:song.patterns[curPat].rows-1;
+    const out=[];for(let r=r1;r<=r2;r++)out.push({pi:curPat,row:r});
+    return{steps:out,label:'rows '+r1+'–'+r2};
+  }
+  if(scope==='sec'){
+    const sc=secAt(Math.max(0,ordCurrent()));
+    if(!sc)return null;
+    const out=[];
+    for(let k=sc.a;k<=sc.b&&k<ord.length;k++){
+      const pi=ord[k];for(let r=0;r<song.patterns[pi].rows;r++)out.push({pi,row:r});
+    }
+    return{steps:out,label:'section “'+sc.name+'”'};
+  }
+  if(scope==='song'){
+    const out=[];
+    for(const pi of ord)for(let r=0;r<song.patterns[pi].rows;r++)out.push({pi,row:r});
+    return{steps:out,label:'the whole song'};
+  }
+  const out=[];for(let r=0;r<song.patterns[curPat].rows;r++)out.push({pi:curPat,row:r});
+  return{steps:out,label:'pattern '+patLabel(curPat)};
+}
+/* trim the silence a tail leaves behind, but never the attack */
+function trimTail(buf,floorDb){
+  const th=Math.pow(10,(floorDb==null?-60:floorDb)/20);
+  let last=0;
+  for(let c=0;c<buf.numberOfChannels;c++){
+    const d=buf.getChannelData(c);
+    for(let i=d.length-1;i>last;i--)if(Math.abs(d[i])>th){if(i>last)last=i;break}
+  }
+  const keep=Math.min(buf.length,last+Math.round(buf.sampleRate*.05));
+  if(keep>=buf.length-1||keep<64)return buf;
+  const out=new AudioBuffer({length:keep,numberOfChannels:buf.numberOfChannels,sampleRate:buf.sampleRate});
+  for(let c=0;c<buf.numberOfChannels;c++)out.copyToChannel(buf.getChannelData(c).subarray(0,keep),c);
+  return out;
+}
+let bouncing=false;
+async function renderBounce(tr,scope,tail){
+  const plan=bounceSteps(scope);
+  if(!plan||!plan.steps.length)return null;
+  const mix=tr<0;
+  const S={AC,master,chans,noiseBuf,dlyIn,dlyL,dlyR,rvbIn,masterAn,masterAnL,masterAnR,MCH,masterComp};
+  const mute0=song.trackset.map(t=>t.mute),solo0=song.trackset.map(t=>t.solo);
+  const mfx0=song.masterFx,mv0=song.masterVol;
+  bouncing=true;rendering=true;
+  try{
+    if(!mix){
+      /* everything else silent, but STILL SCHEDULED, so sidechain triggers keep working */
+      song.trackset.forEach((t,i)=>{t.solo=false;t.mute=polyLead(i)!==tr});
+      song.masterFx=[];song.masterVol=1;
+    }
+    const rd=60/song.bpm/(song.lpb||4);
+    const SR=44100;
+    /* How late does this graph deliver? DynamicsCompressorNode looks ahead, so it hands its
+       output over a few ms after the input — about 6 ms per node in Chrome, and the signal meets
+       two of them (the channel's own compressor and the master limiter). That put every bounce
+       ~12 ms behind the beat, which is small enough to sound like "not quite in time" rather than
+       an obvious mistake. Measure it with an impulse through the very same graph instead of
+       hardcoding a number, because the figure is an implementation detail and differs by browser. */
+    let lat=0;
+    try{
+      AC=new OfflineAudioContext(2,Math.ceil(.3*SR),SR);chans=[];
+      buildGraph();ensureChans(TRACKS);applyMix();setDelayTime();applyFxAll();
+      const one=AC.createBuffer(1,1,SR);one.getChannelData(0)[0]=1;
+      const ping=AC.createBufferSource();ping.buffer=one;
+      ping.connect(mix?master:(chans[tr]||chans[0]).in);
+      ping.start(.02);
+      const probe=await AC.startRendering();
+      const d=probe.getChannelData(0);
+      for(let i=Math.round(.02*SR);i<d.length;i++)if(Math.abs(d[i])>1e-5){lat=i/SR-.02;break}
+      if(!(lat>=0&&lat<.05))lat=0; /* nonsense reading — better to leave it alone than shift blind */
+    }catch(e){lat=0}
+    const dur=plan.steps.length*rd+(tail||2.5)+lat+.2;
+    AC=new OfflineAudioContext(2,Math.ceil(dur*SR),SR);
+    chans=[];
+    buildGraph();ensureChans(TRACKS);applyMix();setDelayTime();applyFxAll();
+    /* NO pre-roll here, unlike the whole-song WAV export.
+       That export warms the FX by playing the loop's tail first, because a finished track should
+       sound like the music has been running. A bounce must not: the warm-up's decay crosses into
+       the region and bakes a hit that hasn't happened yet into the first few milliseconds — which
+       is exactly what you hear as the sample landing a fraction early. The sample has to BE the
+       rows and nothing else. The cost is a cold compressor/reverb on the very first hit. */
+    const startT=.05;
+    let t=startT;
+    for(const s of plan.steps){schedRow(s.pi,s.row,t);t+=rd}
+    chans.forEach(ch=>{if(ch.voice&&!ch.voice.dead)ch.voice.release(t)});
+    const rendered=await AC.startRendering();
+    /* cut exactly ON the first row, allowing for the graph's own delay — a lead-in of even a few
+       ms makes everything inside the sample play that much late once you re-trigger it */
+    const skip=Math.max(0,Math.round((startT+lat)*SR));
+    const len=rendered.length-skip;
+    const cut=new AudioBuffer({length:len,numberOfChannels:2,sampleRate:SR});
+    for(let c=0;c<2;c++)cut.copyToChannel(rendered.getChannelData(c).subarray(skip),c);
+    return{buf:trimTail(cut),label:plan.label,secs:plan.steps.length*rd};
+  }finally{
+    AC=S.AC;master=S.master;chans=S.chans;noiseBuf=S.noiseBuf;
+    dlyIn=S.dlyIn;dlyL=S.dlyL;dlyR=S.dlyR;rvbIn=S.rvbIn;masterAn=S.masterAn;masterAnL=S.masterAnL;masterAnR=S.masterAnR;MCH=S.MCH;masterComp=S.masterComp;
+    song.trackset.forEach((t,i)=>{t.mute=mute0[i];t.solo=solo0[i]});
+    song.masterFx=mfx0;song.masterVol=mv0;
+    chans.forEach(ch=>{ch.voice=null;ch.lastI=null});
+    if(AC)applyMix();
+    bouncing=false;rendering=false;
+  }
+}
+/* a real file, beside the project when the browser allows it and in Downloads when it doesn't */
+async function saveBounceFile(name,ab){
+  if(VAULT.fsOk&&VAULT.proj){
+    try{await copyToProject(name,ab);return VAULT.proj.name+'/'+safeFile((song.name||'untitled'))+' samples/'+name}
+    catch(e){}
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([ab],{type:'audio/wav'}));
+  a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  return 'your downloads folder';
+}
+async function bounce(scope,opts){
+  if(bouncing||rendering){status('already rendering');return null}
+  const tr=(opts&&opts.mix)?-1:polyLead(cursor.t);
+  const nm=tr<0?'mix':(song.trackset[tr].name||'track '+(tr+1));
+  status('bouncing '+nm+'…');
+  await new Promise(r=>setTimeout(r,16)); /* let the status paint before we block on the render */
+  let res;
+  try{res=await renderBounce(tr,scope,opts&&opts.tail)}
+  catch(e){status('bounce failed: '+(e&&e.message));return null}
+  if(!res||!res.buf.length){status('nothing to bounce there');return null}
+  const wav=bufToWav(res.buf,0);
+  const file=safeFile(nm+' bounce')+'.wav';
+  const ins={name:nm+' ↓',type:'sampler',params:{},sampleName:file,sampleB64:abToB64(wav)};
+  normInst(ins);
+  try{audio();ins.buffer=await AC.decodeAudioData(wav.slice(0))}catch(e){}
+  song.instruments.push(ins);
+  curInst=song.instruments.length-1;
+  renderInstList();renderParams();saveSoon();
+  const where=await saveBounceFile(file,wav);
+  if(!(opts&&opts.quiet))status('bounced '+res.label+' → instrument '+hex2(curInst)+' “'+ins.name+'” · '
+    +(res.buf.length/res.buf.sampleRate).toFixed(1)+'s · saved to '+where);
+  return ins;
+}
+/* ================= freeze =================
+   Bounce the channel, switch its notes off, and leave one hit at the top playing the bounce.
+   Per PATTERN, deliberately: the sample then restarts every time the pattern comes round, which
+   is what you want when you loop it or use it twice in the arrangement. One long sample for the
+   whole song would drift the moment you looped or jumped.
+
+   The catch freeze has to solve: the bounce already contains the fader, EQ, FX, sends and the
+   ducking. Play it back through that same chain and everything applies twice. So the strip is
+   flattened while frozen and its old values kept alongside the bounce — same for this track's
+   automation lanes, which would otherwise re-shape audio they've already shaped.
+
+   Nothing is destroyed: notes are disabled (the Alt+N flag), lanes and mixer values are stashed,
+   and it all rides in the pattern, so Ctrl+Z covers it. */
+const FREEZE_FLAT={vol:1,pan:0,dly:0,rvb:0,cmp:0,drv:0,fltF:1,fltQ:0,duck:0,swing:0};
+/* RMS over a fixed window. The window matters: two renders of the same music can differ in
+   length by however much tail survived trimming, and averaging each over its own length makes
+   the longer one look quieter than it is. */
+function bufRms(buf,secs){
+  if(!buf||!buf.length)return 0;
+  const end=secs?Math.min(buf.length,Math.round(secs*buf.sampleRate)):buf.length;
+  let s=0,n=0;
+  for(let c=0;c<buf.numberOfChannels;c++){
+    const d=buf.getChannelData(c);
+    for(let i=0;i<end;i+=7){s+=d[i]*d[i];n++} /* every 7th sample is plenty for a level */
+  }
+  return n?Math.sqrt(s/n):0;
+}
+function frozenAt(t){const f=song.patterns[curPat].frozen;return f&&f[polyLead(t)]||null}
+async function freezeToggle(track){
+  if(bouncing||rendering){status('already rendering');return}
+  /* the ❄ button passes its own track — the hotkey uses wherever the cursor is */
+  const t=polyLead(track!=null?track:cursor.t),pat=song.patterns[curPat];
+  if(frozenAt(t))return unfreeze(t);
+  const lanes=polyLanes(t);
+  const hasNotes=lanes.some(l=>pat.data[l].some(c=>c&&!c.d&&c.n!=null));
+  if(!hasNotes){status('track '+(t+1)+' has nothing to freeze in this pattern');return}
+  const keep=cursor.t;cursor.t=t;
+  const ins=await bounce('pat',{quiet:true});
+  cursor.t=keep;
+  if(!ins)return;
+  const ts=song.trackset[t];
+  const rec={inst:song.instruments.indexOf(ins),strip:{},lanes:{},rows:{},pat:curPat};
+  /* stash and flatten the strip */
+  for(const k in FREEZE_FLAT){rec.strip[k]=ts[k];ts[k]=FREEZE_FLAT[k]}
+  rec.strip.fx=ts.fx||null;ts.fx=[];
+  rec.strip.duckSrc=ts.duckSrc;
+  /* the EQ is a nested object, so it needs stashing by hand — miss it and the bounce gets
+     its own EQ curve applied a second time on the way out */
+  rec.strip.eq=Object.assign({},ts.eq||{l:0,m:0,h:0});
+  ts.eq={l:0,m:0,h:0};
+  /* snapshot row 0 BEFORE anything is disabled, or thawing puts it back struck through */
+  const pre0=cellAt(t,0);
+  rec.had0=pre0&&(pre0.n!=null||pre0.c)?JSON.parse(JSON.stringify(pre0)):null;
+  /* stash and clear this group's automation lanes for this pattern */
+  if(pat.auto)for(const k of Object.keys(pat.auto)){
+    const tr=+k.slice(0,k.indexOf('.'));
+    if(lanes.indexOf(tr)>=0){rec.lanes[k]=pat.auto[k];delete pat.auto[k]}
+  }
+  /* switch the notes off — remembering exactly which, so unfreeze can't enable anything that
+     you had disabled yourself before freezing */
+  lanes.forEach(l=>{
+    const list=[];
+    pat.data[l].forEach((c,r)=>{if(c&&!c.d&&(c.n!=null||c.c)){c.d=1;list.push(r)}});
+    rec.rows[l]=list;
+  });
+  const c0=ensureCell(t,0);
+  c0.n=48;c0.i=rec.inst;c0.v=64;c0.c=null;c0.x=0;delete c0.d;
+  pat.frozen=pat.frozen||{};pat.frozen[t]=rec;
+  /* Level match. Flattening the strip gets most of the way there, but not all: the synth fed the
+     channel in MONO and the bounce feeds it back in STEREO, and a StereoPanner applies equal-power
+     gain (x0.707) to a mono input while passing stereo through untouched — so the frozen track came
+     back about 16% loud. Rather than hardcode a panning law, render the frozen result once and
+     trim the sampler's own amp by whatever it's actually out by. */
+  try{
+    const chk=await renderBounce(t,'pat');
+    const win=pat.rows*60/song.bpm/(song.lpb||4); /* the music itself, not whatever tail survived */
+    const a=bufRms(ins.buffer,win),b=bufRms(chk&&chk.buf,win);
+    if(a>1e-6&&b>1e-6){
+      const k=a/b;
+      if(k>.25&&k<4&&Math.abs(k-1)>.02){
+        ins.params.amp=clamp((ins.params.amp||1)*k,.1,4);
+        rec.amp=ins.params.amp;
+      }
+    }
+  }catch(e){}
+  if(AC)applyMix();applyFxAll&&applyFxAll();
+  renderGrid();renderHead();trackPanel();renderInstList();prRenderIfOpen();saveSoon();
+  status('track '+(t+1)+' frozen → “'+ins.name+'” · its notes are still there, greyed out · Alt+Shift+R to thaw');
+}
+function unfreeze(t){
+  t=polyLead(t);
+  const pat=song.patterns[curPat],rec=pat.frozen&&pat.frozen[t];
+  if(!rec){status('track '+(t+1)+' is not frozen in this pattern');return}
+  const ts=song.trackset[t];
+  for(const k in FREEZE_FLAT)if(rec.strip[k]!==undefined)ts[k]=rec.strip[k];
+  if(rec.strip.fx!==undefined)ts.fx=rec.strip.fx||[];
+  if(rec.strip.duckSrc!==undefined)ts.duckSrc=rec.strip.duckSrc;
+  if(rec.strip.eq)ts.eq=Object.assign({},rec.strip.eq);
+  pat.auto=pat.auto||{};
+  for(const k in rec.lanes)pat.auto[k]=rec.lanes[k];
+  for(const l in rec.rows)rec.rows[l].forEach(r=>{const c=cellIn(curPat,+l,r);if(c)delete c.d});
+  const c0=cellAt(t,0);
+  if(c0){
+    if(rec.had0){Object.keys(c0).forEach(k=>delete c0[k]);Object.assign(c0,rec.had0)}
+    else{c0.n=null;c0.i=null;c0.v=null;c0.c=null;c0.x=0;delete c0.d;pruneCell(t,0)}
+  }
+  delete pat.frozen[t];
+  if(!Object.keys(pat.frozen).length)delete pat.frozen;
+  if(AC)applyMix();
+  renderGrid();renderHead();trackPanel();prRenderIfOpen();saveSoon();
+  status('track '+(t+1)+' thawed — notes, mixer and automation back as they were (the bounce stays in your instruments)');
+}
+/* Bounce onto a channel of its own, leaving the source track and every one of its settings
+   completely alone. The safe counterpart to freeze: nothing is stashed, nothing is flattened,
+   nothing has to be put back — so it can't restore anything wrongly. Use it for layering and
+   resampling; use freeze when you actually want the CPU back.
+   The new channel is set NEUTRAL — full volume, no sends, no sidechain — because the bounce
+   already contains the source channel's fader, sends and ducking. A default channel would
+   quietly re-apply them. */
+async function bounceToChannel(scope){
+  if(bouncing||rendering){status('already rendering');return null}
+  const src=polyLead(cursor.t);
+  if(TRACKS>=MAXTRACKS){status('all '+MAXTRACKS+' tracks are in use — no room for a bounce channel');return null}
+  const ins=await bounce(scope||'pat',{quiet:true});
+  if(!ins)return null;
+  const pos=src+polyLanes(src).length;   /* right beside the track it came from */
+  duckIns(pos);
+  song.patterns.forEach(p=>{
+    p.data.splice(pos,0,new Array(p.rows).fill(null));
+    p.auto=remapKeysUp(p.auto,pos);
+    if(p.frozen){ /* frozen bookkeeping is keyed by track index too */
+      const nf={};for(const k in p.frozen)nf[+k>=pos?+k+1:+k]=p.frozen[k];
+      p.frozen=nf;
+    }
+  });
+  const nts=mkTs();
+  nts.vol=1;nts.duck=0;nts.dly=0;nts.rvb=0;nts.name=(song.trackset[src].name||'trk '+(src+1))+' ↓';
+  song.trackset.splice(pos,0,nts);
+  song.lfos=remapKeysUp(song.lfos,pos);
+  TRACKS++;
+  if(AC)ensureChans(TRACKS);
+  document.getElementById('trkN').value=TRACKS;
+  const c=ensureCellIn(curPat,pos,0);
+  c.n=48;c.i=song.instruments.indexOf(ins);c.v=64;c.c=null;c.x=0;
+  genCtCSS();genColorCSS();
+  if(AC)applyMix();
+  renderGrid();renderHead();trackPanel();renderInstList();saveSoon();
+  status('bounced onto new channel '+(pos+1)+' — “'+nts.name+'” at full volume, no sends · track '+(src+1)+' is untouched');
+  return pos;
+}
+async function bounceDlg(){
+  if(!song){return}
+  const sc=secAt(Math.max(0,ordCurrent()));
+  const s=selRect();
+  const btns=[{label:'This pattern',value:'pat',cls:'primary'}];
+  if(s)btns.unshift({label:'Selected rows',value:'sel'});
+  if(sc)btns.push({label:'Section “'+sc.name+'”',value:'sec'});
+  if(TRACKS<MAXTRACKS)btns.push({label:'→ New channel',value:'chan'});
+  btns.push({label:'Whole mix',value:'mix'},{label:'Cancel',value:''});
+  const nm=song.trackset[polyLead(cursor.t)].name||'track '+(polyLead(cursor.t)+1);
+  const v=await askDialog('Bounce “'+nm+'” to audio — how much of it?\n'
+    +'“New channel” puts this pattern on its own track beside this one and leaves this track alone.\n'
+    +'“Whole mix” bounces every channel together, master FX included.',btns);
+  if(!v)return;
+  if(v==='mix')await bounce('song',{mix:true});
+  else if(v==='chan')await bounceToChannel('pat');
+  else await bounce(v);
+}
 /* samples live in a per-project subfolder INSIDE the Projects folder (⚙ Settings) so a
    project's JSON and its audio stay together — one folder, not two */
 async function projSampleDir(){
@@ -8853,6 +9335,12 @@ function prLaneNotes(t){
   const out=[];let open=null;
   for(let r=0;r<pat.rows;r++){
     const c=d[r];if(!c)continue;
+    /* disabled: the scheduler steps over it, so it must not end the note that's ringing either.
+       Drawn as a stub so you can still see (and grab) it in the roll. */
+    if(c.d){
+      if(c.n!=null&&c.n!==OFF)out.push({t,r,n:c.n,i:c.i,v:c.v,len:1,dis:1});
+      continue;
+    }
     if(c.n===OFF){if(open){open.len=r-open.r;open=null}}
     else if(c.n!=null){
       if(open)open.len=r-open.r;
@@ -8923,6 +9411,22 @@ function prRender(){
     r:x.r+PR.drag.dr,n:x.n+PR.drag.dn,
     len:PR.drag.mode==='resize'?Math.max(1,x.len+(PR.drag.dlen||0)):x.len,v:x.v
   },true,true));
+  if(PR.scrub){ /* the hand-dragged playhead, and a ring round whatever it just fired */
+    (PR.scrub.lit||[]).forEach(k=>{
+      const p=k.split(':'),r=+p[1],n=+p[2];
+      if(n<PR.base||n>=PR.base+PR.NP)return;
+      const no=ns.find(z=>z.r===r&&z.n===n&&prLaneOf(z)===+p[0]);
+      const w=Math.max(6,(no?no.len:1)*PR.CW-3);
+      ctx.strokeStyle='#ffd479';ctx.lineWidth=2;
+      ctx.strokeRect(PR.GUT+r*PR.CW+.5,(PR.base+PR.NP-1-n)*PR.CH+.5,w,PR.CH-2);
+      ctx.lineWidth=1;
+    });
+    const x=clamp(PR.scrub.x,PR.GUT,W);
+    ctx.fillStyle='rgba(255,212,121,.18)';
+    ctx.fillRect(PR.GUT+PR.scrub.row*PR.CW,0,PR.CW,H);
+    ctx.fillStyle='#ffd479';
+    ctx.fillRect(x-1,0,2,H);
+  }
   if(PR.band){
     const b=PR.band;
     ctx.strokeStyle='#3fe0b4';ctx.setLineDash([4,3]);
@@ -8988,6 +9492,17 @@ function prDrawNote(ctx,no,seld,ghost){
   const w=Math.max(6,no.len*PR.CW-3),h=PR.CH-2;
   const hov=!ghost&&PR.hover&&PR.hover.r===no.r&&PR.hover.n===no.n;
   const vel=no.v==null?40:no.v;
+  if(no.dis){ /* hollow outline — present, editable, silent */
+    ctx.save();
+    ctx.globalAlpha=seld?.9:.55;
+    ctx.strokeStyle=seld?'#ff7ab8':'#54ecc2';
+    ctx.setLineDash([3,2]);ctx.lineWidth=1;
+    ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(x+1,y+h/2);ctx.lineTo(x+w-1,y+h/2);ctx.stroke();
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.globalAlpha=ghost?.8:.6+.4*clamp(vel/64,0,1);
   if(seld||hov){ctx.shadowColor=seld?'#ff4d9d':'#3fe0b4';ctx.shadowBlur=seld?12:9}
@@ -9121,6 +9636,62 @@ document.addEventListener('mouseup',()=>{
   const s=PR.scale;PR.scale=null;
   if(s.q!==1)prScaleApply(s.r1,s.S,s.q,s.end,s.lane);else prRender();
 });
+/* ---- hearing what you touch ----
+   Click a note and it sounds; drag it and every new pitch sounds as you land on it; hold
+   Alt and sweep with the right button to run over notes and hear them without editing anything.
+   Each note is auditioned through its OWN instrument on its own lane, so what you hear is what
+   that note actually is — and through the live channel, so its EQ and FX are in place too. */
+let prVoice=null,prVoiceT=0;
+function prAudition(no,holdSecs){
+  if(!no||no.n==null||no.n===OFF)return;
+  audio();if(AC.state==='suspended')AC.resume();
+  const lane=prLaneOf(no);
+  const cell=cellAt(lane,no.r)||{};
+  const ii=no.i!=null?no.i:(cell.i!=null?cell.i:(chans[lane]?chans[lane].lastI:curInst));
+  const inst=song.instruments[ii!=null?ii:curInst];
+  if(!inst)return;
+  const t=AC.currentTime+.004;
+  if(prVoice){try{prVoice.cut(t)}catch(e){}prVoice=null}
+  const vel=no.v!=null?clamp(no.v,0,64)/64:.8;
+  prVoice=trig(inst,no.n,t,lane,vel,0);
+  prVoiceT=t;
+  /* a preview must never outstay its welcome — release it shortly after, unless something
+     else cuts it first */
+  const v=prVoice,secs=holdSecs||Math.min(1.2,Math.max(.18,(no.len||1)*rowDur()));
+  setTimeout(()=>{if(prVoice===v&&AC){try{v.release(AC.currentTime)}catch(e){}if(prVoice===v)prVoice=null}},secs*1000);
+}
+/* The scrub is a PLAYHEAD you drag by hand: a line sits at the mouse, and every note it crosses
+   fires — whatever height the pointer is at. Vertical position is ignored entirely, so you can
+   sweep straight through a chord stack and hear the lot. Dragging backwards plays them in
+   reverse; flicking across several rows in one frame plays everything in between rather than
+   only the row you landed on. */
+function prScrubTo(x){
+  if(!PR.scrub)return;
+  const pat=song.patterns[curPat];
+  const row=clamp(Math.floor((x-PR.GUT)/PR.CW),0,pat.rows-1);
+  PR.scrub.x=x;
+  if(row===PR.scrub.row){prRender();return}
+  const from=PR.scrub.row,to=row;
+  const notes=prNotes();
+  const lit=[];
+  const fire=r=>{
+    for(const no of notes)if(no.r===r&&no.n!=null&&no.n!==OFF){
+      prAudition(no,.35);
+      lit.push(prLaneOf(no)+':'+no.r+':'+no.n);
+    }
+  };
+  if(from<0)fire(to);
+  else if(to>from)for(let r=from+1;r<=to;r++)fire(r);
+  else for(let r=from-1;r>=to;r--)fire(r);
+  PR.scrub.row=to;
+  PR.scrub.lit=lit;
+  prRender();
+}
+function prAuditionStop(){
+  if(!prVoice||!AC)return;
+  try{prVoice.release(AC.currentTime)}catch(e){}
+  prVoice=null;
+}
 function prHit(e){
   const rect=prCv.getBoundingClientRect();
   const x=e.clientX-rect.left,y=e.clientY-rect.top;
@@ -9139,6 +9710,7 @@ function prHit(e){
   return{row,n,hit,edge};
 }
 prCv.addEventListener('mousemove',e=>{
+  if(PR.scrub){prScrubTo(e.clientX-prCv.getBoundingClientRect().left);return}
   if(PR.drag||PR.band||PR.slice)return;
   if(e.altKey&&e.shiftKey){prCv.style.cursor='crosshair';if(PR.hover){PR.hover=null;prRender()}return}
   const gr=prGripRect(); /* hovering the grip: show it's draggable, and don't hover-light notes under it */
@@ -9159,6 +9731,15 @@ prCv.addEventListener('mousemove',e=>{
 });
 prCv.addEventListener('mouseleave',()=>{if(PR.hover){PR.hover=null;prRender()}});
 prCv.addEventListener('mousedown',e=>{
+  /* Alt + right-drag = sweep across notes and hear them, editing nothing. Plain right-click
+     stays the eraser, so this had to be its own gesture. */
+  if(e.button===2&&e.altKey){
+    e.preventDefault();
+    const x=e.clientX-prCv.getBoundingClientRect().left;
+    PR.scrub={x,row:-1,lit:[]};
+    prScrubTo(x);
+    return;
+  }
   if(e.button!==0)return;
   const rect0=prCv.getBoundingClientRect();
   if(e.clientY-rect0.top<=8&&e.clientX-rect0.left>=PR.GUT){ /* loop bar */
@@ -9187,6 +9768,8 @@ prCv.addEventListener('mousedown',e=>{
   }
   const h=prHit(e);if(!h)return;
   e.preventDefault();
+  /* touch a note, hear a note — before any drag, and whatever you go on to do with it */
+  if(h.hit&&!h.edge&&!e.ctrlKey&&!e.metaKey)prAudition(h.hit);
   const rect=prCv.getBoundingClientRect();
   if(e.ctrlKey||e.metaKey){ /* rubber-band select */
     PR.band={x0:e.clientX-rect.left,y0:e.clientY-rect.top,
@@ -9284,8 +9867,12 @@ document.addEventListener('mousemove',e=>{
     /* FL-style axis locks: Shift = pitch only, Ctrl = time only (Shift is the dup modifier, so no lock there) */
     const dr=e.shiftKey&&!d.dup?0:clamp(h.row-d.grabRow,-mnR,rows-1-mxR);
     const dn=e.ctrlKey||e.metaKey?0:clamp(h.n-d.grabN,-mnN,95-mxN);
-    if(dn!==d.dn&&d.notes.length===1&&!SEQ.playing)
-      beatPreview(cursor.t,d.notes[0].n+dn,d.notes[0].i!=null?d.notes[0].i:laneDefaults(cursor.t).i);
+    /* dragging a note up or down sounds each pitch as you land on it — through the note's own
+       lane and instrument, so a chord's lower voice doesn't audition as the lead */
+    if(dn!==d.dn&&!SEQ.playing){
+      const g=d.notes[d.grabIdx||0];
+      if(g)prAudition({t:g.t,r:g.r,n:g.n+dn,i:g.i,v:g.v,len:g.len},.25);
+    }
     d.dr=dr;d.dn=dn;
   }else{
     const g=d.notes[d.grabIdx||0];
@@ -9295,6 +9882,7 @@ document.addEventListener('mousemove',e=>{
   prRender();
 });
 document.addEventListener('mouseup',()=>{
+  if(PR.scrub){PR.scrub=null;prAuditionStop();prRender();return}
   if(PR.loopDrag){
     const pat=song.patterns[curPat];
     PR.loopDrag=null;saveSoon();
@@ -9442,6 +10030,7 @@ function prDeleteSel(){
 }
 prCv.addEventListener('contextmenu',e=>{
   e.preventDefault();
+  if(e.altKey)return;                          /* Alt+right-drag is the audition sweep, not the eraser */
   if(e.ctrlKey||e.metaKey){prFitView();return} /* Ctrl+right-click = reset the view (like FL) */
   const rect0=prCv.getBoundingClientRect();
   if(e.clientY-rect0.top<=8){ /* right-click the loop bar = clear the loop */
@@ -10700,10 +11289,14 @@ const HELP=[
  ['Song','Sections','Ctrl+Shift+M · Ctrl+←/→','Name the parts of your song — intro, build, drop. “+ section” (or Ctrl+Shift+M) marks the slot you are on; the coloured bar sits directly over the patterns it covers. DRAG EITHER END to stretch it over more slots — it snaps to whole patterns and stops dead at the next section rather than overlapping it. Ctrl+← / → jumps between sections and works WHILE PLAYING, so you can skip straight to the drop; going back from the middle of a section returns to its start first, like skipping tracks on a CD. Double-click a bar to rename, right-click for colour / remove / “cover everything up to the next section”. Sections stay glued to their patterns when you drag the arrangement around.'],
  ['Mixing','Spectrum','Track panel','The strip above the sliders shows what the channel your cursor is on is actually putting out — move the cursor, it follows. In master view it shows the whole mix. Click it to FREEZE the current curve in amber, make an EQ move, and see exactly what changed; click again to release.'],
  ['Mixing','Swing','Toolbar + Track panel','Song-wide swing next to BPM: 0 is dead straight, 100 is a full triplet shuffle, and “on” chooses whether it lands on the 1/8 or the 1/16. It moves the FEEL, not your notes — the grid still reads straight, so you can dial it while a loop plays. Any channel can go its own way: the Track panel’s Swing slider overrides the song (straight kick under shuffled hats), and double-clicking it hands control back to the song.'],
- ['Mixing','Sidechain','Track panel','One control: go to the channel you want to pump, set “Sidechain” to the channel your kick is on. Done — Amount and Release appear underneath if you want to shape it. It follows NOTES, not audio, so the timing is exact and a MUTED trigger still works (the ghost-kick trick: an inaudible kick pattern that only pumps everything else). Every channel starts sidechained to “any kick” — the C button next to M and S switches it off (and remembers your depth for when you switch it back). Old songs keep whatever they were saved with.'],
+ ['Mixing','Sidechain','Track panel','One control: go to the channel you want to pump, set “Sidechain” to the channel your kick is on. Done — Amount and Release appear underneath if you want to shape it. It follows NOTES, not audio, so the timing is exact and a MUTED trigger still works (the ghost-kick trick: an inaudible kick pattern that only pumps everything else). Channels start with it OFF — the SC button next to M and S switches it on at a usable depth, and remembers that depth if you switch it off again.'],
  ['Transport','Render to WAV','Alt+W','Bounces the whole song offline — automation, FX, everything. A warm-up pre-roll is rendered and trimmed so beat 1 hits at full force.'],
  ['Grid','Enter notes','Z–M / Q–P','Two piano rows. Oct sets the base octave, [ and ] shift it. A writes a note-OFF (cuts the voice).'],
  ['Grid','The four columns','note·in·vol·fx','Each cell: note, instrument (hex), volume 00–40, effect. Park the cursor and type hex right over them.'],
+ ['Piano roll','Hear what you touch','click · drag · Alt+right-drag','Clicking a note plays it, before you drag it anywhere. Dragging it up or down plays each new pitch as you land on it — through that note’s own instrument and lane, so a chord’s lower voice doesn’t audition as the lead. And holding ALT with the RIGHT button turns your mouse into a playhead you drag by hand: a line follows the pointer, and every note it crosses fires and lights up. Height is ignored — sweep along at any level and you still hear everything you pass, chords and all. Drag back the other way to hear them in reverse, and flick quickly to play everything in between rather than only where you landed. Plain right-click still erases, as it always did.'],
+ ['Instruments','Bounce to a sample','Alt+R','Renders the channel your cursor is on down to audio and adds it as a new sampler instrument — its EQ, filter, insert FX, drive, pan, its sidechain ducking and its swing, all baked in. Choose how much: the selected rows, the pattern, a song section, or the whole mix. Master FX are left out (they apply to the finished mix, so baking them into one channel would apply them twice) — except for “Whole mix”, which is your stem. The WAV is written next to the project in the “<song> samples” folder when the browser allows it, and downloaded when it doesn’t. Use it to free CPU on a heavy chain, or to resample: bounce it, then chop and mangle the result. “→ New channel” puts the bounce on its own track right beside the original and touches nothing — no settings moved, no notes switched off — so it is the safe way to layer or resample. The new channel is set to full volume with no sends or sidechain, because the source channel’s fader, sends and ducking are already inside the audio.'],
+ ['Instruments','Freeze a track','Alt+Shift+R','Bounces the track and swaps it over in one move: its notes go struck through, one hit at row 0 plays the bounce, and a ❄ appears on the track header. Because the bounce already contains the fader, EQ, FX, sends and ducking, the channel strip is flattened while frozen and this pattern’s automation lanes for that track are set aside — otherwise everything would apply twice. Alt+Shift+R again thaws it: notes, mixer and automation come back exactly as they were, and the bounced instrument stays in your list. It freezes ONE PATTERN, so the sample restarts each time the pattern comes round — freeze each pattern you want committed. Nothing is deleted, and Ctrl+Z undoes the lot.'],
+ ['Grid','Disable notes','Alt+N','Switches notes OFF without deleting them — they stay in the grid struck through, and the scheduler steps over them (silent in playback AND in your WAV export). Works on the cell under the cursor or a whole selected block, and in the piano roll, where disabled notes are drawn hollow. A mixed selection always turns everything back ON, so pressing it twice is never a guess. A disabled cell counts as EMPTY rather than a note-off, so the note before it rings on through the gap — pull a note out and the phrase closes over it. Useful for stripping the hats for a break, trying a bassline without its third, or silencing a fill without losing it.'],
  ['Grid','FX commands','R S U D G C','Rxx retrigger (fills!), Sxx sample offset, Uxx/Dxx pitch slide, Gxx glide to note, Cxx filter cutoff.'],
  ['Grid','Jump around','PgUp/PgDn Home End','±16 rows, first/last row. Tab hops a track. + / − switch patterns.'],
  ['Grid','Next / prev note','Alt+PgDn / PgUp','Cursor jumps to the next or previous note on this track. Great for walking a bassline. (Ctrl+ works too, but Firefox steals it for tab switching.)'],
@@ -10827,7 +11420,33 @@ COMMANDS.push(
   {n:'Clean unused instruments',kw:'remove delete tidy garbage',f:()=>document.getElementById('instClean').click()},
   {n:'Slice current instrument',kw:'chop breakbeat slicer',f:()=>{const ins=song.instruments[curInst];if(ins&&ins.type==='sampler'&&ins.buffer)sliceInstrument(ins);else status('select a sampler instrument first')}},
   {n:'Add track',kw:'column channel',f:()=>{if(TRACKS<MAXTRACKS)setTracks(TRACKS+1)}},
-  {n:'Jump to first row',k:'Home',kw:'top start begin',f:()=>moveCursor(0,-cursor.r,0)}
+  {n:'Jump to first row',k:'Home',kw:'top start begin',f:()=>moveCursor(0,-cursor.r,0)},
+  {n:'Bounce this channel to a sample',k:'Alt+R',kw:'render resample print commit audio wav flatten',f:bounceDlg},
+  {n:'Freeze / thaw this track',k:'Alt+Shift+R',kw:'freeze thaw cpu commit render swap bounce in place',f:freezeToggle},
+  {n:'Bounce onto a new channel',kw:'resample layer duplicate render safe copy audio track',f:()=>bounceToChannel('pat')},
+  /* so a "it feels slow" can be answered with a number, from the browser and song it's slow in */
+  {n:'Measure redraw speed',kw:'benchmark slow lag performance profile pattern switch fps',f:()=>{
+    if(song.patterns.length<2){status('needs at least two patterns to measure a switch');return}
+    const was=curPat,other=curPat===0?1:0;
+    const t=[];
+    for(let i=0;i<9;i++){
+      const t0=performance.now();
+      curPatSet(i%2?was:other);
+      void grows.offsetHeight;          /* make the browser actually lay it out before we stop the clock */
+      t.push(performance.now()-t0);
+    }
+    curPatSet(was);
+    t.sort((a,b)=>a-b);
+    const full=(()=>{const t0=performance.now();renderGrid();fillPendingRows(true);void grows.offsetHeight;return performance.now()-t0})();
+    const cells=document.querySelectorAll('#grows .tcell').length;
+    const msg='switch '+t[4].toFixed(1)+' ms (worst '+t[8].toFixed(1)+') · whole grid '+full.toFixed(1)
+      +' ms · '+TRACKS+' trk x '+song.patterns[curPat].rows+' rows · '+cells+' cells';
+    status(msg);
+    try{navigator.clipboard.writeText('VOLT redraw: '+msg)}catch(e){}
+    console.log('VOLT redraw:',msg);
+  }},
+  {n:'Disable / enable notes',k:'Alt+N',kw:'mute skip silence off temporarily strike out bypass',
+   f:()=>{prPan.hidden||!PR.sel.length?toggleDisable():prToggleDisable()}}
 );
 
 /* ================= themes (pick for room lighting) ================= */

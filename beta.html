@@ -829,7 +829,21 @@ const ITYPES={
   psybass: {label:'Psy Bass', p:{cutoff:[80,3000,420,1],envAmt:[0,1,.5,0],res:[0,15,2,0],decay:[.05,.5,.16,0],drive:[0,1,.5,0],sub:[0,1,.6,0],fcut:[100,18000,18000,1],fres:[0,20,0,0]}},
   acid303: {label:'W0RM-303', p:{wave:[0,1,0,0],cutoff:[100,4000,700,1],res:[0,25,14,0],envAmt:[0,1,.65,0],decay:[.05,.8,.2,0],drive:[0,1,.4,0],rel:[.01,.5,.05,0],fcut:[100,18000,18000,1],fres:[0,20,0,0]}},
   sampler: {label:'Sampler',  p:{root:[12,84,48,0],rel:[.01,.5,.04,0],amp:[.1,4,1,0],fin:[0,.5,0,0],fout:[0,1,0,0],fcut:[100,18000,18000,1],fres:[0,20,0,0]}},
-  sliced:  {label:'Slices',   p:{rate:[.25,4,1,1],rel:[.01,.5,.04,0],fcut:[100,18000,18000,1],fres:[0,20,0,0]}}
+  sliced:  {label:'Slices',   p:{rate:[.25,4,1,1],rel:[.01,.5,.04,0],fcut:[100,18000,18000,1],fres:[0,20,0,0]}},
+  /* ---- GLTCH-9: one note, a whole burst ----
+     Every hit is a little RATCHET of grains rather than a single sound, which is where the
+     stuttered, machine-gun percussion in psy and IDM actually comes from. `hits` is how many,
+     `gap` how far apart, `accel` whether the burst speeds up or drags, and each grain gets its
+     own pitch sweep, filter and crush. `chaos` mangles the grains apart from one another.
+     Deliberately deterministic: the same note and velocity always produce the same burst, so a
+     WAV render is what you heard. Write different NOTES to get different mangles — the seed is
+     the pitch, so playing it up the keyboard walks you through variations. */
+  glitch:  {label:'GLTCH-9',  p:{src:[0,3,0,0],pitch:[40,5000,700,1],sweep:[-1,1,-.55,0],
+                                 hits:[1,16,6,0],gap:[.004,.25,.045,1],accel:[-1,1,.35,0],
+                                 decay:[.005,.4,.05,0],fall:[0,1,.45,0],
+                                 cutoff:[150,16000,5000,1],res:[0,25,7,0],
+                                 crush:[0,1,.25,0],chaos:[0,1,.3,0],
+                                 rel:[.005,.3,.02,0],fcut:[100,18000,18000,1],fres:[0,20,0,0]}}
 };
 function defParams(type){const o={};for(const k in ITYPES[type].p)o[k]=ITYPES[type].p[k][2];return o}
 
@@ -906,7 +920,11 @@ function buildGraph(){
   msp.connect(masterAnL,0);msp.connect(masterAnR,1);
   /* noise */
   noiseBuf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);
-  const nd=noiseBuf.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+  /* seeded, not Math.random(): this buffer is the noise behind every hat, snare, clap and glitch,
+     and a fresh one per audio context meant an offline render was never quite the take you heard.
+     Same numbers every time — still white noise, just reproducible. */
+  const nd=noiseBuf.getChannelData(0),nr=seedRnd(0x5EED17);
+  for(let i=0;i<nd.length;i++)nd[i]=nr()*2-1;
   /* ping-pong delay bus */
   dlyIn=AC.createGain();
   dlyL=AC.createDelay(2);dlyR=AC.createDelay(2);
@@ -1335,6 +1353,21 @@ function mkNoise(t,dur){const s=AC.createBufferSource();s.buffer=noiseBuf;s.loop
 function driveCurveArr(amt){const n=512,c=new Float32Array(n);const k=1+amt*24;
   for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.tanh(x*k)/Math.tanh(k)}return c}
 function mkShaper(amt){const ws=AC.createWaveShaper();ws.curve=driveCurveArr(amt);ws.oversample='2x';return ws}
+/* bit reduction as a staircase transfer curve: 16 bits' worth of steps down to about 2. It's the
+   quantising half of a bitcrusher — the half you can hear — without an AudioWorklet. */
+function mkCrush(amt){
+  if(amt<=.01)return null;
+  const steps=Math.max(2,Math.round(Math.pow(2,1+(1-amt)*6)));
+  const n=1024,c=new Float32Array(n);
+  for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.round(x*steps)/steps}
+  const ws=AC.createWaveShaper();ws.curve=c;return ws;
+}
+/* a small deterministic generator: the same seed always walks the same numbers, so a burst is
+   identical every time that note plays and an offline render matches what you heard */
+function seedRnd(seed){
+  let s=(seed>>>0)||1;
+  return()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296};
+}
 
 /* ---- voice factory ---- */
 function baseVoice(g,srcs,note,rel){
@@ -1382,7 +1415,7 @@ function trig(inst,note,t,tr,vel,off,ov,rev,pan){
   /* poly child lanes pour their audio into the LEADER's channel strip — one mixer channel
      for the whole chord (voice bookkeeping stays per-lane in schedRow) */
   const p=ov?Object.assign({},inst.params,ovDenorm(inst,ov)):inst.params, ch=chans[polyLead(tr)], g=AC.createGain();
-  const rel={sub:p.rel,reese:p.rel,mutant:p.rel,supersaw:p.rel,sampler:p.rel,acid303:p.rel,sliced:p.rel}[inst.type]||.05;
+  const rel={sub:p.rel,reese:p.rel,mutant:p.rel,supersaw:p.rel,sampler:p.rel,acid303:p.rel,sliced:p.rel,glitch:p.rel}[inst.type]||.05;
   let srcs=[], v;
   switch(inst.type){
   case 'kick':{
@@ -1550,6 +1583,77 @@ function trig(inst,note,t,tr,vel,off,ov,rev,pan){
       g.gain.setValueAtTime(lv,fs);g.gain.linearRampToValueAtTime(0,end);
     }
     s.connect(g);s.start(t0,st,dur);srcs=[s];
+    break}
+  case 'glitch':{
+    const f0=p.pitch*Math.pow(2,(note-48)/12);
+    const rnd=seedRnd(note*2654435761^Math.round(vel*127)*40503);
+    const n=Math.max(1,Math.round(p.hits));
+    const ch2=p.chaos;
+    /* shared tail: filter, then crush, then out. Exposed as v.filter so Cxx can sweep a burst. */
+    const lp=AC.createBiquadFilter();
+    /* past 12 the filter turns into a bandpass — crank the resonance and the sound stops being
+       "a bit filtered" and becomes a narrow zap, which is most of the psy percussion character */
+    const bandy=p.res>12;
+    lp.type=bandy?'bandpass':'lowpass';
+    lp.frequency.value=p.cutoff;lp.Q.value=Math.max(.0001,p.res);
+    const crush=mkCrush(p.crush);
+    if(crush){lp.connect(crush);crush.connect(g)}else lp.connect(g);
+    /* makeup, so the presets sit at roughly the same loudness: a narrow bandpass throws most of
+       the signal away, noise arrives through a second filter, and a square is simply louder than
+       a sine to begin with. Without this, switching preset jumps 8x in level. */
+    const srcGain=p.src<.5?1.9:p.src<1.5?1:p.src<2.5?.7:1;
+    g.gain.value=srcGain*(bandy?1+(p.res-12)*.34:1)*(1+p.crush*.25);
+    let ti=t,gap=p.gap,total=0;
+    /* accel>0 tightens each gap (a burst that runs away), accel<0 drags it out */
+    const ratio=Math.pow(2,-p.accel*.9);
+    for(let k=0;k<n;k++){
+      const jitterT=ch2*(rnd()-.5)*gap*.9;
+      const at=Math.max(t,ti+jitterT);
+      /* grains fade across the burst by `fall`, and each is knocked about by chaos */
+      const lvl=vel*(1-p.fall*(k/Math.max(1,n-1)))*(1-ch2*.55*rnd());
+      const dec=Math.max(.004,p.decay*(1-p.fall*.5*(k/Math.max(1,n-1)))*(1+ch2*(rnd()-.5)));
+      const detune=1+ch2*(rnd()-.5)*1.2;                 /* up to about an octave of scatter */
+      const f=clamp(f0*detune*(1+k*.03*p.accel),20,18000);
+      const gg=AC.createGain();
+      gg.gain.setValueAtTime(0,at);
+      gg.gain.linearRampToValueAtTime(lvl,at+.0008);     /* near-instant attack: that's the click */
+      gg.gain.setTargetAtTime(0,at+.0012,dec/3.2);
+      gg.connect(lp);
+      const kill=at+dec*4+.02;
+      if(p.src<.5){                                       /* 0 — noise burst, the classic tick */
+        const s=mkNoise(at,dec*4+.02);
+        const bp=AC.createBiquadFilter();bp.type='bandpass';
+        bp.frequency.setValueAtTime(f*4,at);
+        bp.frequency.exponentialRampToValueAtTime(clamp(f*4*Math.pow(2,p.sweep*3),40,18000),at+dec*1.4);
+        bp.Q.value=1+p.res*.3;
+        s.connect(bp);bp.connect(gg);srcs.push(s);
+      }else if(p.src<1.5){                                /* 1 — FM metal: clangs and bells */
+        const car=osc('sine',f);
+        const mod=osc('sine',f*(1.41+ch2*rnd()*3));
+        const md=AC.createGain();md.gain.setValueAtTime(f*(3+6*Math.abs(p.sweep)),at);
+        md.gain.setTargetAtTime(f*.4,at+.001,dec/2.5);
+        mod.connect(md);md.connect(car.frequency);
+        car.connect(gg);car.start(at);mod.start(at);
+        car.stop(kill);mod.stop(kill);srcs.push(car,mod);
+      }else if(p.src<2.5){                                /* 2 — pulse: buzzy, vocal, rude */
+        const o=osc('square',f);
+        o.frequency.setValueAtTime(f,at);
+        o.frequency.exponentialRampToValueAtTime(clamp(f*Math.pow(2,p.sweep*4),20,18000),at+dec*1.6);
+        const o2=osc('sawtooth',f*1.005);
+        const og=AC.createGain();og.gain.value=.5;
+        o.connect(gg);o2.connect(og);og.connect(gg);
+        o.start(at);o2.start(at);o.stop(kill);o2.stop(kill);srcs.push(o,o2);
+      }else{                                              /* 3 — sine zap: psy blips and lasers */
+        const o=osc('sine',f);
+        o.frequency.setValueAtTime(clamp(f*Math.pow(2,-p.sweep*2.5),20,18000),at);
+        o.frequency.exponentialRampToValueAtTime(clamp(f*Math.pow(2,p.sweep*2.5),20,18000),at+dec*1.8);
+        o.connect(gg);o.start(at);o.stop(kill);srcs.push(o);
+      }
+      total=Math.max(total,at-t+dec*4+.02);
+      ti+=gap;gap=clamp(gap*ratio,.002,.5);
+    }
+    v=baseVoice(g,srcs,note,p.rel);
+    v.filter=lp;
     break}
   case 'sliced':{
     /* note picks the slice upward from the base (C-4, or C-2 for 48+ slice kits) */
@@ -5760,6 +5864,18 @@ const PRESETS=[
   {cat:'Lead / Pad',name:'Supersaw Stab',type:'supersaw',p:{detune:24,spread:.8,hp:200,cutoff:9000,att:.005,rel:.18}},
   {cat:'Lead / Pad',name:'Pluck Bright',type:'pluck',p:{cutoff:1400,envAmt:.7,decay:.25,res:4}},
   {cat:'Lead / Pad',name:'Pluck Deep',type:'pluck',p:{cutoff:600,envAmt:.5,decay:.45,res:6}},
+  /* GLTCH-9 starting points. Each is a different corner of the engine rather than a variation on
+     one sound — the whole point of the instrument is how far apart these can get. */
+  {cat:'Glitch',name:'Ratchet Tick',type:'glitch',p:{src:0,pitch:900,sweep:-.6,hits:6,gap:.035,accel:.45,decay:.03,fall:.5,cutoff:7000,res:5,crush:.2,chaos:.25,rel:.02}},
+  {cat:'Glitch',name:'Machine Gun',type:'glitch',p:{src:0,pitch:1600,sweep:-.3,hits:14,gap:.016,accel:.7,decay:.014,fall:.65,cutoff:9000,res:3,crush:.35,chaos:.15,rel:.01}},
+  {cat:'Glitch',name:'Metal Clank',type:'glitch',p:{src:1,pitch:420,sweep:.4,hits:4,gap:.055,accel:.2,decay:.09,fall:.35,cutoff:6000,res:9,crush:.15,chaos:.4,rel:.04}},
+  /* a narrow bandpass has to sit ON the sound: parked at 11 kHz it rejected the 1.1 kHz carrier
+     almost completely and this preset came out four times quieter than the rest */
+  {cat:'Glitch',name:'Aphex Stutter',type:'glitch',p:{src:1,pitch:1100,sweep:-.5,hits:11,gap:.022,accel:.6,decay:.02,fall:.5,cutoff:2600,res:14,crush:.55,chaos:.6,rel:.015}},
+  {cat:'Glitch',name:'Psy Blip',type:'glitch',p:{src:3,pitch:1800,sweep:-.85,hits:3,gap:.06,accel:.3,decay:.045,fall:.4,cutoff:12000,res:4,crush:.1,chaos:.2,rel:.02}},
+  {cat:'Glitch',name:'Laser Zap',type:'glitch',p:{src:3,pitch:2600,sweep:-1,hits:1,gap:.05,accel:0,decay:.16,fall:0,cutoff:14000,res:6,crush:0,chaos:0,rel:.05}},
+  {cat:'Glitch',name:'Buzz Rip',type:'glitch',p:{src:2,pitch:260,sweep:-.7,hits:8,gap:.028,accel:.5,decay:.03,fall:.55,cutoff:4200,res:11,crush:.45,chaos:.35,rel:.02}},
+  {cat:'Glitch',name:'Broken Shaker',type:'glitch',p:{src:0,pitch:3600,sweep:.2,hits:9,gap:.02,accel:-.3,decay:.012,fall:.3,cutoff:15000,res:2,crush:.1,chaos:.8,rel:.01}},
 ];
 const newTypeSel=document.getElementById('newType');
 newTypeSel.innerHTML=(()=>{
@@ -11358,6 +11474,7 @@ const HELP=[
  ['Transport','Render to WAV','Alt+W','Bounces the whole song offline — automation, FX, everything. A warm-up pre-roll is rendered and trimmed so beat 1 hits at full force.'],
  ['Grid','Enter notes','Z–M / Q–P','Two piano rows. Oct sets the base octave, [ and ] shift it. A writes a note-OFF (cuts the voice).'],
  ['Grid','The four columns','note·in·vol·fx','Each cell: note, instrument (hex), volume 00–40, effect. Park the cursor and type hex right over them.'],
+ ['Instruments','GLTCH-9','+ Add → Glitch','Burst percussion for psy and IDM. One note is not one sound but a RATCHET of little grains: “hits” is how many, “gap” how far apart, and “accel” whether the burst runs away from you or drags. That is where machine-gun snares, stuttered ticks and Aphex-style rolls come from. “src” picks what the grains are made of — noise (classic ticks), FM metal (clangs and bells), pulse (buzzy and rude) or a sine zap (psy blips and lasers). “sweep” bends each grain up or down, “fall” fades the burst out across its length, “crush” bit-reduces it, and past 12 the resonance turns the filter into a narrow bandpass zap. “chaos” throws the grains apart from one another.\n\nIt is deliberately repeatable: the same note and velocity always make the same burst, so the WAV you render is the one you heard. Play it up the keyboard and each pitch mangles differently — that is how you get variation, rather than hoping. Eight presets to start from, and Cxx sweeps the filter across a burst.'],
  ['Piano roll','Hear what you touch','click · drag · Alt+right-drag','Clicking a note plays it, before you drag it anywhere. Dragging it up or down plays each new pitch as you land on it — through that note’s own instrument and lane, so a chord’s lower voice doesn’t audition as the lead. And holding ALT with the RIGHT button turns your mouse into a playhead you drag by hand: a line follows the pointer, and every note it crosses fires and lights up. Height is ignored — sweep along at any level and you still hear everything you pass, chords and all. Drag back the other way to hear them in reverse, and flick quickly to play everything in between rather than only where you landed. Plain right-click still erases, as it always did.'],
  ['Instruments','Bounce to a sample','Alt+R','Renders the channel your cursor is on down to audio and adds it as a new sampler instrument — its EQ, filter, insert FX, drive, pan, its sidechain ducking and its swing, all baked in. Choose how much: the selected rows, the pattern, a song section, or the whole mix. Master FX are left out (they apply to the finished mix, so baking them into one channel would apply them twice) — except for “Whole mix”, which is your stem. The WAV is written next to the project in the “<song> samples” folder when the browser allows it, and downloaded when it doesn’t. Use it to free CPU on a heavy chain, or to resample: bounce it, then chop and mangle the result. “→ New channel” puts the bounce on its own track right beside the original and touches nothing — no settings moved, no notes switched off — so it is the safe way to layer or resample. The new channel is set to full volume with no sends or sidechain, because the source channel’s fader, sends and ducking are already inside the audio.'],
  ['Instruments','Freeze a track','Alt+Shift+R','Bounces the track and swaps it over in one move: its notes go struck through, one hit at row 0 plays the bounce, and a ❄ appears on the track header. Because the bounce already contains the fader, EQ, FX, sends and ducking, the channel strip is flattened while frozen and this pattern’s automation lanes for that track are set aside — otherwise everything would apply twice. Alt+Shift+R again thaws it: notes, mixer and automation come back exactly as they were, and the bounced instrument stays in your list. It freezes ONE PATTERN, so the sample restarts each time the pattern comes round — freeze each pattern you want committed. Nothing is deleted, and Ctrl+Z undoes the lot.'],

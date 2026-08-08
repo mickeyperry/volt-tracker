@@ -11296,31 +11296,42 @@ function laneShapeDlg(k,x,y){
   ctxMenu.style.left=Math.min(x,innerWidth-260)+'px';
   ctxMenu.style.top=Math.min(y,innerHeight-300)+'px';
   ctxMenu.hidden=false;
-  const sync=()=>{
-    $id('shCv').textContent=S.cycles;
-    $id('shPv').innerHTML=Math.round(S.phase*360)+'&deg;';
-    $id('shLv').textContent=S.lo.toFixed(2);
-    $id('shHv').textContent=S.hi.toFixed(2);
-    [...ctxMenu.querySelectorAll('[data-sh]')].forEach(b=>b.classList.toggle('on',b.dataset.sh===S.shape));
-  };
-  ctxMenu.querySelectorAll('[data-sh]').forEach(b=>b.onclick=()=>{S.shape=b.dataset.sh;sync()});
-  $id('shC').oninput=e=>{S.cycles=+e.target.value;sync()};
-  $id('shP').oninput=e=>{S.phase=+e.target.value;sync()};
-  $id('shL').oninput=e=>{S.lo=+e.target.value;sync()};
-  $id('shH').oninput=e=>{S.hi=+e.target.value;sync()};
-  $id('shRst').onclick=()=>{S.shape='sine';S.cycles=1;S.phase=0;S.lo=0;S.hi=1;
-    $id('shC').value=1;$id('shP').value=0;$id('shL').value=0;$id('shH').value=1;sync()};
-  $id('shApply').onclick=()=>{
+  /* Live, like every other control in VOLT: the lane redraws and the sequencer reads it on the
+     next row, so you hear the shape while you are still dragging. It also commits as it goes —
+     clicking away can't leave you with a preview that was never saved. */
+  const before=arr.slice();
+  const draw=()=>{
     const n=rng.b-rng.a+1;
     for(let i=0;i<n;i++){
       const ph=S.phase+(i/Math.max(1,n))*S.cycles;
       const w=lfoValue(S.shape,ph,rng.a+i);
       arr[rng.a+i]=Math.round((S.lo+(S.hi-S.lo)*w)*100)/100;
     }
-    ctxMenu.hidden=true;
+    $id('shCv').textContent=S.cycles;
+    $id('shPv').innerHTML=Math.round(S.phase*360)+'&deg;';
+    $id('shLv').textContent=S.lo.toFixed(2);
+    $id('shHv').textContent=S.hi.toFixed(2);
+    [...ctxMenu.querySelectorAll('[data-sh]')].forEach(b=>b.classList.toggle('on',b.dataset.sh===S.shape));
     renderAuto();markAuto();saveSoon();
+  };
+  ctxMenu.querySelectorAll('[data-sh]').forEach(b=>b.onclick=()=>{S.shape=b.dataset.sh;draw()});
+  $id('shC').oninput=e=>{S.cycles=+e.target.value;draw()};
+  $id('shP').oninput=e=>{S.phase=+e.target.value;draw()};
+  $id('shL').oninput=e=>{S.lo=+e.target.value;draw()};
+  $id('shH').oninput=e=>{S.hi=+e.target.value;draw()};
+  $id('shRst').onclick=()=>{
+    for(let r=rng.a;r<=rng.b;r++)arr[r]=before[r];   /* back to what was there before you opened it */
+    S.shape='sine';S.cycles=1;S.phase=0;S.lo=0;S.hi=1;
+    $id('shC').value=1;$id('shP').value=0;$id('shL').value=0;$id('shH').value=1;
+    [...ctxMenu.querySelectorAll('[data-sh]')].forEach(b=>b.classList.toggle('on',b.dataset.sh==='sine'));
+    renderAuto();markAuto();saveSoon();
+    status('lane put back');
+  };
+  $id('shApply').onclick=()=>{
+    ctxMenu.hidden=true;
     status('drew '+S.cycles+' cycle'+(S.cycles===1?'':'s')+' of '+S.shape+' across rows '+rng.a+'–'+rng.b);
   };
+  draw();   /* show the shape the moment it opens, rather than an empty promise */
 }
 const ASCALE={mult:1,off:0,center:.5,tension:0};
 function laneScaleDlg(k,x,y){
@@ -11353,7 +11364,7 @@ function laneScaleDlg(k,x,y){
     $id('scCv').textContent=S.center.toFixed(2);
     $id('scOv').textContent=S.off.toFixed(2);
     $id('scTv').textContent=S.tension.toFixed(2);
-    renderAuto();
+    renderAuto();markAuto();saveSoon();   /* commit as you drag — clicking away can't lose it */
   };
   $id('scM').oninput=e=>{S.mult=+e.target.value;apply()};
   $id('scC').oninput=e=>{S.center=+e.target.value;apply()};
@@ -11364,8 +11375,9 @@ function laneScaleDlg(k,x,y){
     for(let r=rng.a;r<=rng.b;r++)arr[r]=before[r];
     $id('scM').value=1;$id('scC').value=.5;$id('scO').value=0;$id('scT').value=0;
     apply();
+    status('lane put back');
   };
-  $id('scApply').onclick=()=>{ctxMenu.hidden=true;markAuto();saveSoon();status('lane scaled, rows '+rng.a+'–'+rng.b)};
+  $id('scApply').onclick=()=>{ctxMenu.hidden=true;status('lane scaled, rows '+rng.a+'–'+rng.b)};
 }
 autoLanes.addEventListener('click',e=>{
   const lf=e.target.dataset.lfo,sc=e.target.dataset.scale;

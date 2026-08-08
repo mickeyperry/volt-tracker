@@ -93,6 +93,35 @@ module.exports=async function(){
     S.ok('random is repeatable, not different every press',r.randomRepeatable);
     S.ok('  values are stored to the same precision as painting',r.rounded);
 
+    /* the point of a shape control is hearing it while you move it — applying only on a button
+       press means every experiment costs a round trip */
+    S.head('the shape is live, not on-apply');
+    r=await page.evaluate(()=>{
+      const arr=song.patterns[0].auto['0.p.cutoff'];
+      arr.fill(.5);
+      autoSel=null;
+      Object.assign(ASHAPE,{shape:'ramp',cycles:1,phase:0,lo:0,hi:1});
+      laneShapeDlg('0.p.cutoff',10,10);
+      const onOpen=arr.slice(0,4);                    /* drawn immediately, before any click */
+      /* move the SLIDER — the handler reads its value, so poking ASHAPE directly proves nothing */
+      const c=document.getElementById('shC');
+      c.value=4;c.dispatchEvent(new Event('input'));
+      const afterDrag=arr.slice(0,4);
+      const painted=[...document.querySelectorAll('.alane .astep i')].length>0;
+      document.getElementById('shRst').click();
+      const afterReset=arr.slice(0,4);
+      document.getElementById('shApply').click();
+      return{onOpen,afterDrag,afterReset,painted,closed:ctxMenu.hidden};
+    });
+    S.ok('opening it already shows the shape',r.onOpen[0]!==.5||r.onOpen[3]!==.5,
+      'lane reads '+r.onOpen.join(', '));
+    S.ok('  moving a knob redraws immediately',r.afterDrag.join()!==r.onOpen.join(),
+      r.onOpen.join(',')+' → '+r.afterDrag.join(','));
+    S.ok('  the lane itself is repainted',r.painted);
+    S.ok('  Reset restores what was there before it opened',r.afterReset.every(v=>v===.5),
+      r.afterReset.join(', '));
+    S.ok('  and Apply just closes it',r.closed);
+
     S.head('it respects a selected range');
     r=await page.evaluate(() => {
       const arr=song.patterns[0].auto['0.p.cutoff'];

@@ -11272,6 +11272,16 @@ function laneRange(k){
   if(autoSel&&autoSel.k===k)return{a:Math.min(autoSel.a,autoSel.b),b:Math.max(autoSel.a,autoSel.b)};
   return{a:0,b:rows-1};
 }
+/* Park the popup just ABOVE the lane panel. Dropped at the pointer it sat on top of the very
+   lanes it was redrawing, so you couldn't watch the shape you were dragging. */
+function popAboveAuto(x){
+  ctxMenu.hidden=false;
+  ctxMenu.style.left='0px';ctxMenu.style.top='0px';
+  const w=ctxMenu.offsetWidth||240,h=ctxMenu.offsetHeight||260;
+  const panTop=autoPan.hidden?innerHeight:autoPan.getBoundingClientRect().top;
+  ctxMenu.style.left=clamp(x-w/2,8,Math.max(8,innerWidth-w-8))+'px';
+  ctxMenu.style.top=clamp(panTop-h-10,8,Math.max(8,innerHeight-h-8))+'px';
+}
 const LFO_SHAPES=['sine','tri','saw','ramp','square','random'];
 function lfoValue(shape,ph,seed){
   const x=ph-Math.floor(ph);
@@ -11301,9 +11311,7 @@ function laneShapeDlg(k,x,y){
     +row('High','shH',0,1,.01,S.hi,S.hi.toFixed(2))
     +'<div class="btnrow"><button id="shRst">Reset</button><button id="shApply" class="primary">Apply</button></div>'
     +'<div class="vhint">Applies to the selected range, or the whole lane when nothing is selected.</div></div>';
-  ctxMenu.style.left=Math.min(x,innerWidth-260)+'px';
-  ctxMenu.style.top=Math.min(y,innerHeight-300)+'px';
-  ctxMenu.hidden=false;
+  popAboveAuto(x);
   /* Live, like every other control in VOLT: the lane redraws and the sequencer reads it on the
      next row, so you hear the shape while you are still dragging. It also commits as it goes —
      clicking away can't leave you with a preview that was never saved. */
@@ -11357,9 +11365,7 @@ function laneScaleDlg(k,x,y){
     +row('Tension','scT',-1,1,.01,S.tension,S.tension.toFixed(2),'Bends the curve — negative digs it out, positive fills it in')
     +'<div class="btnrow"><button id="scRst">Reset</button><button id="scApply" class="primary">Apply</button></div>'
     +'<div class="vhint">Live preview — Reset puts it back.</div></div>';
-  ctxMenu.style.left=Math.min(x,innerWidth-260)+'px';
-  ctxMenu.style.top=Math.min(y,innerHeight-300)+'px';
-  ctxMenu.hidden=false;
+  popAboveAuto(x);
   const apply=()=>{
     for(let r=rng.a;r<=rng.b;r++){
       const v0=before[r];
@@ -11403,9 +11409,8 @@ function laneTool(which){
   if(autoPan.hidden){autoToggle();}
   const k=laneForHotkey();
   if(!k){status('no automation in this pattern — right-click a slider in the side panel and choose “Automate”');return}
-  const lane=autoLanes.querySelector('.alane[data-k="'+k+'"]');
-  const r=lane?lane.getBoundingClientRect():{left:innerWidth/2-120,top:innerHeight/2-140};
-  (which==='shape'?laneShapeDlg:laneScaleDlg)(k,r.left+40,Math.max(60,r.top-40));
+  /* vertical position is decided by popAboveAuto — only the horizontal anchor matters here */
+  (which==='shape'?laneShapeDlg:laneScaleDlg)(k,innerWidth/2,0);
 }
 autoLanes.addEventListener('click',e=>{
   const lf=e.target.dataset.lfo,sc=e.target.dataset.scale;

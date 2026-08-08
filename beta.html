@@ -2238,30 +2238,79 @@ function genCtCSS(){
   ctStyle.textContent=s;
 }
 
-function cellHTML(t,r){
+/* One description of a cell, used two ways: built into HTML the first time, and written straight
+   onto the existing elements every time after. Switching patterns used to throw ~6,000 elements
+   away and parse 6,000 more — Firefox spends about 30 ms doing that, three times what Chrome
+   does. Updating the text in place skips the parsing and the allocation entirely. */
+const CELL_FIELDS=8;
+function cellParts(t,r){
   const c=cellAt(t,r)||{};
   const isCur=(cursor.t===t&&cursor.r===r);
-  const sp=(ci,txt,set,extra,attr)=>{
-    let cls=set?'set':'';
-    if(extra)cls+=' '+extra;
-    if(inSel(t,ci,r))cls+=' ssel';
-    if(isCur&&cursor.c===ci)cls+=' cur';
-    return '<i data-c="'+ci+'"'+(attr||'')+' class="'+cls+'">'+txt+'</i>';
-  };
   let nT='···',nSet=false,nOff='';
   if(c.n===OFF){nT='OFF';nSet=true;nOff='off'}
   else if(c.n!=null){nT=noteName(c.n);nSet=true}
   const i2=c.i!=null?hex2(c.i):'··';
   const v2=c.v!=null?hex2(c.v):'··';
   const fx=c.c?c.c+hex2(c.x||0):'···';
-  /* Shift+G group ribbon under the note, hue per group */
-  const ga=c.g!=null?' style="box-shadow:inset 0 -2px 0 hsl('+(c.g*67%360)+',75%,60%)"':'';
-  return '<span class="tcell'+(t%2?' odd':'')+(c.d?' dis':'')+'" data-t="'+t+'">'
-    +sp(0,nT,nSet,nOff,ga)+' '
-    +sp(1,i2[0],c.i!=null)+sp(2,i2[1],c.i!=null)+' '
-    +sp(3,v2[0],c.v!=null)+sp(4,v2[1],c.v!=null)+' '
-    +sp(5,fx[0],!!c.c)+sp(6,fx[1],!!c.c)+sp(7,fx[2],!!c.c)
-    +'</span>';
+  const txt=[nT,i2[0],i2[1],v2[0],v2[1],fx[0],fx[1],fx[2]];
+  const set=[nSet,c.i!=null,c.i!=null,c.v!=null,c.v!=null,!!c.c,!!c.c,!!c.c];
+  const cls=new Array(CELL_FIELDS);
+  for(let ci=0;ci<CELL_FIELDS;ci++){
+    let k=set[ci]?'set':'';
+    if(!ci&&nOff)k+=' off';
+    if(inSel(t,ci,r))k+=' ssel';
+    if(isCur&&cursor.c===ci)k+=' cur';
+    cls[ci]=k;
+  }
+  return{txt,cls,
+    /* Shift+G group ribbon under the note, hue per group */
+    ribbon:c.g!=null?'inset 0 -2px 0 hsl('+(c.g*67%360)+',75%,60%)':'',
+    dis:!!c.d};
+}
+function cellHTML(t,r){
+  const p=cellParts(t,r);
+  const sp=ci=>'<i data-c="'+ci+'"'+(ci===0&&p.ribbon?' style="box-shadow:'+p.ribbon+'"':'')
+    +' class="'+p.cls[ci]+'">'+p.txt[ci]+'</i>';
+  return '<span class="tcell'+(t%2?' odd':'')+(p.dis?' dis':'')+'" data-t="'+t+'">'
+    +sp(0)+' '+sp(1)+sp(2)+' '+sp(3)+sp(4)+' '+sp(5)+sp(6)+sp(7)+'</span>';
+}
+/* write a cell onto elements that already exist. Only touches what actually differs — a class or
+   text assignment that changes nothing still costs the browser a style invalidation. */
+function patchCell(t,r,el){
+  const p=cellParts(t,r);
+  const want='tcell'+(t%2?' odd':'')+(p.dis?' dis':'');
+  if(el.className!==want)el.className=want;
+  const is=el.children;               /* the <i> fields are the only elements in a cell */
+  if(is.length!==CELL_FIELDS)return false;
+  for(let ci=0;ci<CELL_FIELDS;ci++){
+    const n=is[ci];
+    if(n.firstChild){if(n.firstChild.nodeValue!==p.txt[ci])n.firstChild.nodeValue=p.txt[ci]}
+    else n.textContent=p.txt[ci];
+    if(n.className!==p.cls[ci])n.className=p.cls[ci];
+  }
+  /* the group ribbon is written as a style ATTRIBUTE, not through el.style, so it serialises
+     byte-for-byte the same as the HTML path — and remembered on the node, because reading
+     el.style.boxShadow back gives you the browser's own rewritten form, which never compares
+     equal and would make us rewrite it on every single patch */
+  const n0=is[0];
+  if(n0._rib!==p.ribbon){
+    n0._rib=p.ribbon;
+    if(p.ribbon)n0.setAttribute('style','box-shadow:'+p.ribbon);
+    else n0.removeAttribute('style');
+  }
+  return true;
+}
+/* returns false if the row isn't the shape we expect — the caller then rebuilds it */
+function patchRow(r){
+  const el=grows.children[r];
+  if(!el||el.classList.contains('pend'))return false;
+  const kids=el.children;
+  if(kids.length!==TRACKS+1)return false;
+  const rn=kids[0];
+  const txt=String(r).padStart(song.patterns[curPat].rows>100?3:2,'0');
+  if(rn.firstChild&&rn.firstChild.nodeValue!==txt)rn.firstChild.nodeValue=txt;
+  for(let t=0;t<TRACKS;t++)if(!patchCell(t,r,kids[t+1]))return false;
+  return true;
 }
 function rowInner(r){
   /* pad row numbers to the PATTERN's widest row, not a fixed 2 — in a 128-row pattern
@@ -5895,10 +5944,26 @@ function abToB64(ab){
 function b64ToAb(b){const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u.buffer}
 
 /* ================= transport / pattern UI ================= */
+/* Switching patterns keeps the same grid — same tracks, usually the same number of rows — so
+   there is no reason to throw the whole thing away and build it again. Write the new pattern's
+   values onto the elements that are already there; fall back to a full rebuild only when the
+   shape actually differs (a pattern of another length, or the track count changed). */
+function patchGrid(){
+  const pat=song.patterns[curPat];
+  cursor.r=clamp(cursor.r,0,pat.rows-1);
+  if(playRowEl){playRowEl.classList.remove('playrow');playRowEl=null}
+  for(let r=0;r<pat.rows;r++)if(!patchRow(r))renderRow(r);
+  renderHead();updateSelBox();updateLoopVis();
+  document.getElementById('patLen').value=pat.rows;
+  renderPatSel();renderOrder();
+  requestAnimationFrame(()=>{renderBeatIfOpen();renderAutoIfOpen();prRenderIfOpen();markAuto()});
+}
 function curPatSet(pi){
   curPat=clamp(pi,0,song.patterns.length-1);
   autoSel=null; /* a range in the old pattern means nothing here */
-  renderGrid();
+  const pat=song.patterns[curPat];
+  if(grows.children.length===pat.rows&&grows.children.length)patchGrid();
+  else renderGrid();
 }
 function patLabel(pi){const p=song.patterns[pi];return hex2(pi)+(p&&p.name?' '+p.name:'')}
 function renderPatSel(){

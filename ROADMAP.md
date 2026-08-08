@@ -73,6 +73,19 @@ chasing it, get the same *result* a different way:
       section; multi-select slots (Shift/Ctrl+click, Ctrl+drag lasso) with Delete / Ctrl+X C V D;
       section bars now sit flush on top of the chips they cover.
 
+- [x] **Disabled notes** — done 2026-08-07. `Alt+N` switches notes off without deleting them
+      (cell `d` flag): struck through in the grid, hollow in the piano roll, skipped by the
+      scheduler so they're silent in playback and in exports. Treated as empty rather than a
+      note-off, so the previous note rings through. `tests/disable.test.js`.
+- [x] **Bounce a channel** — done 2026-08-07. `Alt+B` renders the cursor channel (chain, sidechain
+      ducking, swing) over a chosen scope — selection / pattern / section / whole mix — into a new
+      sampler instrument, and writes the WAV beside the project (or downloads it). Master FX are
+      excluded from single-channel bounces. `tests/bounce.test.js`.
+- [x] **Freeze** — done 2026-08-08. `Alt+Shift+R` bounces the track, disables its notes, drops one
+      hit at row 0 and flattens the channel strip + parks its automation lanes so nothing is
+      processed twice; level is matched by measuring the result. Same key thaws it, restoring
+      notes, mixer and lanes. Per pattern. `tests/bounce.test.js`.
+
 ## Editing / workflow
 
 - ~~Interpolate between two values~~ — **rejected 2026-08-04.** Mickey: the automation lanes

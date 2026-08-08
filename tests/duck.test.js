@@ -178,13 +178,15 @@ module.exports=async function(){
     S.ok('the mixer strip has the same button',r.inMixer);
     await page.evaluate(()=>{if(!mixer.hidden)toggleMixer()});
 
-    S.head('new channels arrive with it on');
+    S.head('new channels arrive with it OFF');
     r=await page.evaluate(()=>{
       const ts=mkTs();
-      return{duck:ts.duck,src:ts.duckSrc,rel:ts.duckRel};
+      const on=(()=>{const t2=mkTs();t2.duck=t2.duckSet||SC_DEF;return t2.duck})();
+      return{duck:ts.duck,src:ts.duckSrc,rel:ts.duckRel,whenSwitchedOn:on};
     });
-    S.ok('a fresh track ducks by default',r.duck>0,'depth '+r.duck);
-    S.ck('  from any kick instrument',r.src,-1);
+    S.ck('a fresh track does not duck until you ask',r.duck,0);
+    S.ok('  but switching it on lands on an audible depth',r.whenSwitchedOn>=.3,'depth '+r.whenSwitchedOn);
+    S.ck('  pointed at any kick to begin with',r.src,-1);
 
     S.head('old songs are left exactly as they were');
     r=await page.evaluate(()=>{

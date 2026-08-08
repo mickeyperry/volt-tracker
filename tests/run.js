@@ -20,6 +20,9 @@ const SUITES={
   swing:require('./swing.test'),
   spectrum:require('./spectrum.test'),
   sections:require('./sections.test'),
+  disable:require('./disable.test'),
+  bounce:require('./bounce.test'),
+  roll:require('./roll.test'),
   ui:require('./ui.test'),
   perf:require('./perf.test')
 };

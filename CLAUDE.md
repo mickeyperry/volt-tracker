@@ -51,6 +51,10 @@ storage, namespace it — a bug in beta must not be able to reach his real songs
   punctuation that isn't mapped. `\` (transport mode) and `Ctrl+Space` (palette),
   `Ctrl+Shift+Space` (Vault) are taken.
 - **Firefox eats `/` and `'`** for Quick Find. They're swallowed app-wide now — keep it that way.
+- **Never bind Alt+F, E, V, S, T, H or B.** Those are Firefox's menu-bar mnemonics (File, Edit,
+  View, History, Tools, Help, Bookmarks) and the page can't reliably cancel them — Alt+E and
+  Alt+F silently did nothing in Firefox for months. `tests/bounce.test.js` fails if one comes
+  back. Also avoid Ctrl+B / Ctrl+Shift+B (Firefox bookmarks).
 - **Two keydown handlers.** The main one bails when a left-rail panel (`#side`) has focus; the
   transport/F-key one deliberately doesn't. Global keys go in the second.
 - **Firefox has no File System Access API** and never will — `showDirectoryPicker` is

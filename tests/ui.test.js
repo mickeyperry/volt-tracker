@@ -3,6 +3,7 @@
    the crash reporter, and the song format stamp. */
 const{suite,open}=require('./lib');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const chipFill=r=>r.fill?'gradient painted':'no gradient on the playing chip';
 
 module.exports=async function(){
   const S=suite('ui / transport');
@@ -187,6 +188,50 @@ module.exports=async function(){
     await page.keyboard.press('Backslash');
     S.ok('  and works with a left-rail panel focused',await page.evaluate(()=>armSong===true));
     await page.evaluate(()=>{document.body.focus();armSet(false)});
+
+    S.head('pattern progress lives on the song strip, not over row 000');
+    await page.evaluate(async()=>{
+      await loadSong(blankSong());
+      while(song.patterns.length<3)newPattern();
+      song.order=[0,1,2];curPatSet(1);ordPos=1;renderOrder();
+      const p=song.patterns[1];p.la=p.lb=null;
+      document.body.focus();
+    });
+    r=await page.evaluate(()=>{
+      const a=getComputedStyle(ghead,'::after');
+      return{content:a.content,pp:getComputedStyle(ghead).getPropertyValue('--pp').trim()};
+    });
+    S.ok('the bar above row 000 is gone',r.content==='none'||r.content==='',
+      'ghead::after content = '+JSON.stringify(r.content));
+
+    await page.evaluate(()=>play(false,0));          /* looping ONE pattern */
+    await sleep(500);
+    r=await page.evaluate(()=>{
+      const chips=[...document.querySelectorAll('#ordChips .chip')];
+      return{lit:chips.map(c=>c.classList.contains('playing')),
+             fill:chips[1]&&/gradient/.test(chips[1].style.background||''),
+             playing:SEQ.playing,song:SEQ.songMode};
+    });
+    S.ck('looping a pattern lights its own slot',[r.lit,r.playing,r.song],[[false,true,false],true,false]);
+    S.ok('  and fills it as the pattern runs',r.fill,chipFill(r));
+    await page.evaluate(()=>stop());
+    await sleep(120);
+    r=await page.evaluate(()=>[...document.querySelectorAll('#ordChips .chip')].map(c=>c.classList.contains('playing')));
+    S.ck('stopping clears it',r,[false,false,false]);
+
+    S.head('the channel is wide enough for its buttons');
+    r=await page.evaluate(async()=>{
+      await loadSong(blankSong());renderGrid();renderHead();
+      const cell=grows.children[0].querySelector('.tcell').getBoundingClientRect().width;
+      const h=ghead.querySelector('.tcell[data-t="0"]');
+      const ctl=h.querySelector('.thctl');
+      return{cell:+cell.toFixed(1),head:+h.getBoundingClientRect().width.toFixed(1),
+             needs:ctl.scrollWidth,has:ctl.clientWidth,
+             btns:[...h.querySelectorAll('.tbtn')].map(b=>b.textContent).join(' ')};
+    });
+    S.ck('all four buttons are there',r.btns,'M S SC ❄');
+    S.ok('  and none of them is clipped',r.needs<=r.has+1,r.needs+'px of buttons in '+r.has+'px');
+    S.ck('  the header still matches its grid column',r.head,r.cell);
 
     S.head('crashes are visible, songs are stamped');
     r=await page.evaluate(async()=>{

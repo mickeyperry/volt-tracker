@@ -8473,6 +8473,14 @@ document.addEventListener('keydown',e=>{
     e.shiftKey?freezeToggle():bounceDlg();
     return;
   }
+  /* J and U because Firefox owns Alt+F/E/V/S/T/H/B for its menus and nearly every Ctrl+Shift
+     letter for its own windows — these two are among the few genuinely free keys left */
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.code==='KeyJ'){
+    e.preventDefault();e.stopImmediatePropagation();laneTool('shape');return;
+  }
+  if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.code==='KeyU'){
+    e.preventDefault();e.stopImmediatePropagation();laneTool('scale');return;
+  }
   if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&e.code==='KeyN'){
     e.preventDefault();e.stopImmediatePropagation();
     prPan.hidden||!PR.sel.length?toggleDisable():prToggleDisable();
@@ -11379,6 +11387,26 @@ function laneScaleDlg(k,x,y){
   };
   $id('scApply').onclick=()=>{ctxMenu.hidden=true;status('lane scaled, rows '+rng.a+'–'+rng.b)};
 }
+/* Which lane a hotkey acts on: the one you have a range selected in, else one belonging to the
+   track the cursor is on, else simply the first. Opens the panel if it is closed, because
+   "nothing happened" is the worst possible answer to a keypress. */
+function laneForHotkey(){
+  if(!song)return null;
+  const pat=song.patterns[curPat];
+  const keys=pat.auto?Object.keys(pat.auto).filter(k=>pat.auto[k]):[];
+  if(!keys.length)return null;
+  if(autoSel&&keys.includes(autoSel.k))return autoSel.k;
+  const mine=keys.filter(k=>+k.slice(0,k.indexOf('.'))===cursor.t);
+  return (mine.length?mine:keys.sort())[0];
+}
+function laneTool(which){
+  if(autoPan.hidden){autoToggle();}
+  const k=laneForHotkey();
+  if(!k){status('no automation in this pattern — right-click a slider in the side panel and choose “Automate”');return}
+  const lane=autoLanes.querySelector('.alane[data-k="'+k+'"]');
+  const r=lane?lane.getBoundingClientRect():{left:innerWidth/2-120,top:innerHeight/2-140};
+  (which==='shape'?laneShapeDlg:laneScaleDlg)(k,r.left+40,Math.max(60,r.top-40));
+}
 autoLanes.addEventListener('click',e=>{
   const lf=e.target.dataset.lfo,sc=e.target.dataset.scale;
   if(lf!=null){e.stopPropagation();laneShapeDlg(lf,e.clientX,e.clientY);return}
@@ -11997,8 +12025,8 @@ const HELP=[
  ['Grid','Enter notes','Z–M / Q–P','Two piano rows. Oct sets the base octave, [ and ] shift it. A writes a note-OFF (cuts the voice).'],
  ['Grid','The four columns','note·in·vol·fx','Each cell: note, instrument (hex), volume 00–40, effect. Park the cursor and type hex right over them.'],
  ['Automation','Zoom the lanes','Ctrl+wheel · fit','A long pattern is metres of scrolling at the default width. Ctrl+wheel over the lanes zooms, the − / + buttons do the same, and “fit” (or Ctrl+right-click, like the piano roll) squeezes the whole pattern onto the screen so you can see the shape of a curve instead of a slice of it.'],
- ['Automation','Draw a shape','∿ shape','Writes a waveform across the lane instead of you painting a slope by hand: sine, triangle, saw, ramp, square or random, with however many cycles, a phase offset, and a low and high to keep it inside. Random is repeatable — the same settings always give the same pattern, so a render matches what you heard. If you have a range selected (Ctrl+drag on the lane) it only draws there, so you can shape one bar and leave the rest.'],
- ['Automation','Reshape what is there','↕ scale','Takes the curve you already have and bends it. MULTIPLY stretches it away from the centre or squashes it toward it — pull it to 0 and everything flattens, push it up and the moves get bigger. CENTRE is the value it stretches around, OFFSET shifts the lot up or down, and TENSION curves it: negative digs the middle out, positive fills it in. It previews live as you drag, and Reset puts it back exactly as it was.'],
+ ['Automation','Draw a shape','Alt+J · ∿ shape','Writes a waveform across the lane instead of you painting a slope by hand: sine, triangle, saw, ramp, square or random, with however many cycles, a phase offset, and a low and high to keep it inside. Random is repeatable — the same settings always give the same pattern, so a render matches what you heard. If you have a range selected (Ctrl+drag on the lane) it only draws there, so you can shape one bar and leave the rest.'],
+ ['Automation','Reshape what is there','Alt+U · ↕ scale','Takes the curve you already have and bends it. MULTIPLY stretches it away from the centre or squashes it toward it — pull it to 0 and everything flattens, push it up and the moves get bigger. CENTRE is the value it stretches around, OFFSET shifts the lot up or down, and TENSION curves it: negative digs the middle out, positive fills it in. It previews live as you drag, and Reset puts it back exactly as it was.'],
  ['Mixing','Mastering readouts','click the top meter','Opens the master panel. Along the top: LUFS (how loud it really is — club masters sit near -8, streaming wants about -14), PEAK with a clip warning, and CORR, which is whether the mix survives being folded to mono — 1 is mono, near 0 is very wide, below 0 means parts will cancel on a club rig. Under that, eight bands from SUB to AIR with peak-hold lines, so you can see at a glance that there is too much low mid rather than guessing. The loudness reading is K-weighted like a real LUFS meter: it discounts deep sub and lifts the top, because a plain RMS meter flatters a bass-heavy psy mix by several dB.'],
  ['Mixing','Limiter L∞','master FX','Two knobs. LOUD is how hard you push — turn it up and the whole mix gets louder without ever getting bigger than CEIL, which is the hard limit nothing crosses. That is the entire instrument.\n\nUnderneath it is a proper look-ahead brickwall, the L2 kind: it delays the audio a millisecond and a half and looks at what is coming, so the gain is already down before the transient lands. Nothing overshoots and nothing smears. Release and auto-release are fixed at values that suit a mix — they were knobs with no good answer. The GR readout in the master panel shows how hard it is working: a steady 3-6 dB is a loud master, 10+ is squashing.\n\nWhile a Limiter is on the master, VOLT’s own safety compressor stands down so yours has the last word — it was adding about 1.3 dB of its own makeup, which would otherwise sit on top of your ceiling. It runs on the main thread, so if you ever hear a tick under heavy load, that is what it is: take it off and the safety net comes back.'],
  ['Mixing','PULTEQ','master FX or any track','The old trick, and it is the reason this EQ is famous: turn LOW UP and LOW DOWN at the SAME TIME. They are centred at different frequencies, so instead of cancelling you get a lift right at the bottom and a scoop just above it — big clean low end with the mud taken out. At 60 Hz with both at 8 that is about +7 dB at 30 Hz and -7 dB at 120. Do it on the master for weight, or on a bass or kick to make room for each other.\n\nLOW HZ picks where it happens, AIR HZ and AIR UP are a wide gentle lift up top that opens a mix without making it hiss. Everything at zero is completely transparent.'],
@@ -12135,6 +12163,8 @@ COMMANDS.push(
   {n:'Bounce this channel to a sample',k:'Alt+R',kw:'render resample print commit audio wav flatten',f:bounceDlg},
   {n:'Freeze / thaw this track',k:'Alt+Shift+R',kw:'freeze thaw cpu commit render swap bounce in place',f:freezeToggle},
   {n:'Bounce onto a new channel',kw:'resample layer duplicate render safe copy audio track',f:()=>bounceToChannel('pat')},
+  {n:'Draw a shape on an automation lane',k:'Alt+J',kw:'lfo sine ramp saw square random slope curve envelope automation',f:()=>laneTool('shape')},
+  {n:'Scale an automation lane',k:'Alt+U',kw:'multiply offset tension centre curve amp automation level scaling',f:()=>laneTool('scale')},
   /* so a "it feels slow" can be answered with a number, from the browser and song it's slow in */
   {n:'Measure redraw speed',kw:'benchmark slow lag performance profile pattern switch fps',f:()=>{
     if(song.patterns.length<2){status('needs at least two patterns to measure a switch');return}

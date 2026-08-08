@@ -179,6 +179,46 @@ module.exports=async function(){
     S.ok('Reset puts the lane back',r.reset.back[0]===.2&&r.reset.back[1]===.8,
       'changed to '+r.reset.changed.join('/')+', reset to '+r.reset.back.join('/'));
 
+    S.head('hotkeys');
+    await seed();
+    await page.evaluate(()=>{ctxMenu.hidden=true;autoSel=null;document.body.focus()});
+    await page.keyboard.down('Alt');await page.keyboard.press('KeyJ');await page.keyboard.up('Alt');
+    r=await page.evaluate(()=>({open:!ctxMenu.hidden,shape:!!document.getElementById('shApply')}));
+    S.ck('Alt+J opens the shape tool',[r.open,r.shape],[true,true]);
+    await page.evaluate(()=>{ctxMenu.hidden=true});
+    await page.keyboard.down('Alt');await page.keyboard.press('KeyU');await page.keyboard.up('Alt');
+    r=await page.evaluate(()=>({open:!ctxMenu.hidden,scale:!!document.getElementById('scApply')}));
+    S.ck('Alt+U opens the scale tool',[r.open,r.scale],[true,true]);
+    await page.evaluate(()=>{ctxMenu.hidden=true});
+
+    r=await page.evaluate(()=>{
+      /* it should open the panel for you rather than doing nothing */
+      if(!autoPan.hidden)autoToggle();
+      const wasHidden=autoPan.hidden;
+      laneTool('shape');
+      const out={wasHidden,nowOpen:!autoPan.hidden,dialog:!ctxMenu.hidden};
+      ctxMenu.hidden=true;
+      /* and with no automation at all it should say so, not fail silently */
+      song.patterns[0].auto={};renderAuto();
+      laneTool('shape');
+      out.noLanes={dialog:!ctxMenu.hidden,said:/no automation/i.test($id('status').textContent)};
+      return out;
+    });
+    S.ck('it opens the lane panel if it is closed',[r.wasHidden,r.nowOpen,r.dialog],[true,true,true]);
+    S.ok('  and with no lanes it tells you why',!r.noLanes.dialog&&r.noLanes.said);
+
+    r=await page.evaluate(()=>{
+      const src=document.documentElement.innerHTML;
+      const bad=[];
+      src.split('\n').forEach(l=>{
+        if(/^\s*\/\*/.test(l))return;
+        if(!/(^|[^!])e\.altKey/.test(l))return;
+        [...l.matchAll(/e\.code==='Key([FEVSTHB])'/g)].forEach(m=>bad.push(m[1]));
+      });
+      return[...new Set(bad)];
+    });
+    S.ck('neither collides with a Firefox menu',r,[]);
+
     S.ok('no console errors',errs.length===0,errs.join(' | '));
   }finally{await browser.close()}
   return S;

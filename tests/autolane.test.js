@@ -179,6 +179,29 @@ module.exports=async function(){
     S.ok('Reset puts the lane back',r.reset.back[0]===.2&&r.reset.back[1]===.8,
       'changed to '+r.reset.changed.join('/')+', reset to '+r.reset.back.join('/'));
 
+    /* it was landing on top of the lanes it redraws, which makes a live preview pointless */
+    S.head('the dialog sits above the lane panel');
+    await seed();
+    r=await page.evaluate(()=>{
+      const check=fn=>{
+        ctxMenu.hidden=true;
+        fn();
+        const p=ctxMenu.getBoundingClientRect(),a=autoPan.getBoundingClientRect();
+        return{clearsPanel:p.bottom<=a.top+1,onScreen:p.top>=0&&p.left>=0&&p.right<=innerWidth+1,
+               gap:Math.round(a.top-p.bottom)};
+      };
+      const byKey=check(()=>laneTool('shape'));
+      const byClick=check(()=>laneShapeDlg('0.p.cutoff',innerWidth-30,innerHeight-20));
+      const scale=check(()=>laneTool('scale'));
+      ctxMenu.hidden=true;
+      return{byKey,byClick,scale};
+    });
+    S.ok('opened by hotkey it clears the lanes',r.byKey.clearsPanel,r.byKey.gap+'px above the panel');
+    S.ok('  opened by click near the bottom-right corner too',r.byClick.clearsPanel,
+      r.byClick.gap+'px above');
+    S.ok('  and it stays on screen',r.byClick.onScreen&&r.byKey.onScreen);
+    S.ok('  the scale dialog behaves the same',r.scale.clearsPanel,r.scale.gap+'px above');
+
     S.head('hotkeys');
     await seed();
     await page.evaluate(()=>{ctxMenu.hidden=true;autoSel=null;document.body.focus()});

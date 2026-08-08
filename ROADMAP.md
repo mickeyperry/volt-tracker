@@ -92,6 +92,26 @@ chasing it, get the same *result* a different way:
       which also meant seeding the shared noise buffer, fixing a long-standing mismatch for hats,
       snares and claps. `tests/glitch.test.js`.
 
+- [x] **PULTEQ** — done 2026-08-08. Pultec-style low boost + cut (the cut is a DIP above the
+      boost, not a second shelf, or they cancel) plus a wide air lift. +6.7 dB at 30 Hz and
+      -7.3 dB at 120 with both lows at 8.
+- [x] **Limiter L∞** — done 2026-08-08, simplified to **two knobs** (LOUD, CEIL) after the first
+      version shipped five nobody could answer. A true L2-style look-ahead brickwall (ScriptProcessor,
+      since AudioWorklet can't load a module from `file://`): threshold as drive, ceiling, release,
+      ARC, GR metering. Measured 0.00 dB over at every ceiling. Neutralises VOLT's own safety
+      compressor while active, which was silently adding ~1.3 dB of makeup to everything.
+- [x] **Mastering tools** — done 2026-08-08. Soft Clip FX (drive / knee / ceiling / mix, with the
+      drive gain compensated) and a master analysis block: K-weighted LUFS, peak with clip
+      warning, mono correlation, and eight band meters with peak hold. `tests/master.test.js`.
+
+- [x] **Automation lane tools** — done 2026-08-09. Ctrl+wheel zoom / fit (Ctrl+right-click),
+      a shape generator (sine / tri / saw / ramp / square / repeatable random, cycles, phase,
+      low, high) and level scaling (multiply / centre / offset / tension) with live preview.
+      Both honour a selected range. `tests/autolane.test.js`.
+- [x] **GLTCH-9 retrigger CPU** — fixed 2026-08-09. A 14-hit burst built 46 audio nodes and an
+      Rxx16 fired sixteen of them into one row (736 nodes / 86 ms). Sources are now shared across
+      grains: **7 nodes whatever the hit count**, same as a kick.
+
 ## Editing / workflow
 
 - ~~Interpolate between two values~~ — **rejected 2026-08-04.** Mickey: the automation lanes

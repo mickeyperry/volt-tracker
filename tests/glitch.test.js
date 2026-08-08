@@ -122,6 +122,40 @@ module.exports=async function(){
     S.ok('  and it is still white noise',Math.abs(r.mean)<.1&&r.sd>.4&&r.sd<.75,
       'mean '+r.mean+', sd '+r.sd);
 
+    /* Mickey hit this: an Rxx retrigger on a glitch made the audio stutter. A 14-hit note was
+       building 46 audio nodes, and Rxx16 fires sixteen of those inside one row — 736 nodes every
+       86 ms. The sources are shared across grains now, so the cost is flat. */
+    S.head('a burst costs the same whether it is 1 hit or 16');
+    r=await page.evaluate(async()=>{
+      audio();
+      let made=0;
+      if(!window.__nodeCount){
+        window.__nodeCount=true;
+        ['createGain','createOscillator','createBiquadFilter','createBufferSource','createWaveShaper',
+         'createStereoPanner','createDelay','createDynamicsCompressor','createConstantSource']
+          .forEach(n=>{const f=AudioContext.prototype[n];
+            if(typeof f==='function')AudioContext.prototype[n]=function(){window.__made++;return f.apply(this,arguments)}});
+      }
+      const count=params=>{
+        const ins=mkInst('glitch','x',params);
+        window.__made=0;
+        const v=trig(ins,48,AC.currentTime+.05,0,1,0);
+        if(v)v.cut(AC.currentTime+.06);
+        return window.__made;
+      };
+      const base=PRESETS.find(p=>p.name==='Machine Gun').p;
+      const out={};
+      for(const h of[1,6,14,16])out['h'+h]=count(Object.assign({},base,{hits:h}));
+      window.__made=0;trig(mkInst('kick','k'),48,AC.currentTime+.05,0,1,0);
+      out.kick=window.__made;
+      return out;
+    });
+    S.ck('one hit and sixteen cost the same',[r.h1,r.h16],[r.h1,r.h1]);
+    S.ok('  which is no more than an ordinary kick',r.h16<=r.kick+2,
+      r.h16+' nodes for a 16-hit burst vs '+r.kick+' for a kick');
+    S.ok('  so a retrigger of 16 stays affordable',r.h14*16<200,
+      (r.h14*16)+' nodes for an Rxx16 row (was 736)');
+
     S.head('the presets are usable and evenly matched');
     r=await page.evaluate(async()=>{
       const out={};

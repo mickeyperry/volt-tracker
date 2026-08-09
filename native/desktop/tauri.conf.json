@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VOLT",
+  "version": "0.1.0",
+  "identifier": "com.mickeyperry.volt",
+  "build": {
+    "frontendDist": "dist",
+    "beforeDevCommand": "node ../tools/mkdesktop.js",
+    "beforeBuildCommand": "node ../tools/mkdesktop.js"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VOLT",
+        "url": "index.html",
+        "width": 1500,
+        "height": 950,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "theme": "Dark",
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "shortDescription": "VOLT tracker",
+    "longDescription": "VOLT — a tracker and DAW that runs in one file."
+  }
+}

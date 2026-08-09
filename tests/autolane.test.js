@@ -93,6 +93,27 @@ module.exports=async function(){
     S.ok('random is repeatable, not different every press',r.randomRepeatable);
     S.ok('  values are stored to the same precision as painting',r.rounded);
 
+    r=await page.evaluate(()=>{
+      const arr=song.patterns[0].auto['0.p.cutoff'];
+      autoSel=null;
+      Object.assign(ASHAPE,{shape:'sine',cycles:1,phase:0,lo:0,hi:1});
+      laneShapeDlg('0.p.cutoff',10,10);
+      const max=+document.getElementById('shC').max;
+      const zc=a=>{let n=0;for(let i=1;i<a.length;i++)if((a[i-1]<.5)!==(a[i]<.5))n++;return n};
+      const at=c=>{const s=document.getElementById('shC');s.value=c;s.dispatchEvent(new Event('input'));return zc(arr.slice())};
+      const c8=at(8),c16=at(16);
+      const warnAt=(()=>{at(30);return document.getElementById('shCv').style.color})();
+      const quietAt=(()=>{at(4);return document.getElementById('shCv').style.color})();
+      document.getElementById('shRst').click();
+      ctxMenu.hidden=true;
+      return{max,c8,c16,warnAt,quietAt,rows:arr.length};
+    });
+    S.ok('the cycle range goes well past a handful',r.max>=64,'up to '+r.max+' cycles');
+    S.ok('  and more cycles really means faster',r.c16>r.c8,
+      r.c8+' crossings at 8 cycles, '+r.c16+' at 16 (over '+r.rows+' rows)');
+    S.ok('  it warns once there are too few rows left to draw a wave',!!r.warnAt&&!r.quietAt,
+      '30 cycles over '+r.rows+' rows flags, 4 does not');
+
     /* the point of a shape control is hearing it while you move it — applying only on a button
        press means every experiment costs a round trip */
     S.head('the shape is live, not on-apply');

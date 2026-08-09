@@ -11305,7 +11305,7 @@ function laneShapeDlg(k,x,y){
   ctxMenu.innerHTML='<div class="lfoPop shapePop"><b>&#8767; Shape &#183; '+esc(autoLabel(k.slice(k.indexOf('.')+1)))
     +' &#183; rows '+rng.a+'&#8211;'+rng.b+'</b>'
     +'<div class="shrow">'+LFO_SHAPES.map(s=>'<button data-sh="'+s+'"'+(S.shape===s?' class="on"':'')+'>'+s+'</button>').join('')+'</div>'
-    +row('Cycles','shC',.25,16,.25,S.cycles,S.cycles+'')
+    +row('Cycles','shC',.25,64,.25,S.cycles,S.cycles+'')
     +row('Phase','shP',0,1,.01,S.phase,Math.round(S.phase*360)+'&deg;')
     +row('Low','shL',0,1,.01,S.lo,S.lo.toFixed(2))
     +row('High','shH',0,1,.01,S.hi,S.hi.toFixed(2))
@@ -11323,7 +11323,14 @@ function laneShapeDlg(k,x,y){
       const w=lfoValue(S.shape,ph,rng.a+i);
       arr[rng.a+i]=Math.round((S.lo+(S.hi-S.lo)*w)*100)/100;
     }
+    /* past one cycle every two rows there aren't enough rows left to draw a wave — it starts
+       aliasing into a jagged pattern. Still usable as chaos, but say so rather than pretending. */
+    const n2=rng.b-rng.a+1,nyq=n2/2;
     $id('shCv').textContent=S.cycles;
+    $id('shCv').style.color=S.cycles>nyq?'var(--mag)':'';
+    $id('shCv').title=S.cycles>nyq
+      ?'Faster than one cycle every two rows — this is aliasing into a jagged pattern rather than a wave'
+      :Math.round(n2/S.cycles*10)/10+' rows a cycle';
     $id('shPv').innerHTML=Math.round(S.phase*360)+'&deg;';
     $id('shLv').textContent=S.lo.toFixed(2);
     $id('shHv').textContent=S.hi.toFixed(2);

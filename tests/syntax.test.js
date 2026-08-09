@@ -6,7 +6,9 @@ const{ROOT,suite}=require('./lib');
 
 module.exports=async function(){
   const S=suite('syntax');
-  for(const file of ['volt.html','beta.html']){
+  /* every published file, not just the one under test — a syntax error in any of them is a blank
+     page for whoever opens that URL */
+  for(const file of ['volt.html','beta.html','beta2.html']){
     const p=path.join(ROOT,file);
     if(!fs.existsSync(p)){S.note(file+' — not present, skipped');continue}
     const html=fs.readFileSync(p,'utf8');

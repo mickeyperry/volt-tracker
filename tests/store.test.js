@@ -2,7 +2,12 @@
    audio in → hashed to OPFS → project JSON shrinks to a reference → reload gets the audio back.
    Plus the two things that would actually lose work: a stale hash after you edit a sample, and
    the cleanup deleting something a saved project still points at. */
-const{suite,open}=require('./lib');
+const{suite,open,FILE}=require('./lib');
+
+/* Each published build gets its own storage namespace so a bug in one can never reach a song
+   saved by another. Derive the expected namespace from the file under test rather than pinning
+   one, so adding a build can't quietly weaken the guarantee. */
+const EXPECT_NS={'volt.html':'volt','beta.html':'voltbeta','beta2.html':'voltbeta2'}[FILE];
 
 /* a small, valid WAV we can hand to the store and recognise coming back out */
 const MAKE_WAV=`(function(seed,secs){
@@ -29,7 +34,8 @@ module.exports=async function(){
       S.note('no store here — the app falls back to inline samples, nothing else to check');
       return S;
     }
-    S.ck('beta writes to its own namespace',r.ns,'voltbeta');
+    if(EXPECT_NS)S.ck(FILE+' writes to its own namespace',r.ns,EXPECT_NS);
+    else S.ok('unknown build '+FILE+' — namespace unchecked',false,'add it to EXPECT_NS in store.test.js');
 
     S.head('content addressing');
     r=await page.evaluate(async()=>{

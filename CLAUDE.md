@@ -4,7 +4,8 @@ VOLT is a tracker / DAW that runs entirely in a browser tab. One HTML file, no b
 dependencies at runtime. Mickey uses it to actually make music, so **breaking his songs is the
 one unforgivable failure** — everything below is aimed at that.
 
-Live: https://mickeyperry.github.io/volt-tracker/beta.html
+Live: https://mickeyperry.github.io/volt-tracker/beta2.html (current) ·
+[beta.html](https://mickeyperry.github.io/volt-tracker/beta.html) (previous, frozen)
 
 ---
 
@@ -21,16 +22,28 @@ something is confusing, that's real feedback — simplify, don't re-explain loud
 
 | file | what it is |
 |---|---|
-| `beta.html` | **where all work happens.** ~600 KB, one big inline `<script>`. |
+| `beta2.html` | **where all work happens.** ~700 KB, one big inline `<script>`. |
+| `beta.html` | the previous beta, frozen for comparison. Don't edit it — the newer suites test features it doesn't have, so `VOLT_FILE=beta.html` will fail them, and that's expected. |
 | `volt.html` | the stable build. Don't touch unless promoting a release. |
-| `tests/` | `node tests/run.js` — 119 checks, must stay green. |
+| `tests/` | `node tests/run.js` — 504 checks against `beta2.html`, must stay green. |
+| `tests/profile.js` | `node tests/profile.js` — not a test. Prints where the time actually goes (switch, undo, autosave, frame gaps) so a speed claim can be argued from numbers. |
 | `tools/opfs-probe.html` | standalone storage probe (open in a browser, reports what works). |
 | `ROADMAP.md` | **the feature list and progress.** Read it when he asks "what's next". Tick items off there. |
 
-Beta and stable share an origin but **never share data**: line 5 of `beta.html` sets
-`window.VOLT_NS="voltbeta"` and rewrites every `volt.*` localStorage key to `voltbeta.*`.
-`VNS` in the main script keys OPFS and IndexedDB off the same thing. If you add persistent
-storage, namespace it — a bug in beta must not be able to reach his real songs.
+All three builds share an origin but **never share data**: line 5 of each beta sets
+`window.VOLT_NS` (`voltbeta` / `voltbeta2`) and rewrites every `volt.*` localStorage key to
+`<ns>.*`; stable has no shim and writes `volt.*` directly. `VNS` in the main script keys OPFS and
+IndexedDB off the same thing. If you add persistent storage, namespace it — a bug in a beta must
+not be able to reach his real songs. **Verified end to end 2026-08-09**: beta2 saving cannot alter
+a song beta saved, in the same browser profile.
+
+The corollary bites when you *enumerate*. `localStorage.key(i)` returns RAW keys — the shim only
+wraps get/set — so all three builds' keys sit in one list, and every build's projects look like
+`<something.>volt.proj.<id>`. Match your own prefix **exactly** (`projPrefix()`), or you list other
+builds' songs as phantom projects that can never be opened, because reading them back goes through
+the shim into your own namespace. `ssRefs` is loose *on purpose* by contrast — it protects samples
+referenced by any build from the collector, which errs safe. `tests/home.test.js` plants foreign
+keys and fails if any of them surfaces.
 
 ## Rules of the house
 
@@ -67,9 +80,39 @@ storage, namespace it — a bug in beta must not be able to reach his real songs
 - Automation lanes are per-pattern but audio nodes remember values — pattern starts re-apply
   the base mix (`applyBaseAt`).
 - WAV render needs a pre-roll or beat 1 renders cold.
+- **Firefox's audio engine lies offline.** Its OfflineAudioContext renders a DynamicsCompressor
+  as pure silence in small graphs, and its offline ScriptProcessor latency (96–160 ms, varies
+  per run) says nothing about the live one (~29 ms). Never derive a LIVE timing figure from an
+  offline render — measure in the live context (see `metLatMeasure`). Also: FF's compressor
+  crushes short probe bursts to zero when two sit in series, and eats rectangular (DC) bursts;
+  probe with tones. DynamicsCompressor lookahead itself is safe to assume: the spec fixes it at
+  6 ms and both browsers measure exactly that.
+- The mix is LATE relative to `schedRow`'s t: every note passes two compressors (12 ms) plus
+  the master FX chain (Limiter L∞ ≈ 30–50 ms, browser-dependent, live-measured). Anything that
+  must sound aligned with notes but doesn't go through the mix bus needs that delay added —
+  the metronome does this via `MET.lat`/`metOut`.
 - Editing the file with CLI tools invalidates the Edit tool's state — Read a few lines first.
 - `pointerup` blurs buttons and ranges globally. **Never remove it** — hotkeys die without it,
   because the grid's `mousedown` preventDefault blocks refocus.
+- **Every F-key F1–F10 is bound**, and Ctrl+Shift+H is Firefox's history window. A new panel gets
+  a toolbar button and a command-palette entry, not a hotkey. (Measured 2026-08-09: F1 help,
+  F2 rename, F3 Vault, F4/F5 transport, F6 roll, F7 auto, F8 beat, F9 mixer, F10 recorder.)
+  **Alt+A through Alt+Y are ALL bound** — Alt+Z (the Projects panel) was the last letter left.
+  Grep for `Alt+[A-Za-z]` *and* for `altKey` near `Key[A-Z]` before claiming one is free: the
+  first attempt at this took Alt+J and silently ate the automation lane's shape tool, because
+  the capture-phase handler returned first. `tests/home.test.js` now fires all 25 other letters
+  and fails if any of them reaches the panel.
+- **Left-rail fold state is keyed by the section's class, not its index.** It used to be an array
+  of positions in `volt.secs`, so inserting a section silently moved everyone's saved state onto
+  the wrong panels. It's now an object in `volt.secs2` keyed by `sec-*`, migrated once from the
+  old array. Add a rail section anywhere you like — but keep giving it a `sec-` class.
+- **VOLT is already fast — measure before optimising it.** Profiled 2026-08-09 on a clean load:
+  pattern switch 3–9 ms even at 32×128, undo snapshot 0.4 ms, autosave 1.5 ms at *any* sample
+  size (the OPFS hash store is why), one keystroke on an 8 MB song costs a 38 ms frame at worst,
+  playback holds ~60 fps. The 90 ms switch quoted in `perf.test.js` is that suite hammering
+  itself, not a real song. A switch does drift 3 → 9 ms with use — it's style/layout, not JS
+  (a full `renderGrid()` resets it), and it isn't perceptible. `node tests/profile.js` re-checks
+  all of it.
 
 ## How things fit together
 
@@ -102,5 +145,8 @@ on a confirm).
 
 ## Deploying
 
-Only when asked. `beta.html` is tracked on `main` and GitHub Pages serves it directly — commit
-and push is the whole deploy. Run the full suite first. The `dev` branch is stale; ignore it.
+Only when asked. The build files are tracked on `main` and GitHub Pages serves them directly —
+commit and push is the whole deploy. Run the full suite first. The `dev` branch is stale; ignore it.
+Cutting a new beta (`beta3.html`…) means: copy the current one, change `VOLT_NS` and the `<title>`
+on line 5, add it to `EXPECT_NS` in `tests/store.test.js` and to the loop in `tests/syntax.test.js`,
+point `FILE` in `tests/lib.js` at it, and leave the old one alone.

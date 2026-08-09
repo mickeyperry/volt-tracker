@@ -16,6 +16,37 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` needs a de
 
 ---
 
+## Going native — decided 2026-08-09, measured not guessed
+
+Mickey wants a full DAW: ASIO latency and VST hosting. Both need the audio out of the webview.
+The numbers that settled it, from his machine (`native/probe`):
+
+| path | latency |
+|---|---|
+| Web Audio, what VOLT uses today | **58 ms** |
+| Native WASAPI | 10 ms |
+| **Native ASIO** | **1.45 ms** |
+
+Forty times better. There is no browser-side fix for this — Web Audio owns the output device.
+
+- [x] **Rust toolchain + latency probe** — 1.97.1 installed, `native/probe` builds with ASIO.
+      SDK at `C:\Users\Mickey\sdk\ASIOSDK`, outside the repo (licence forbids redistribution).
+- [x] **Tauri desktop shell** — `native/desktop`, loads `beta2.html` unchanged, 7.6 MB binary.
+      Buys a real origin (folder pickers, AudioWorklet) and Chromium. **Does not** buy latency.
+- [ ] **Desktop build should use the real filesystem**, not browser storage. Mickey's words:
+      "we need it to access direct mothafkn storage" — and he is right, an app with its own
+      storage island is backwards. Tauri's Rust side can read and write anywhere. *Days.*
+- [ ] **Rust audio engine** — cpal/ASIO, clock, voices, mixer; webview becomes UI over IPC.
+      14 instruments + 15 effects to port as DSP, each verifiable by rendering the same pattern
+      through both engines and comparing. **10–16 weeks.** This is the wall.
+- [ ] **CLAP hosting** (MIT, good Rust support) then VST3 (needs Steinberg's SDK, rougher
+      bindings). Trivial once Rust owns the audio callback. Mickey linked
+      github.com/steinbergmedia/vst3sdk.
+- [ ] **Canvas grid** — the smoothness ceiling, and it pays off in the browser too.
+
+Cheaper thing worth doing first: **plugins on bounce/freeze only**. Rust hosts the plugin offline
+and prints it, no engine rewrite, no clock-sync problem. 2–3 weeks for most of the value.
+
 ## Now — storage that works in Firefox
 
 The one real gap. Firefox does **not** implement the File System Access API, so the ⚙ Settings

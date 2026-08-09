@@ -17,6 +17,7 @@ const SUITES={
   store:require('./store.test'),
   duck:require('./duck.test'),
   vault:require('./vault.test'),
+  home:require('./home.test'),
   swing:require('./swing.test'),
   spectrum:require('./spectrum.test'),
   sections:require('./sections.test'),
@@ -25,6 +26,7 @@ const SUITES={
   roll:require('./roll.test'),
   glitch:require('./glitch.test'),
   master:require('./master.test'),
+  metsync:require('./metsync.test'),
   autolane:require('./autolane.test'),
   ui:require('./ui.test'),
   perf:require('./perf.test')

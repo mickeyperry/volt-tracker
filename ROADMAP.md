@@ -5,6 +5,9 @@ Everything here is a suggestion until you say otherwise — nothing is committed
 
 **New here?** Read `CLAUDE.md` first — house rules, architecture, and the traps.
 
+**Where the work is:** `beta2.html` is the current build (its own storage, so it can't touch a song
+saved in `beta.html` or the stable tracker). `beta.html` is frozen as the previous beta.
+
 **How to use this:** open it any time (it's in the repo, so it's also readable on GitHub from
 your phone). Or just ask Claude *"what's on the VOLT roadmap?"* and it'll read this file, and
 update the ticks when it finishes something.
@@ -31,6 +34,13 @@ chasing it, get the same *result* a different way:
 - [ ] **Export everything** — one button, whole library + projects as a `.zip` download. This is
       how files get *out* of Firefox and onto disk.
 - [ ] Settings ⚙ explains which mode you're in per browser, instead of hiding the pickers.
+- [x] **Projects panel** — done 2026-08-09. A foldable section at the top of the left rail (not a
+      floating panel) that answers "what is this browser holding?": every project open or closed,
+      with size and when it last saved; the idea count; the OPFS sample store with how much of it
+      nothing points at any more (one click reclaims it); and localStorage pressure against the
+      ~5 MB ceiling. Redraws itself on every autosave, costs nothing while folded, and a closed
+      project reopens as a new tab — never in place of the one you're in. Toolbar button or
+      **Alt+Z** (the only Alt letter left). `tests/home.test.js`.
 
 > Note: test this on the hosted page or a local server, not `file:///` — storage APIs behave
 > oddly on file origins, which is also why some things differ between your two test setups.

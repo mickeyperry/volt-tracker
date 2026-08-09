@@ -4,7 +4,10 @@
 const fs=require('fs'),path=require('path');
 
 const ROOT=path.join(__dirname,'..');
-const FILE=process.env.VOLT_FILE||'beta.html';           // VOLT_FILE=volt.html to test the stable one
+/* beta2.html is where work happens now; beta.html is the previous build, kept for comparison and
+   deliberately frozen — the newer suites test features it doesn't have, so pointing VOLT_FILE at
+   it will fail those, which is expected rather than a regression. */
+const FILE=process.env.VOLT_FILE||'beta2.html';          // VOLT_FILE=volt.html for the stable one
 const PAGE='file:///'+path.join(ROOT,FILE).replace(/\\/g,'/');
 
 /* ---- Chrome ---- */

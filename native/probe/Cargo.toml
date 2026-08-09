@@ -9,7 +9,11 @@ edition = "2021"
 # hangs on that figure, so measure it before building anything on top of it.
 
 [dependencies]
-cpal = "0.15"
+# The `asio` feature is what gets us off the OS mixer and onto the driver. It needs the Steinberg
+# ASIO SDK on disk (CPAL_ASIO_DIR) and clang, because it generates bindings from the C++ headers.
+# The SDK is deliberately NOT in this repo: its licence forbids redistribution, and this repo is
+# public. See native/README.md for where it goes.
+cpal = { version = "0.15", features = ["asio"] }
 
 [[bin]]
 name = "probe"

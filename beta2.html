@@ -1284,15 +1284,22 @@ const FX_TYPES={
     build:p=>{
       const inG=AC.createGain(),out=AC.createGain();
       const sr=AC.sampleRate;
-      const LOOK=Math.max(8,Math.round(1.5/1000*sr));      /* 1.5 ms: enough to catch a transient */
+      const LOOK=Math.max(16,Math.round(2.0/1000*sr));     /* 2 ms of warning */
+      /* Two release speeds, because one is always wrong. A snare needs the gain back within a few
+         milliseconds or the room behind it is sucked flat; a sustained loud passage needs a slow
+         hand or the whole mix breathes. Shallow reduction recovers fast, deep reduction slowly. */
+      const cFast=Math.exp(-1/(.020*sr)),cSlow=Math.exp(-1/(.250*sr));
       const st={
         /* LOUD is just the threshold in disguise: 0 leaves it alone, 100 drives it 18 dB in */
         thresh:Math.pow(10,-(p.loud/100*18)/20),
         ceil:Math.pow(10,p.ceil/20),
-        rel:.12,arc:1,
-        buf:[new Float32Array(LOOK),new Float32Array(LOOK)],   /* the delay line */
-        pk:new Float32Array(LOOK),                             /* peak seen at each slot */
-        i:0,gain:1,env:1,gr:0,look:LOOK,sr
+        buf:[new Float32Array(LOOK),new Float32Array(LOOK)], /* the delay line */
+        /* the gain each delayed sample will be played at, decided BEFORE it arrives */
+        genv:new Float32Array(LOOK).fill(1),
+        /* recovery over one whole trip round the buffer, since each slot is only touched once */
+        fL:Math.pow(cFast,LOOK),sL:Math.pow(cSlow,LOOK),
+        i:0,cur:1,gr:0,look:LOOK,sr,pl:0,pr:0,
+        held:0,sustain:Math.round(.06*sr)   /* down for 60 ms straight = a passage, not a hit */
       };
       /* 1024 frames: long enough that a redraw can't starve it, short enough to stay responsive */
       const sp=AC.createScriptProcessor(1024,2,2);
@@ -1302,40 +1309,56 @@ const FX_TYPES={
         const oL=e.outputBuffer.getChannelData(0),oR=e.outputBuffer.getChannelData(1);
         const n=oL.length,L=st.look;
         let grMax=0;
+        /* Threshold is the drive: everything is brought back up by 1/threshold so a signal
+           sitting at the threshold lands exactly on the ceiling. Pull it down, the mix gets
+           louder — that is the whole point of the control. */
+        const makeup=st.ceil/st.thresh;
         for(let s=0;s<n;s++){
-          const l=iL[s],r=iR[s];
-          /* what comes out is L samples old; the arriving sample is written AFTER the gain is
-             worked out. Writing it first overwrites the outgoing sample's own peak — the window
-             then no longer knows about the very sample it is about to let through, and release
-             can lift the gain just enough for it to poke over the ceiling. */
           const idx=st.i;
-          const dl=st.buf[0][idx],dr=st.buf[1][idx];
-          /* the loudest thing anywhere inside the look-ahead window decides the gain NOW — every
-             slot, not every fourth, or a lone sample could slip through and that is precisely the
-             one thing a brickwall is not allowed to do */
-          let peak=0;
-          for(let k=0;k<L;k++){const v=st.pk[k];if(v>peak)peak=v}
-          const inPk=Math.max(Math.abs(l),Math.abs(r));
-          if(inPk>peak)peak=inPk;                            /* the arrival counts too */
-          const want=peak>st.thresh?st.thresh/peak:1;
-          if(want<st.env)st.env=want;                        /* clamp instantly: no overshoot */
-          else{
-            /* ARC: recover faster after a short spike than after sustained loudness, which is
-               what stops a limiter breathing all over a busy mix */
-            const rl=st.arc>0?st.rel*(.25+.75*(1-st.gr))/(1+st.arc):st.rel;
-            const c=Math.exp(-1/(Math.max(.001,rl)*st.sr));
-            st.env=want+(st.env-want)*c;
+          /* out first: this slot holds the oldest sample AND the gain that was decided for it
+             back when we first saw what was coming */
+          const dl=st.buf[0][idx],dr=st.buf[1][idx],g=st.genv[idx];
+          oL[s]=dl*g*makeup;oR[s]=dr*g*makeup;
+          st.cur=g;
+          const red=1-g;
+          if(red>st.gr)st.gr=red;
+          if(red>grMax)grMax=red;
+
+          /* The slot is free now and becomes the newest sample. Its baseline gain is wherever
+             release will have got to by the time it is played, a whole buffer-trip from now.
+             Which release: fast unless the gain has been DOWN for a while. Choosing by depth
+             instead — the obvious thing — meant every drum hit picked the slow stage, and with
+             hits every 100 ms the gain never climbed back, so the mix sat permanently ducked.
+             It is duration that tells a transient from a loud passage, not depth. */
+          if(red>.02)st.held++;else st.held=0;
+          const c=st.held>st.sustain?st.sL:st.fL;
+          st.genv[idx]=1+(g-1)*c;
+          const l=iL[s],r=iR[s];
+          st.buf[0][idx]=l;st.buf[1][idx]=r;
+
+          /* Inter-sample peaks: a waveform can cross above the ceiling BETWEEN two samples, and
+             a converter will reproduce that. Checking the midpoint is a cheap 2x estimate and
+             stops the file measuring clean while sounding clipped. */
+          const mid=Math.max(Math.abs((l+st.pl)*.5),Math.abs((r+st.pr)*.5));
+          st.pl=l;st.pr=r;
+          const inPk=Math.max(Math.abs(l),Math.abs(r),mid);
+
+          if(inPk>st.thresh){
+            /* THE point of look-ahead: don't clamp, RAMP. Walk the gain smoothly down over the
+               slots that play before this one, so the reduction arrives exactly as the peak does.
+               Slamming the gain in a single sample — which is what this used to do — is a step in
+               the waveform, and a step is distortion. It also dragged everything quiet down with
+               it, which is what "washed out" sounds like. */
+            const need=st.thresh/inPk;
+            for(let k=1;k<=L;k++){
+              const slot=(idx+k)%L;
+              const target=st.cur+(need-st.cur)*(k/L);
+              if(target<st.genv[slot])st.genv[slot]=target;
+            }
           }
-          st.gr=1-st.env;
-          if(st.gr>grMax)grMax=st.gr;
-          /* Threshold is the drive: everything is brought back up by 1/threshold so that a
-             signal sitting at the threshold lands exactly on the ceiling. Pull the threshold
-             down and the mix gets louder, which is the whole point of the control. */
-          const gOut=st.env*st.ceil/st.thresh;
-          oL[s]=dl*gOut;oR[s]=dr*gOut;
-          st.buf[0][idx]=l;st.buf[1][idx]=r;st.pk[idx]=inPk;
           st.i=(idx+1)%L;
         }
+        st.gr*=.9;
         st.grDisp=grMax;
       };
       inG.connect(sp);sp.connect(out);

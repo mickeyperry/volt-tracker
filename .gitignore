@@ -1,2 +1,5 @@
 volt-dev.html
 node_modules/
+
+# Rust build output
+native/**/target/

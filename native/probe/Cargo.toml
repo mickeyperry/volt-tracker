@@ -1,0 +1,16 @@
+[package]
+name = "volt-latency-probe"
+version = "0.1.0"
+edition = "2021"
+
+# Deliberately throwaway. This exists to answer one question with a number instead of a claim:
+# what output latency can this machine actually reach through a native audio API, compared with
+# the ~20-40 ms a browser gives us? Everything about the "should VOLT get a Rust engine" decision
+# hangs on that figure, so measure it before building anything on top of it.
+
+[dependencies]
+cpal = "0.15"
+
+[[bin]]
+name = "probe"
+path = "src/main.rs"

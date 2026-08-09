@@ -12192,17 +12192,8 @@ COMMANDS.push(
     t.sort((a,b)=>a-b);
     const full=(()=>{const t0=performance.now();renderGrid();fillPendingRows(true);void grows.offsetHeight;return performance.now()-t0})();
     const cells=document.querySelectorAll('#grows .tcell').length;
-    /* audio latency too, because "is a native engine worth it" is a comparison and both halves
-       have to come from the same machine. Web Audio gives us the OS default path and no say in
-       the buffer size; a native API can ask for a smaller one. */
-    let audio='';
-    if(AC){
-      const base=(AC.baseLatency||0)*1000,out=(AC.outputLatency||0)*1000;
-      audio=' · audio '+(base+out).toFixed(1)+' ms out ('+base.toFixed(1)+' buffer + '+out.toFixed(1)
-        +' device) @ '+Math.round(AC.sampleRate)+' Hz';
-    }
     const msg='switch '+t[4].toFixed(1)+' ms (worst '+t[8].toFixed(1)+') · whole grid '+full.toFixed(1)
-      +' ms · '+TRACKS+' trk x '+song.patterns[curPat].rows+' rows · '+cells+' cells'+audio;
+      +' ms · '+TRACKS+' trk x '+song.patterns[curPat].rows+' rows · '+cells+' cells';
     status(msg);
     try{navigator.clipboard.writeText('VOLT redraw: '+msg)}catch(e){}
     console.log('VOLT redraw:',msg);

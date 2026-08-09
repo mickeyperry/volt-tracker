@@ -3,3 +3,4 @@ node_modules/
 
 # Rust build output
 native/**/target/
+native/desktop/dist/

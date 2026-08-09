@@ -1,0 +1,24 @@
+[package]
+name = "volt-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "VOLT tracker, as a desktop app"
+authors = ["Mickey Perry"]
+
+# The shell, and only the shell. VOLT itself is beta2.html, unchanged and still the same file the
+# web build serves — there is no copy to keep in sync and no build step in the middle. What this
+# buys is a real origin instead of file://, which is what unlocks the folder pickers Firefox has
+# never had, and WebView2 (Chromium) instead of whichever browser happens to open the file.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

@@ -46,10 +46,33 @@ Measured on Mickey's machine (nio 2|4, 48 kHz):
 |---|---|
 | Web Audio, as VOLT runs today | **58 ms** (10 ms buffer + 48 ms device) |
 | Native WASAPI | **10 ms** — a fixed 480-frame callback; requests for 64/128/256 are ignored |
+| **Native ASIO** | **1.45 ms** — asked for 64 frames, granted |
 
-Nearly six times better before ASIO is even in the picture. ASIO is where single digits would come
-from and needs Steinberg's SDK plus clang to build against — that is the next probe, and it decides
-whether the floor is 10 ms or 3.
+**Forty times better than the browser.** That is the case for a native engine, in one line.
+
+Two things that cost an afternoon, written down because both read as driver faults and neither is:
+
+- Ask for the sample format the driver actually **speaks**. ASIO drivers commonly hand out 32-bit
+  *integer*, and asking such a device for f32 is refused with "stream configuration is not
+  supported" — which sounds like the buffer size was rejected when it was nothing of the sort.
+  Every buffer size looked refused until the format matched; then 64 frames was granted first ask.
+- Enumerate every output device, not just each host's default. On Windows the ASIO driver worth
+  having is rarely the one Windows considers default.
+
+Registered ASIO drivers here: ASIO4ALL v2, FL Studio ASIO, Novation USB ASIO, UMC ASIO. The nio has
+no native driver of its own so it goes through ASIO4ALL — the Behringer UMC202HD does have one and
+would be worth measuring separately.
+
+Building with ASIO needs the Steinberg SDK on disk and clang for the bindings:
+
+```
+$env:CPAL_ASIO_DIR = "C:\Users\Mickey\sdk\ASIOSDK"
+$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
+```
+
+The SDK is **not** in this repo and must not be: its licence forbids redistribution, and this repo
+is public. It is dual-licensed (proprietary or GPLv3); shipping a binary built against it under the
+proprietary terms needs a signed agreement from Steinberg. Building it for yourself does not.
 
 The app's own side of that comparison comes from `Ctrl+Space → redraw`, which prints
 `AudioContext.baseLatency + outputLatency` next to the render figures.

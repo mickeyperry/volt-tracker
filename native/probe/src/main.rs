@@ -12,6 +12,12 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+/// Driver errors are paragraphs; the first line is the part that says what went wrong.
+fn short(s: &str) -> String {
+    let one = s.lines().next().unwrap_or(s);
+    if one.len() > 90 { format!("{}…", &one[..90]) } else { one.to_string() }
+}
+
 fn main() {
     println!("VOLT latency probe\n");
 
@@ -28,13 +34,20 @@ fn main() {
                 continue;
             }
         };
-        let device = match host.default_output_device() {
-            Some(d) => d,
-            None => {
-                println!("{:?}: no output device", host_id);
+        // every output device, not just the default — on Windows the interesting ASIO driver is
+        // rarely the one Windows happens to consider default
+        let devices: Vec<_> = match host.output_devices() {
+            Ok(d) => d.collect(),
+            Err(e) => {
+                println!("{:?}: cannot enumerate ({e})", host_id);
                 continue;
             }
         };
+        if devices.is_empty() {
+            println!("{:?}: no output devices", host_id);
+            continue;
+        }
+        for device in devices {
         let name = device.name().unwrap_or_else(|_| "<unnamed>".into());
         println!("{:?} -> {}", host_id, name);
 
@@ -73,22 +86,52 @@ fn main() {
             let seen_cb = seen.clone();
             let ch = config.channels as usize;
             let mut phase = 0f32;
-            let res = device.build_output_stream(
-                &config,
-                move |data: &mut [f32], _| {
-                    seen_cb.store(data.len() / ch, Ordering::Relaxed);
-                    // a quiet click train, so the number can be checked by ear
-                    for frame in data.chunks_mut(ch) {
-                        phase += 1.0;
-                        let v = if (phase as usize) % 22050 < 60 { 0.15 } else { 0.0 };
-                        for s in frame.iter_mut() {
-                            *s = v;
+            // The sample format has to match what the driver actually speaks. ASIO drivers very
+            // often hand out 32-bit INTEGER, and asking such a device for f32 is refused with
+            // "stream configuration is not supported" — which reads like the buffer size was the
+            // problem when it was nothing of the sort.
+            let err = |e: cpal::StreamError| eprintln!("   stream error: {e}");
+            let res = match cfg.sample_format() {
+                cpal::SampleFormat::I32 => device.build_output_stream(
+                    &config,
+                    move |data: &mut [i32], _| {
+                        seen_cb.store(data.len() / ch, Ordering::Relaxed);
+                        for frame in data.chunks_mut(ch) {
+                            phase += 1.0;
+                            let v = if (phase as usize) % 22050 < 60 { (0.15 * i32::MAX as f32) as i32 } else { 0 };
+                            for s in frame.iter_mut() { *s = v; }
                         }
-                    }
-                },
-                |e| eprintln!("   stream error: {e}"),
-                None,
-            );
+                    },
+                    err,
+                    None,
+                ),
+                cpal::SampleFormat::I16 => device.build_output_stream(
+                    &config,
+                    move |data: &mut [i16], _| {
+                        seen_cb.store(data.len() / ch, Ordering::Relaxed);
+                        for frame in data.chunks_mut(ch) {
+                            phase += 1.0;
+                            let v = if (phase as usize) % 22050 < 60 { (0.15 * i16::MAX as f32) as i16 } else { 0 };
+                            for s in frame.iter_mut() { *s = v; }
+                        }
+                    },
+                    err,
+                    None,
+                ),
+                _ => device.build_output_stream(
+                    &config,
+                    move |data: &mut [f32], _| {
+                        seen_cb.store(data.len() / ch, Ordering::Relaxed);
+                        for frame in data.chunks_mut(ch) {
+                            phase += 1.0;
+                            let v = if (phase as usize) % 22050 < 60 { 0.15 } else { 0.0 };
+                            for s in frame.iter_mut() { *s = v; }
+                        }
+                    },
+                    err,
+                    None,
+                ),
+            };
             match res {
                 Ok(stream) => {
                     if stream.play().is_ok() {
@@ -104,10 +147,11 @@ fn main() {
                         }
                     }
                 }
-                Err(_) => println!("   asked {:>4} frames -> refused", want),
+                Err(e) => println!("   asked {:>4} frames -> refused ({})", want, short(&e.to_string())),
             }
         }
         println!();
+        }
     }
 
     println!("For comparison, VOLT on Web Audio today reports its own figure in the browser:");

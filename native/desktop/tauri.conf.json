@@ -9,6 +9,7 @@
     "beforeBuildCommand": "node ../tools/mkdesktop.js"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "VOLT",
@@ -21,7 +22,7 @@
         "fullscreen": false,
         "center": true,
         "theme": "Dark",
-        "dragDropEnabled": true
+        "dragDropEnabled": false
       }
     ],
     "security": {

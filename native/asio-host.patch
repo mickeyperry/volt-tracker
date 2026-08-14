@@ -1,0 +1,47 @@
+Reach the ASIO host from web-audio-api 1.7.0.
+
+The `cpal-asio` feature compiles cpal's ASIO backend in, but `get_host()` special-cases only
+PipeWire and JACK before falling through to `cpal::default_host()` — always WASAPI on Windows.
+Nothing ever asks for the ASIO host, so `enumerate_devices_sync()` lists WASAPI devices and the
+feature has no observable effect.
+
+Applied against a copy of the crate and measured 2026-08-09: with it, all four ASIO drivers on
+Mickey's machine enumerate and open (ASIO4ALL v2 at 5.8 ms output latency, versus 12 ms for the
+same interface through WASAPI). See native/README.md for the full table.
+
+NOT APPLIED in the repo, on purpose — two problems this diff does not solve:
+
+  1. It makes ASIO the *only* host. Like the JACK arm it copies, the first host that answers wins,
+     so every WASAPI device disappears from the list. A tracker needs to offer both and let the
+     user pick, which means changing enumeration, not adding a third `#[cfg]` arm.
+  2. ASIO4ALL never exits after the context drops — the process stops responding, holds a lock on
+     its own binary, and `taskkill` claims there is no such task. Fine in a probe, not in an app
+     someone closes. The nio and UMC drivers both shut down cleanly.
+
+Kept here so the finding survives; the scratchpad it was proved in will not.
+
+  cd $(cargo metadata --format-version 1 | jq -r '...')/web-audio-api-1.7.0   # or a vendored copy
+  patch -p0 < native/asio-host.patch
+
+--- src/io/cpal.rs
++++ src/io/cpal.rs
+@@ -38,11 +38,19 @@
+         }
+     }
+
++    #[cfg(all(feature = "cpal-asio", target_os = "windows"))]
++    {
++        if let Some(host) = preferred_host(cpal::HostId::Asio, "ASIO") {
++            return Ok(host);
++        }
++    }
++
+     Ok(cpal::default_host())
+ }
+
+ #[cfg(any(
+     feature = "cpal-jack",
++    all(feature = "cpal-asio", target_os = "windows"),
+     all(feature = "cpal-pipewire", target_os = "linux")
+ ))]
+ fn preferred_host(host_id: cpal::HostId, host_name: &str) -> Option<cpal::Host> {

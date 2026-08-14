@@ -1,0 +1,34 @@
+[package]
+name = "volt-vsthost"
+version = "0.1.0"
+edition = "2021"
+description = "VOLT's VST3 host — scan, load, and play plugins"
+
+# Why these two, and why nothing else.
+#
+# `vst3` is a set of Rust bindings for the VST3 COM interfaces, MIT/Apache, on crates.io.
+# That last part matters: the Steinberg VST3 SDK itself is not redistributable (the same shape of
+# problem as the ASIO SDK, already solved once for cpal), so a binding crate that reimplements the
+# interfaces from the published spec is what keeps this repo shippable. `vst3-sys` — the crate the
+# roadmap originally named — is not published on crates.io at all; this is the maintained one.
+#
+# `libloading` opens the plugin DLL. A VST3 plugin on Windows is a DLL with three exported
+# functions and one entry point that hands back a class factory; there is no more to it than that,
+# and windows-sys would be a much bigger dependency for the same LoadLibrary call.
+[dependencies]
+vst3 = "0.3"
+libloading = "0.8"
+vst = "0.4"
+# `ole2` is not optional garnish: a plugin editor draws with Windows controls that need the thread
+# OLE-initialized, and Sylenth1 access-violates on a thread that is not. See editor.rs.
+winapi = { version = "0.3", features = ["winuser", "libloaderapi", "windef", "minwindef", "basetsd", "errhandlingapi", "ole2"] }
+
+# The scanner and the "does it make a sound" test, before any of this is wired to the engine.
+# Deliberately a separate binary from the audio path: a plugin that crashes on load must not be
+# able to take the tracker down with it, and finding out which ones do is what this is for.
+[[bin]]
+name = "vstprobe"
+path = "src/bin/vstprobe.rs"
+
+[profile.release]
+opt-level = 3

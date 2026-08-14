@@ -233,6 +233,44 @@ module.exports=async function(){
     S.ok('  and none of them is clipped',r.needs<=r.has+1,r.needs+'px of buttons in '+r.has+'px');
     S.ck('  the header still matches its grid column',r.head,r.cell);
 
+    /* ---- cutting a note-OFF actually cuts it -------------------------------------------------
+       `eraseRect`'s guard re-inserts a terminator when the cut would otherwise let an earlier
+       note ring past its end. Correct when you cut MUSIC; maddening when the thing you selected
+       IS the terminator — it reappeared in the same cell and note-offs looked uncuttable
+       (2026-08-15). Both halves are asserted here, because deleting the guard entirely would
+       trade this bug for a note that never ends. */
+    S.head('Ctrl+X removes a note-OFF, but still protects a cut note');
+    r=await page.evaluate(async()=>{
+      await loadSong(blankSong());
+      const d=song.patterns[curPat].data;
+      /* a note at row 0, its terminator at row 4 */
+      d[0][0]={n:48,i:0,v:64};
+      d[0][4]={n:OFF,i:null,v:null};
+      /* select JUST the OFF and cut it */
+      sel={a:{t:0,c:0,r:4},b:{t:0,c:7,r:4}};
+      copySel(true);
+      const offGone=!(d[0][4]&&d[0][4].n===OFF);
+      const noteKept=!!(d[0][0]&&d[0][0].n===48);
+
+      /* now the other half: a note at 8 ending at 12, cut the NOTE's rows including the OFF —
+         the terminator must come back so the note before it does not run away */
+      d[0][8]={n:50,i:0,v:64};
+      d[0][10]={n:52,i:0,v:64};
+      d[0][12]={n:OFF,i:null,v:null};
+      sel={a:{t:0,c:0,r:10},b:{t:0,c:7,r:12}};
+      copySel(true);
+      /* the note at 8 used to end at row 10, where the next note began — so the terminator goes
+         back THERE, keeping that note exactly the length it was */
+      const guarded=!!(d[0][10]&&d[0][10].n===OFF);
+      const noteAt8=!!(d[0][8]&&d[0][8].n===50);
+      sel=null;
+      return{offGone,noteKept,guarded,noteAt8};
+    });
+    S.ok('cutting a lone note-OFF removes it',r.offGone);
+    S.ok('  and leaves the note before it alone',r.noteKept);
+    S.ok('cutting a note WITH its OFF puts a terminator back at the old end',r.guarded);
+    S.ok('  and the note before the cut keeps its length',r.noteAt8);
+
     S.head('crashes are visible, songs are stamped');
     r=await page.evaluate(async()=>{
       dispatchEvent(new ErrorEvent('error',{error:new Error('test blow-up'),message:'test blow-up'}));

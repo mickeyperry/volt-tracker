@@ -57,6 +57,11 @@ async function open(opts){
   const errs=[];
   page.on('pageerror',e=>errs.push('PAGEERROR: '+e.message));
   page.on('console',m=>{if(m.type()==='error')errs.push('CONSOLE: '+m.text())});
+  /* `pre` runs before the page's own scripts. The only way to test the desktop-only paths: the
+     build decides once, at load, whether it is inside Tauri (`const TAURI = window.__TAURI__…`),
+     so a stub installed afterwards is too late — the const is already null and cannot be
+     reassigned. Injecting first makes the desktop branches live and recordable. */
+  if(opts&&opts.pre)await page.evaluateOnNewDocument(opts.pre);
   await page.goto(PAGE,{waitUntil:'load'});
   await page.waitForFunction('typeof song!=="undefined" && !!song && !!song.patterns',{timeout:20000});
   return{browser,page,errs};

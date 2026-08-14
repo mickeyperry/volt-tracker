@@ -27,9 +27,14 @@ const SUITES={
   glitch:require('./glitch.test'),
   master:require('./master.test'),
   metsync:require('./metsync.test'),
+  render:require('./render.test'),
+  menu:require('./menu.test'),
+  nengine:require('./nengine.test'),
   autolane:require('./autolane.test'),
   ui:require('./ui.test'),
-  perf:require('./perf.test')
+  perf:require('./perf.test'),
+  /* needs native/engine built; skips itself cleanly when it isn't */
+  parity:require('./parity.test')
 };
 
 (async()=>{

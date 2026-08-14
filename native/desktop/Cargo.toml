@@ -10,13 +10,65 @@ authors = ["Mickey Perry"]
 # buys is a real origin instead of file://, which is what unlocks the folder pickers Firefox has
 # never had, and WebView2 (Chromium) instead of whichever browser happens to open the file.
 
+[patch.crates-io]
+web-audio-api = { path = "../vendor/web-audio-api" }
+
+[features]
+# Pass through to the engine; needs the Steinberg SDK and clang, see native/README.md.
+asio = ["volt-engine/asio"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `devtools` puts the inspector in the release build: right-click ▸ Inspect in the running app,
+# with the console and the network tab. Kept on deliberately — Mickey asked to be able to
+# troubleshoot this thing, and a desktop app you cannot open a console on is a black box.
+#
+# It does NOT enable remote debugging. Three attempts at
+# WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port were all refused, with and without
+# this feature, so the running webview still cannot be driven from a test. That is why the IPC
+# boundary is pinned by a serde contract test (src/engine.rs) instead: it is the same guarantee
+# reached from the other side.
+tauri = { version = "2", features = ["devtools"] }
+# One VOLT at a time. An ASIO driver takes the hardware exclusively, so a second instance cannot
+# open the device the first one holds — and if the first has hung (ASIO4ALL does not always shut
+# down cleanly, see native/README.md) you get an app that looks broken for reasons nothing on
+# screen explains. Measured 2026-08-10 on Mickey's machine: two volt-desktop processes, one not
+# responding, and "the volt is stuck when i try to run it". This focuses the window you already
+# have instead of starting a rival for the sound card.
+tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+# Both come in with Tauri already, so naming them here costs nothing and lets the commands
+# describe their own payloads. There is deliberately no HTTP crate: src/http.rs is forty lines of
+# TcpStream, because the only server VOLT talks to is Everything's, on loopback, over plain HTTP.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The audio engine itself. Brings the vendored, host-aware web-audio-api fork with it, which is
+# what lets the desktop app open an ASIO device at all.
+volt-engine = { path = "../engine" }
+# The VST3 host. `vst_scan` runs on a command thread (it opens 129 DLLs and is slow), while
+# loading a plugin happens on the audio thread, where the graph lives — see engine.rs.
+volt-vsthost = { path = "../vsthost" }
+# Named directly as well as through volt-engine: engine.rs opens the AudioContext and picks the
+# device, so it needs the crate's own types in scope, not just the ported instruments.
+web-audio-api = { version = "1.7", default-features = false, features = ["cpal"] }
+
+# Pin the Windows COM bindings, or the app does not link.
+#
+# cpal 0.18.1 asks for `windows-core = ">=0.61, <=0.62"` but for `windows = "0.61"`, and its WASAPI
+# backend runs windows-core's `#[implement]` macro over interfaces from `windows`. Left alone,
+# cargo takes the top of cpal's range (0.62) while Tauri's tao/wry stack pins `windows` at 0.61 —
+# so the macro and the interfaces come from different generations and WASAPI fails to compile with
+# a wall of "trait bound IActivateAudioInterfaceCompletionHandler: Interface is not satisfied".
+#
+# The engine crate builds fine alone because nothing there constrains `windows`. It only breaks
+# once the audio engine and the webview live in one binary — which is exactly what this crate is.
+# 0.61 sits inside cpal's range and matches what Tauri already requires, so pinning it here makes
+# both halves agree.
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.61"
 
 [profile.release]
 opt-level = "s"

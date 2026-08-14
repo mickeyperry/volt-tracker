@@ -5,8 +5,13 @@
 //! 20-40 ms. Whether it is worth porting the engine to Rust depends entirely on what the native
 //! path measures HERE, on this interface — not on what is true in general.
 //!
-//! It reports the buffer size the device will accept and the latency that implies, then plays a
-//! short click train so the figure can be sanity-checked by ear.
+//! It reports the buffer size the device will accept and the callback period that implies, then
+//! plays a short click train so the figure can be sanity-checked by ear.
+//!
+//! **A callback period is not an output latency.** This prints "1.45 ms" for a 64-frame ASIO
+//! buffer; the same driver reports 5.8 ms of actual output latency, and that is the figure
+//! comparable to the browser's `baseLatency + outputLatency`. Reading one as the other produced a
+//! headline that was off by four times — see native/README.md. Use `engine`'s `live` for latency.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::atomic::{AtomicUsize, Ordering};

@@ -307,17 +307,37 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 #arpPan .awarn{color:var(--amber)}
 
 /* ---- pattern grid ---- */
-#gridwrap{flex:1;overflow:auto;font-family:var(--mono);font-size:13px;line-height:1.5;position:relative;background:var(--bg)}
+/* `--gz` is the grid ZOOM: Ctrl/Alt + wheel scales the whole pattern — rows, columns, header and
+   text together — because every measurement in here is derived from this one font-size. The row
+   height that `content-visibility` needs is re-measured by calibrateRows() after each step, so
+   skipped rows keep matching real ones and the scrollbar does not drift. */
+/* TWO axes, deliberately. `--gz` is the font size, which is what sets COLUMN width in a
+   monospace grid; `--gzy` is an extra line-height multiplier, which sets ROW height and nothing
+   else. Scaling both together is a plain zoom; scaling --gzy alone packs more rows in at the
+   same readable text; scaling --gz while compensating --gzy narrows the columns without
+   changing row height. Ctrl+wheel rows, Alt+wheel columns — see the wheel handler. */
+#gridwrap{flex:1;overflow:auto;font-family:var(--mono);font-size:calc(13px * var(--gz,1));line-height:1.5;position:relative;background:var(--bg)}
 #ghead{position:sticky;top:0;z-index:2;display:inline-flex;background:linear-gradient(180deg,var(--headtop),var(--panel));border-bottom:1px solid var(--line);min-width:100%}
-#ghead .rn{color:transparent}
-#ghead .thead{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 4px 5px;cursor:default}
-#ghead .tname{font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--txt);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:11px;line-height:11px}
+#ghead .rn{color:transparent} /* width pinned to the grid's gutter by syncHeadWidths() */
+/* **The channel headers scale with the X zoom too, or they stop being headers.** Every size in
+   here used to be a fixed pixel count, so narrowing the columns left the M/S/SC/freeze buttons
+   at full width — they forced their column open and the header drifted out of line with the
+   grid underneath it. Everything below is now in `em`, which reads the zoomed font size from
+   `#gridwrap`, so a header column is always exactly as wide as the notes below it. `--gzy`
+   never reaches here on purpose: making rows taller should not inflate the header. */
+#ghead .thead{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:.15em;padding:.3em .3em .38em;cursor:default;
+  /* The WIDTH is pinned in JS by `syncHeadWidths()`, which measures the real grid column —
+     do not try to reproduce that here in CSS. What belongs here is the ability to SHRINK:
+     min-width:0 and overflow:hidden let the M/S/SC/freeze row clip inside a narrow column
+     instead of forcing the header wider than the notes beneath it. */
+  min-width:0;overflow:hidden}
+#ghead .tname{font-family:var(--sans);font-size:.7em;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--txt);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:.85em;line-height:.85em}
 #ghead .tname.unnamed{color:var(--faint);font-weight:400}
-#ghead .tnum{color:var(--dim);font-family:var(--mono);font-weight:400;margin-right:4px}
+#ghead .tnum{color:var(--dim);font-family:var(--mono);font-weight:400;margin-right:.3em}
 #ghead .thead:hover .tnum{color:var(--teal)}
-#ghead .thctl{display:flex;align-items:center;gap:3px}
-#ghead .tno{color:var(--dim);font-size:10px}
-#ghead .tbtn{font-size:10px;font-weight:600;padding:0 5px;line-height:16px;border-radius:2px;border:1px solid var(--line);background:transparent;color:var(--faint);cursor:pointer}
+#ghead .thctl{display:flex;align-items:center;gap:.23em}
+#ghead .tno{color:var(--dim);font-size:.77em}
+#ghead .tbtn{font-size:.77em;font-weight:600;padding:0 .38em;line-height:1.6;border-radius:2px;border:1px solid var(--line);background:transparent;color:var(--faint);cursor:pointer}
 #ghead .tbtn:hover{border-color:var(--dim);color:var(--txt)}
 #ghead .tbtn.mON{background:var(--muteon);border-color:var(--mag);color:var(--mag)}
 #ghead .tbtn.sON{background:var(--teal-dim);border-color:var(--teal);color:var(--teal)}
@@ -334,13 +354,18 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
    real row, so offsetTop/scroll maths are unchanged. #grows kills the line-box strut, otherwise a
    skipped row would fall back to the parent's font metrics and every row would jump taller. */
 #grows{line-height:0}
-.prow{display:inline-flex;white-space:pre;min-width:100%;line-height:normal;
+.prow{display:inline-flex;white-space:pre;min-width:100%;
+  /* `normal` in em: 1.15em is what this mono font's `normal` already measured, so the
+     default look is unchanged — but now it is a NUMBER, which `--gzy` can scale. Row
+     height is the one thing `.prow` owns (see the line-height:0 pair above), so the
+     vertical axis of the zoom has to live here and not on the container. */
+  line-height:calc(1.15em * var(--gzy,1));
   content-visibility:auto;contain-intrinsic-width:var(--roww,2000px);contain-intrinsic-height:var(--rowh,19.5px)}
 /* a row still waiting for the lazy fill. content-visibility already gives skipped rows their
    intrinsic height, but a browser without it would collapse an empty row and jump the scrollbar,
    so pin the height explicitly for the frame or two it exists. */
 .prow.pend{height:var(--rowh,19.5px)}
-.prow .rn{color:var(--faint);padding:0 8px 0 10px;user-select:none;cursor:pointer}
+.prow .rn{color:var(--faint);padding:0 .615em 0 .77em;user-select:none;cursor:pointer}
 .prow.b4 .rn{color:var(--dim)}
 .prow.b16 .rn{color:var(--amber)}
 /* loop region: Shift+drag the row numbers (or Ctrl+Shift+Enter on a selection) */
@@ -357,7 +382,8 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:none;border-ra
 .prow.playrow .rn{color:var(--teal)}
 /* channel width. The header is clamped to the grid column (syncHeadWidths), so the column has to
    be wide enough for the row of buttons — M S SC ❄ — or they get clipped. */
-.tcell{padding:0 11px;border-left:1px solid var(--cellline)}
+.tcell{padding:0 .846em;border-left:1px solid var(--cellline)} /* em, not px: the header above is em too, and a column and its header must narrow
+    by the same amount or they slide apart as you zoom (see #ghead .thead) */
 .tcell.odd{background:var(--oddtrk)}
 .tcell i{font-style:normal;color:var(--faint);display:inline-block;overflow:hidden;vertical-align:bottom}
 /* hard-locked field widths — glyph quirks (like OFF) can never shift the columns */
@@ -3749,6 +3775,112 @@ ghead.addEventListener('drop',e=>{
 });
 document.addEventListener('dragend',()=>{headDrag=null});
 /* FL-style: Shift+wheel over a header nudges the track left/right */
+/* ---- grid zoom: Ctrl (or Alt) + wheel ---------------------------------------------------------
+   One knob for "let me see the whole thing" and "let me read one row". It scales the grid's font
+   size and everything is derived from that, so rows, columns, the header and the text all move
+   together — no separate row-height setting to drift out of step.
+   Anchored on the CURSOR ROW rather than the pointer: zooming out to find your place and then
+   having to hunt for the playhead defeats the point. Remembered per build, because a zoom level
+   is a way of working, not a per-session accident. */
+let gridZoom=1,gridZoomY=1;
+try{
+  gridZoom=clamp(+localStorage.getItem('volt.gridZoom')||1,.4,3);
+  gridZoomY=clamp(+localStorage.getItem('volt.gridZoomY')||1,.45,2.5);
+}catch(e){}
+/* Zooming re-lays the grid out, and doing that on every wheel EVENT is what makes a zoom feel
+   like a browser's: a burst of twenty events per flick, each one a full re-render. So the wheel
+   only accumulates, one frame does the work, and the expensive tail (filling rows that scrolled
+   into view, saving the preference) waits until the flick is over. */
+/* The zoom GLIDES. A wheel notch moves a TARGET; a rAF loop eases the live value toward it and
+   stops when it arrives. Two reasons beyond feel: the easing is done in LOG space, so a step is
+   the same proportion wherever you are (and the glide decelerates evenly instead of crawling at
+   the small end), and the anchor row is captured once per gesture and re-honoured every frame,
+   so the row under the pointer stays put for the whole animation rather than only at the ends. */
+let gzTZ=gridZoom,gzTZY=gridZoomY,gzRaf=0,gzAnchorY=null,gzAnchorRow=null,gzSettle=0;
+function paintGridZoom(z,zy){
+  const wrap=gridwrap;
+  gridZoom=z;gridZoomY=zy;
+  const st=document.documentElement.style;
+  st.setProperty('--gz',z);st.setProperty('--gzy',zy);
+  /* the placeholder height for skipped rows, and the header's pixel pin to its column */
+  calibrateRows();syncHeadWidths();
+  if(gzAnchorRow!=null){
+    const rh=rowHpx||19.5;
+    wrap.scrollTop=Math.max(0,gzAnchorRow*rh-gzAnchorY);
+  }
+  updateSelBox();
+}
+function gzTick(){
+  gzRaf=0;
+  /* ease in log space — geometric, so it feels identical zooming in and out */
+  const lz=Math.log(gridZoom),lzy=Math.log(gridZoomY);
+  const tz=Math.log(gzTZ),tzy=Math.log(gzTZY);
+  const k=0.28;                       /* ~5 frames to arrive: quick, but you can see it move */
+  let nz=lz+(tz-lz)*k,nzy=lzy+(tzy-lzy)*k;
+  const done=Math.abs(tz-nz)<0.0015&&Math.abs(tzy-nzy)<0.0015;
+  if(done){nz=tz;nzy=tzy}
+  paintGridZoom(Math.exp(nz),Math.exp(nzy));
+  if(!done){gzRaf=requestAnimationFrame(gzTick);return}
+  /* arrived: fill rows the zoom-out revealed, and remember the level */
+  clearTimeout(gzSettle);
+  gzSettle=setTimeout(()=>{
+    gzAnchorRow=null;
+    fillPendingRows(true);updateLoopVis();updateSelBox();
+    try{
+      localStorage.setItem('volt.gridZoom',String(gridZoom));
+      localStorage.setItem('volt.gridZoomY',String(gridZoomY));
+    }catch(e){}
+  },90);
+}
+/* `axis`: 'y' rows only, 'x' columns only, 'both' proportional.
+   Columns-only scales the font DOWN and the line-height UP by the same factor, so the columns
+   narrow while the rows stay exactly as tall — row height is font-size x line-height, column
+   width is font-size, and the arithmetic falls out of the CSS. */
+function zoomBy(f,axis,anchorY){
+  let z=gzTZ,zy=gzTZY;
+  if(axis==='y')zy=clamp(zy*f,.45,2.5);
+  else if(axis==='x'){const nz=clamp(z*f,.4,3);zy=clamp(zy*(z/nz),.45,2.5);z=nz}
+  else z=clamp(z*f,.4,3);
+  if(Math.abs(z-gzTZ)<1e-4&&Math.abs(zy-gzTZY)<1e-4)return;
+  /* capture the anchor ONCE per gesture, from the live layout, so the glide has something
+     stable to hold on to */
+  if(gzAnchorRow==null){
+    const box=gridwrap.getBoundingClientRect();
+    gzAnchorY=anchorY==null?box.height/2:anchorY-box.top;
+    gzAnchorRow=anchorY==null?cursor.r:(gridwrap.scrollTop+gzAnchorY)/(rowHpx||19.5);
+  }
+  gzTZ=z;gzTZY=zy;
+  clearTimeout(gzSettle);
+  if(!gzRaf)gzRaf=requestAnimationFrame(gzTick);
+}
+/* Jump straight there, no glide — for tests and for the reset. */
+function zoomSet(z,zy){
+  gzTZ=clamp(z,.4,3);gzTZY=clamp(zy,.45,2.5);
+  if(gzRaf){cancelAnimationFrame(gzRaf);gzRaf=0}
+  gzAnchorRow=null;
+  paintGridZoom(gzTZ,gzTZY);
+  fillPendingRows(true);updateLoopVis();
+  try{
+    localStorage.setItem('volt.gridZoom',String(gridZoom));
+    localStorage.setItem('volt.gridZoomY',String(gridZoomY));
+  }catch(e){}
+}
+function resetGridZoom(){zoomSet(1,1);status('grid zoom reset to 100%')}
+function zoomSay(){
+  status('rows '+Math.round(gridZoom*gridZoomY*100)+'% · columns '+Math.round(gridZoom*100)+'%'+
+         '  —  Ctrl+wheel rows, Alt+wheel columns, Ctrl+0 resets');
+}
+if(gridZoom!==1)document.documentElement.style.setProperty('--gz',gridZoom);
+if(gridZoomY!==1)document.documentElement.style.setProperty('--gzy',gridZoomY);
+gridwrap.addEventListener('wheel',e=>{
+  const ctrl=e.ctrlKey||e.metaKey;
+  if(!ctrl&&!e.altKey)return;
+  e.preventDefault();          /* and never let the webview zoom the whole page instead */
+  /* FL's mapping: Ctrl+wheel is vertical (rows), Alt+wheel is horizontal (columns). Both
+     together is the proportional zoom, for when you just want everything smaller. */
+  const axis=(ctrl&&e.altKey)?'both':(ctrl?'y':'x');
+  zoomBy(Math.exp(-e.deltaY*0.0016),axis,e.clientY);
+},{passive:false});
 ghead.addEventListener('wheel',e=>{
   if(!e.shiftKey)return;
   const cell=e.target.closest('.thead');if(!cell)return;
@@ -4502,6 +4634,10 @@ instListEl.addEventListener('dragover',e=>{
 instListEl.addEventListener('dragleave',e=>{if(!instListEl.contains(e.relatedTarget))clearDropHl()});
 instListEl.addEventListener('drop',async e=>{
   if(!(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length))return;
+  /* A PROJECT dropped on the instrument list is still a project — checked BEFORE this handler
+     claims the event, so it bubbles to the document handler that opens it as a tab instead of
+     being answered with "not an audio file" because the pointer was over the wrong panel. */
+  if([...e.dataTransfer.files].some(f=>/\.(json|volt)$/i.test(f.name))){clearDropHl();return}
   e.preventDefault();e.stopPropagation();
   const row=e.target.closest('.irow');
   clearDropHl();
@@ -10727,6 +10863,26 @@ document.addEventListener('keydown',e=>{
   if(e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&low==='p'){ /* stuck-note panic */
     e.preventDefault();e.stopImmediatePropagation();panic();return;
   }
+  /* Ctrl+0 — back to 100%. The digits are notes, but only BARE: this handler runs before the
+     note keys and every one of them ignores Ctrl. Ctrl+= / Ctrl+- zoom without the wheel,
+     which is what every other program trained your hands to expect. */
+  if((e.ctrlKey||e.metaKey)&&!e.altKey&&k==='0'){
+    e.preventDefault();e.stopImmediatePropagation();
+    resetGridZoom();return;
+  }
+  if((e.ctrlKey||e.metaKey)&&(k==='='||k==='+'||k==='-'||k==='_')){
+    e.preventDefault();e.stopImmediatePropagation();
+    /* mirrors the wheel: plain is rows, Shift is columns */
+    const f=(k==='-'||k==='_')?0.9:1/0.9;
+    zoomBy(f,e.shiftKey?'x':'y',null);
+    zoomSay();
+    return;
+  }
+  /* Ctrl+O — open a project, the shortcut every program has and this one did not. */
+  if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&low==='o'){
+    e.preventDefault();e.stopImmediatePropagation();
+    openProject();return;
+  }
   /* Alt+Enter — the selected instrument's plugin window. Windows' own "properties" shortcut, and
      one of the very few chords left: every letter is a note, Alt+A..Z is full, and the bare
      F-keys are the transport. Lives in THIS handler (not the main one) on purpose — you press it
@@ -12119,7 +12275,7 @@ const COMMANDS=[
   {n:'Song folder: stop saving there',kw:'desktop native storage disable off',desk:1,f:()=>{
     NSTORE.on=false;nstoreSave();status('song folder mirroring off — autosave still keeps your work')
   }},
-  {n:'Open project…',kw:'load open song file library folder recent browse projects',f:()=>openProject()},
+  {n:'Open project…',k:'Ctrl+O',kw:'load open song file library folder recent browse projects',f:()=>openProject()},
   {n:'Import song JSON',kw:'load open file',f:()=>document.getElementById('impBtn').click()},
   {n:'Toggle beat grid',kw:'step sequencer fl drum machine beat f8',f:()=>beatToggle()},
   {n:'Toggle piano roll',k:'F6',kw:'notes fl midi roll melody',f:()=>prToggle()},
@@ -12149,6 +12305,11 @@ const COMMANDS=[
   {n:'Deselect all',k:'Alt+D',kw:'clear selection none',f:()=>{clearSel();if(!prPan.hidden&&PR.sel.length){PR.sel=[];prRender()}status('selection cleared')}},
   {n:'Duplicate selection below',k:'Ctrl+B',kw:'clone paste push insert block',f:()=>dupSelBelow()},
   {n:'Panic — stop and silence EVERYTHING',k:'Alt+P',kw:'stuck notes silence stop kill audio vst plugin engine mute',f:()=>panic()},
+  {n:'Grid zoom: shorter rows (fit more)',k:'Ctrl+wheel',kw:'zoom rows height vertical density compact more rows y axis out smaller overview',f:()=>{zoomBy(0.9,'y',null);zoomSay()}},
+  {n:'Grid zoom: taller rows',k:'Ctrl+wheel',kw:'zoom rows height vertical spacing y axis in bigger readable',f:()=>{zoomBy(1/0.9,'y',null);zoomSay()}},
+  {n:'Grid zoom: narrower columns (fit more tracks)',k:'Alt+wheel',kw:'zoom columns width horizontal tracks x axis narrow squeeze',f:()=>{zoomBy(0.9,'x',null);zoomSay()}},
+  {n:'Grid zoom: wider columns',k:'Alt+wheel',kw:'zoom columns width horizontal tracks x axis wide',f:()=>{zoomBy(1/0.9,'x',null);zoomSay()}},
+  {n:'Grid zoom: reset to 100%',k:'Ctrl+0',kw:'zoom reset normal default 100 grid size',f:()=>resetGridZoom()},
   {n:'Toggle recorder / sample editor',k:'F10',kw:'rec record edison capture mic input resample edit wav',f:()=>recToggle()},
   {n:'Group selected notes',k:'Shift+G',kw:'link notes together gang',f:()=>toggleGroup()},
   {n:'Ungroup selected notes',k:'Alt+G',kw:'unlink notes separate ungang',f:()=>ungroupSel()},
@@ -12307,6 +12468,13 @@ function menuBuild(){
     });
     top.appendChild(drop);
     top.addEventListener('mousedown',ev=>{
+      /* **A mousedown inside the OPEN dropdown is not a click on the menu title.** The items are
+         children of the title, so their mousedown bubbled here, `menuClose()` hid the dropdown
+         out from under the pointer, and the `click` that would have run the command never
+         landed on anything — which is why nearly every menu entry did nothing (2026-08-15,
+         "most of the top menu settings not working"). The item's own handler closes the menu
+         after it runs. */
+      if(ev.target.closest('.mdrop'))return;
       ev.preventDefault();                          /* keep focus off the bar so hotkeys survive */
       const was=top.classList.contains('on');
       menuClose();
@@ -15082,6 +15250,9 @@ const HELP=[
  ['Patterns','Reverse a sample','Bxx','Type B in the FX column (or right-click → Reverse) and that note plays the sample backwards — same trim region, flipped.'],
  ['Meta','Panic','Alt+P','Silence, whatever it takes: stops playback, cuts every voice, note-offs every plugin — and if the engine is wedged, drops the audio device to force quiet.'],
  ['Meta','Plugin window','Alt+Enter','Opens the window of the selected instrument’s VST — presets, knobs, everything the plugin draws itself. Desktop build only.'],
+ ['Grid','Zoom rows','Ctrl+wheel','Row HEIGHT — squeeze more rows onto the screen or open them up. FL’s gesture. Ctrl+= / Ctrl+− from the keyboard.'],
+ ['Grid','Zoom columns','Alt+wheel','Column WIDTH — fit more tracks across without touching row height. Ctrl+Shift+= / − from the keyboard.'],
+ ['Grid','Zoom both / reset','Ctrl+Alt+wheel · Ctrl+0','Both axes together, and Ctrl+0 puts everything back to 100%. The level is remembered.'],
  ['Recorder','Record','F10 → ●','Records the master bus (whatever you hear — hit Space and jam) or any mic/line input. 5-minute cap.'],
  ['Recorder','Edit','drag to select','Crop, Cut, Reverse, fades, ±3dB, Normalize, Silence — on the selection, or everything when nothing is selected. Wheel zooms. Own undo: the Undo button, or Ctrl+Z while hovering the panel (song undo stays separate).'],
  ['Recorder','Use it','drag the selection out','Drop it on the grid: new sample + a C-4 note right there. Drop it on an instrument row: asks replace-or-add. → Instrument and ⬇ WAV still work too.'],

@@ -1108,6 +1108,19 @@ pub fn eng_open(
             };
             match cmd {
                 Some(Cmd::Play(p)) => {
+                    // **A song-order turnover is a HANDOVER, not a new take.**
+                    //
+                    // The next pattern is sent while the current one is still sounding — the
+                    // browser posts it as it schedules the boundary row, which is up to a
+                    // lookahead early. Treating that like a Play meant cutting every voice and
+                    // note-offing every plugin THE MOMENT IT ARRIVED, so the last ~160 ms of
+                    // every pattern was chopped and the next one seemed to arrive early, with a
+                    // stumble each time the order looped (2026-08-15: "it goes to the next
+                    // pattern too early and too slow getting back to the 1st"). The new pattern
+                    // is still armed here so its rows schedule ahead of time; what stops is
+                    // killing the audio that is legitimately still ringing. `fresh` (the user
+                    // pressing Play) keeps the hard reset it asks for.
+                    let handover = clock.playing() && !p.fresh;
                     clock = Clock::new(p.bpm.max(1.0), p.lpb.max(1.0), p.rows.max(1));
                     cells = p.cells;
                     ducks = p.ducks;
@@ -1115,8 +1128,10 @@ pub fn eng_open(
                     // mixer channel can be known. See `route_vsts`.
                     route_vsts(&ctx, &mut mixer, &vsts, &cells, &mut vst_chan);
                     left = if p.repeats == 0 { usize::MAX } else { p.rows.max(1) * p.repeats };
-                    cut_all(&mut live, &mut retired, ctx.current_time());
-                    vst_all_off(&vsts, &mut vst_held, ctx.current_time());
+                    if !handover {
+                        cut_all(&mut live, &mut retired, ctx.current_time());
+                        vst_all_off(&vsts, &mut vst_held, ctx.current_time());
+                    }
                     // A USER Play starts from SILENCE: queued notes from the last take dropped,
                     // and every plugin's internal state — ringing voices, delay repeats, reverb
                     // tails — flushed ("when i hit play i need the vsts to reset so it will
@@ -1131,12 +1146,16 @@ pub fn eng_open(
                         for v in fx_vsts.values() {
                             v.reset();
                         }
-                    } else {
+                    } else if !handover {
                         for v in vsts.values() {
                             v.all_off();
                         }
                     }
-                    pending.clear();
+                    // The cursor's booked rows belong to the pattern still sounding — dropping
+                    // them at a handover made the playhead jump before the music did.
+                    if !handover {
+                        pending.clear();
+                    }
                     said.clear();   // a new take reports its problems again
                     // Clamped low, not high: an alignment early enough to be unschedulable gets the
                     // minimum rather than an error, because a slightly-flammed take beats silence.

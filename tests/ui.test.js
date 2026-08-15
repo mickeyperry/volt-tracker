@@ -271,6 +271,111 @@ module.exports=async function(){
     S.ok('cutting a note WITH its OFF puts a terminator back at the old end',r.guarded);
     S.ok('  and the note before the cut keeps its length',r.noteAt8);
 
+    /* ---- grid zoom ---------------------------------------------------------------------------
+       Ctrl+wheel scales the grid's font size and EVERYTHING is derived from it. The assertion
+       that matters is not the number but the invariant `calibrateRows` exists to protect: the
+       placeholder height for skipped rows must still equal a real row's height, or a long
+       pattern's scrollbar drifts and rows land in the wrong place. */
+    S.head('Ctrl+wheel zooms the grid, and the lazy rows keep up');
+    r=await page.evaluate(async()=>{
+      await loadSong(blankSong());
+      song.patterns[curPat].rows=64;renderGrid();
+      const before=rowHpx;
+      /* the wheel now coalesces into one rAF, so each step waits a frame */
+      const frame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      /* the zoom GLIDES now — wait for the easing to arrive before measuring */
+      const settle=async()=>{for(let i=0;i<40;i++){await frame();if(!gzRaf)break}};
+      /* Ctrl+Alt = both axes, the proportional zoom */
+      gridwrap.dispatchEvent(new WheelEvent('wheel',{deltaY:-240,ctrlKey:true,altKey:true,bubbles:true,cancelable:true}));
+      await settle();
+      const inZoom=gridZoom,inH=rowHpx;
+      gridwrap.dispatchEvent(new WheelEvent('wheel',{deltaY:240,ctrlKey:true,altKey:true,bubbles:true,cancelable:true}));
+      await settle();
+      gridwrap.dispatchEvent(new WheelEvent('wheel',{deltaY:240,ctrlKey:true,altKey:true,bubbles:true,cancelable:true}));
+      await settle();
+      const outZoom=gridZoom;
+      /* a burst of events must cost ONE relayout, not twenty — that is the whole design */
+      let renders=0;const realCal=calibrateRows;
+      calibrateRows=()=>{renders++;realCal()};
+      for(let i=0;i<12;i++)gridwrap.dispatchEvent(new WheelEvent('wheel',{deltaY:-40,ctrlKey:true,bubbles:true,cancelable:true}));
+      await frame();
+      const burst=renders;          /* one frame of the glide, not twelve relayouts */
+      await settle();
+      calibrateRows=realCal;
+      /* the placeholder the skipped rows use must match a real measured row */
+      const declared=parseFloat(getComputedStyle(grows).getPropertyValue('--rowh'));
+      const real=grows.children[0].getBoundingClientRect().height;
+      /* a plain wheel must still scroll, not zoom */
+      /* ---- the two axes, independently ----
+         Row height is font-size x line-height; column width is font-size. So "rows only" must
+         change height and leave width alone, and "columns only" the exact reverse. Measured off
+         a real cell, not off the variables, because the variables are the thing under test. */
+      zoomSet(1,1);await frame();
+      const cellW=()=>grows.querySelector('.tcell').getBoundingClientRect().width;
+      const rowH=()=>grows.children[0].getBoundingClientRect().height;
+      const w0=cellW(),h0=rowH();
+      gridwrap.dispatchEvent(new WheelEvent('wheel',{deltaY:-300,ctrlKey:true,bubbles:true,cancelable:true}));
+      await settle();
+      const yOnly={w:cellW(),h:rowH()};
+      resetGridZoom();await frame();
+      gridwrap.dispatchEvent(new WheelEvent('wheel',{deltaY:300,altKey:true,bubbles:true,cancelable:true}));
+      await settle();
+      const xOnly={w:cellW(),h:rowH()};
+      resetGridZoom();await frame();
+      const afterReset={w:cellW(),h:rowH()};
+
+      /* ---- the header must stay glued to its column ----
+         The M/S/SC/freeze buttons used to be fixed pixels, so narrowing the columns left them
+         at full width and the header slid out of line with the notes underneath. Compare the
+         header cell's left edge with the grid cell's, zoomed hard both ways. */
+      const align=()=>{
+        const h=[...document.querySelectorAll('#ghead .thead')];
+        const c=[...grows.children[0].querySelectorAll('.tcell')];
+        let worst=0;
+        for(let i=0;i<Math.min(h.length,c.length);i++)
+          worst=Math.max(worst,Math.abs(h[i].getBoundingClientRect().left-c[i].getBoundingClientRect().left));
+        return worst;
+      };
+      resetGridZoom();await frame();
+      const alignedAt100=align();
+      zoomBy(0.55,'x',null);await settle();
+      const alignedNarrow=align();
+      resetGridZoom();zoomBy(2.2,'x',null);await settle();
+      const alignedWide=align();
+      resetGridZoom();await frame();
+
+      const z0=gridZoom;
+      gridwrap.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true,cancelable:true}));
+      await frame();
+      const plain=gridZoom;
+      zoomSet(1,1);
+      return{before,inZoom,inH,outZoom,declared,real,z0,plain,burst,w0,h0,yOnly,xOnly,afterReset,
+              alignedAt100,alignedNarrow,alignedWide};
+    });
+    S.ok('Ctrl+Alt+wheel up zooms both axes',r.inZoom>1,'zoom '+r.inZoom);
+    S.ok('  and the rows actually got taller',r.inH>r.before,r.before+' -> '+r.inH);
+    S.ok('  and down goes smaller',r.outZoom<r.inZoom,'zoom '+r.outZoom);
+    S.ok('the skipped-row placeholder still matches a real row',
+         Math.abs(r.declared-r.real)<0.6,r.declared+'px declared vs '+r.real+'px real');
+    S.ck('a plain wheel scrolls instead of zooming',r.plain,r.z0);
+    /* The glide paints once per FRAME, so two rAFs of waiting may legitimately show two.
+       What must never happen is one relayout per wheel EVENT — that is the jank this design
+       exists to avoid. */
+    S.ok('  twelve wheel events coalesce into frames, not twelve relayouts',
+         r.burst<=2,r.burst+' relayouts for 12 events');
+    S.ok('Ctrl+wheel changes ROW HEIGHT only (FL’s gesture)',
+         r.yOnly.h>r.h0+1&&Math.abs(r.yOnly.w-r.w0)<0.6,
+         'h '+r.h0+'->'+r.yOnly.h+', w '+r.w0+'->'+r.yOnly.w);
+    S.ok('Alt+wheel changes COLUMN WIDTH only',
+         r.xOnly.w<r.w0-1&&Math.abs(r.xOnly.h-r.h0)<1.5,
+         'w '+r.w0+'->'+r.xOnly.w+', h '+r.h0+'->'+r.xOnly.h);
+    S.ok('the channel headers stay glued to their columns, narrow',
+         r.alignedNarrow<1.5,'worst edge gap '+r.alignedNarrow+'px (100%: '+r.alignedAt100+'px)');
+    S.ok('  and wide',r.alignedWide<1.5,'worst edge gap '+r.alignedWide+'px');
+    S.ok('  and Ctrl+0 puts both back',
+         Math.abs(r.afterReset.w-r.w0)<0.6&&Math.abs(r.afterReset.h-r.h0)<0.6,
+         'w '+r.afterReset.w+' h '+r.afterReset.h);
+
     S.head('crashes are visible, songs are stamped');
     r=await page.evaluate(async()=>{
       dispatchEvent(new ErrorEvent('error',{error:new Error('test blow-up'),message:'test blow-up'}));

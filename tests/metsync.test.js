@@ -77,7 +77,14 @@ module.exports=async function(){
       'offline mix onset '+ms(r.mix));
     S.ok('the click follows the live figure',Math.abs(r.delay-r.lat)<1e-4,'delay '+ms(r.delay));
     const again=await run([{type:'limit',on:true,p:{}}]);
-    S.ok('a second measurement lands within alignment jitter',Math.abs(again.lat-r.lat)<.008,
+    /* One ScriptProcessor BUFFER of difference is inherent here, not a regression: this figure
+       is a live measurement that lands on a buffer boundary, and two instances routinely differ
+       by one step (the comment above already records 56-62 ms in the wild). The old bar was
+       8 ms — exactly one step — so a run that stepped failed, and which side of the boundary it
+       landed on depended on how busy the page happened to be at load. That made it flaky on
+       unrelated UI work (2026-08-15, a CSS change to row height was enough). Twelve absorbs one
+       step and still catches what this is for: a real regression moves it by tens of ms. */
+    S.ok('a second measurement lands within alignment jitter',Math.abs(again.lat-r.lat)<.012,
       ms(r.lat)+' then '+ms(again.lat));
 
     S.head('and off again: the delay comes back down');

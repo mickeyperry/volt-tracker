@@ -362,6 +362,15 @@ for the mixer, the transport, or anything touching the audio callback, answer it
   with `fxVst` silences its PORTED instruments' browser voices while the engine transport runs**
   (same mechanism as plugin slots; never in renders) — without that, the wet native copy played
   under the dry browser one and the FX "did nothing" on non-plugin channels.
+- **STAGE THE HTML BEFORE YOU COMPILE, and never let the hash check tell you otherwise.**
+  Tauri embeds `dist/` at COMPILE time, so `cargo build` then `node tools/mkdesktop.js` produces
+  an exe wrapped around the PREVIOUS page — and the documented check (sha256 beta2.html vs
+  dist/index.html) passes anyway, because staging is what made them match. It proves the two
+  FILES agree, never that the BINARY contains either. A whole round of "the zoom does nothing,
+  the menu still does nothing" on 2026-08-15 was this and only this. Either use
+  `volt_build desktop` (it stages first) or run mkdesktop, THEN cargo, and verify the honest
+  way: **the exe's mtime must be newer than dist/index.html's**. Grepping the exe for a string
+  does not work either — the assets are compressed.
 - **`dragDropEnabled` must stay FALSE in tauri.conf.json, and the config takes no comments.**
   With Tauri's OS drag-drop handler on, WebView2 installs its own `IDropTarget` and the page's
   HTML5 drag-and-drop dies completely: dragging a sliced instrument onto the grid showed the

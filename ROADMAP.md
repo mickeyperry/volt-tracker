@@ -16,6 +16,38 @@ Status: `[ ]` not started · `[~]` in progress · `[x]` done · `[?]` needs a de
 
 ---
 
+# WHERE THINGS STAND (2026-08-15, after the distortion hunt)
+
+**The distortion is fixed.** It was one line in the vendored audio crate, not the instruments,
+not the plugins, not the buffer — see the 2026-08-15 entry below for the full story and the
+three lessons it cost. Along the way: no more zombie audio contexts, mono plugins no longer
+throw away the right channel, patches no longer crash the app, the mixer no longer ignores
+edits after a page reload, and song-mode pattern handovers no longer chop the tail off every
+pattern.
+
+**What Mickey should know is next**, in the order I'd do it:
+
+1. **[ ] Plugin patches into the SONG.** They survive a device reopen today (in memory) but not
+   a restart, so every session starts by setting the plugins up again — the thing he asked for
+   twice. It needs a size story first: a Kontakt state is megabytes and the autosave goes to
+   localStorage, so the patches want the SAMPLE STORE's design (OPFS by hash, hash in the JSON,
+   embedded only on export) plus a per-plugin cap. Nothing here may ever be able to break saving.
+2. **[ ] The engine owns song mode.** The browser still conducts: it sends each pattern as the
+   order turns over, which is why the handover needed the fix below. Moving patterns+order+loop
+   into `Cmd::Play` and letting `clock.rs` chain them removes the last cross-engine seam — and
+   with it `nengLatCorr`, the nudge, and the "+web / ASIO only" split.
+3. **[ ] The close-path deadlock.** Closing VOLT sometimes hangs with zero CPU (a lock, not a
+   loop) and has to be force-killed. Evidence captured 2026-08-14; suspects are the open gate
+   held across a slow driver open, or the exit patch-capture. Diagnose with `cdb -pv`.
+4. **[ ] Scan plugins in a disposable process** (bible 07+15). Still the only thing standing
+   between one bad plugin and the whole app.
+
+**Also worth knowing:** `VOLT_TAP` / the palette's *"Record what the engine is playing"* writes
+exactly what the soundcard receives to `tap.wav`. It is the tool that ended a two-day hunt after
+every indirect measurement came back clean. Reach for it early next time.
+
+---
+
 # THE PLAN — make VOLT work like FL: one engine, flawless VSTs, zero hiccups (2026-08-13)
 
 Written at Mickey's hold: *"do the roadmap so i clear here the shit."* Strike anything, reorder
@@ -107,6 +139,35 @@ Web Audio engine; only desktop stops using it for sound.
 - [ ] Assist channel: more ops as needed (it already reads state and edits the mix remotely).
 
 ---
+
+## 2026-08-15 (later) — everything else that was broken, and the UI work
+
+With the distortion dead the rest of the day was Mickey using VOLT and finding what it does
+badly. All of it is fixed and tested:
+
+- **Song mode chopped every pattern's tail.** The browser sends the next pattern up to a
+  lookahead EARLY; the engine treated that like a fresh Play and cut every voice and note-off'd
+  every plugin the moment it arrived. Now a mid-play arrival is a HANDOVER — the new pattern is
+  armed, the ringing audio is left alone — and only the user's own Play does the hard reset.
+  *"it goes to the next pattern too early and too slow getting back to the 1st."*
+- **The top menu barely worked.** Every item is a child of its menu title, so an item's
+  `mousedown` bubbled up, closed the dropdown, and the `click` landed on nothing. One guard.
+- **Drag-and-drop was dead in the desktop build** — `dragDropEnabled: true` lets WebView2 install
+  its own drop target and the page's HTML5 drag-and-drop stops existing. That killed both slice
+  drags AND dropping a WAV or a project in from Explorer. Off now; the page owns drops again.
+- **Ctrl+O** opens a project. **Ctrl+X over a bare note-OFF** removes it instead of putting the
+  terminator straight back.
+- **A grid zoom, FL's gestures**: Ctrl+wheel = rows, Alt+wheel = columns, Ctrl+Alt = both,
+  Ctrl+0 resets, level remembered. It glides (eased in log space, one paint per frame, anchored
+  on the row under the pointer for the whole animation) and the channel headers stay pinned to
+  their columns to 0 px at every level — that last part by re-running `syncHeadWidths()`, the
+  mechanism VOLT already had, rather than the CSS I started rewriting before I found it.
+
+**And the lesson that wasted the most time:** `cargo build` then `mkdesktop` ships an exe wrapped
+around the PREVIOUS page, and the documented sha256 check passes anyway because staging is what
+makes the two files match. Two rounds of "the fix does nothing" were that. Stage first, and
+verify the honest way — the exe's mtime must be newer than dist/index.html. Recorded in
+CLAUDE.md.
 
 ## 2026-08-15 — THE DISTORTION, actually dead: one sign flip in the vendored crate
 

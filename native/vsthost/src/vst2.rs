@@ -46,12 +46,26 @@ use vst::plugin::{Category, Plugin as _};
 use crate::{HostEvents, PluginFormat, PluginInfo};
 
 /// Where VST2 plugins live on this machine. Unlike VST3 the spec fixes nothing — these are the
-/// conventional folders, and the three that exist here. `Program Files (x86)` is deliberately
-/// absent: it is 32-bit by definition and none of it can load.
+/// conventional folders.
+///
+/// **`Program Files (x86)` IS scanned, and leaving it out was a real bug.** The old reasoning was
+/// "that folder is 32-bit by definition, none of it can load" — which is true of the folder's
+/// NAME and false of its contents: installers routinely drop both builds into it side by side.
+/// Dada Life's Sausage Fattener is exactly that, `Sausage Fattener.dll` (x86) next to
+/// `Sausage Fattener x64.dll` (x64), and the x64 one is perfectly loadable — it simply never
+/// appeared in VOLT's list, with nothing on screen to explain why (2026-08-15). Nothing about
+/// scanning it is risky: architecture is decided PER FILE from the PE header (`pe_machine`, four
+/// dozen bytes, no loading), so a 32-bit DLL here is counted and set aside exactly as one
+/// anywhere else is.
 pub const VST2_DIRS: &[&str] = &[
     r"C:\Program Files\VSTPlugins",
     r"C:\Program Files\Steinberg\VSTPlugins",
     r"C:\Program Files\Common Files\VST2",
+    // Windows paths are case-insensitive, so one spelling per folder — two would list every
+    // plugin in it twice.
+    r"C:\Program Files (x86)\VSTPlugins",
+    r"C:\Program Files (x86)\Steinberg\VSTPlugins",
+    r"C:\Program Files (x86)\Common Files\VST2",
 ];
 
 /// What a VST2 scan of the folders found, with the skipped count carried alongside rather than
@@ -89,6 +103,11 @@ fn collect_dlls(dir: &Path, depth: usize, scan: &mut Vst2Scan) {
         // `.vst3` files sit in these folders too (Jup-8000 V ships both side by side). They are
         // the VST3 scanner's business; listing them here would show every such plugin twice.
         if ext.as_deref() == Some("dll") && p.is_file() {
+            // Never even opened — see `SCAN_SKIP`. Checked before the PE read so the file is not
+            // touched at all, which is the point for something we have decided not to host.
+            if crate::skip_in_scan(&p) {
+                continue;
+            }
             match pe_machine(&p) {
                 Some(IMAGE_FILE_MACHINE_AMD64) => scan.dlls.push(p),
                 Some(_) => scan.skipped_32bit += 1,
@@ -136,7 +155,23 @@ struct Transport {
     /// f64 bits in an atomic: the audio thread writes, the callback reads, no lock on either side.
     sample_pos: std::sync::atomic::AtomicU64,
     sample_rate: f64,
-    tempo: f64,
+    /// **The song's BPM, and it has to be the song's.** Same storage trick as `sample_pos`,
+    /// because it is written from the audio thread (on Play, and whenever the tempo changes) and
+    /// read from whichever thread the plugin asks on. It was a hardcoded 120 for its whole life,
+    /// which is inaudible until a plugin actually USES it: a tempo-synced delay set to 1/8 then
+    /// computes 1/8 of 120 bpm and lands nowhere near the beat of a 174 bpm song. Mickey, of
+    /// IL Delay: *"the delays is not aligned with the rhythm"* (2026-08-15).
+    tempo: std::sync::atomic::AtomicU64,
+    /// The song's MUSICAL position in quarter notes, and whether the transport is rolling.
+    ///
+    /// Tempo alone gets a plugin the right RATE — a 1/8 delay lasts the right time — but anything
+    /// that plays a pattern of its own (Gross Beat, a trance gate, a synced LFO, an arpeggiator)
+    /// needs to know WHERE the bar is, or it runs at the right speed with an arbitrary phase that
+    /// changes every time the plugin is reloaded. This is that: the host's position, set from the
+    /// engine's own clock, and an honest play/stop flag instead of the permanent "playing" the
+    /// host used to claim.
+    ppq: std::sync::atomic::AtomicU64,
+    playing: std::sync::atomic::AtomicBool,
 }
 
 /// What VOLT says when a VST2 plugin calls home.
@@ -164,18 +199,29 @@ impl Vst2HostCallbacks for VoltVst2Host {
 
     fn get_time_info(&self, _mask: i32) -> Option<TimeInfo> {
         let pos = f64::from_bits(self.transport.sample_pos.load(std::sync::atomic::Ordering::Relaxed));
+        let tempo = f64::from_bits(self.transport.tempo.load(std::sync::atomic::Ordering::Relaxed));
+        let ppq = f64::from_bits(self.transport.ppq.load(std::sync::atomic::Ordering::Relaxed));
+        let playing = self.transport.playing.load(std::sync::atomic::Ordering::Relaxed);
+        let mut flags = TimeInfoFlags::TEMPO_VALID
+            | TimeInfoFlags::PPQ_POS_VALID
+            | TimeInfoFlags::TIME_SIG_VALID
+            | TimeInfoFlags::BARS_VALID;
+        // **Honest, not permanent.** The host used to claim TRANSPORT_PLAYING for ever, so a
+        // plugin that restarts its pattern on play never saw an edge to restart on.
+        if playing {
+            flags |= TimeInfoFlags::TRANSPORT_PLAYING;
+        }
         Some(TimeInfo {
             sample_pos: pos,
             sample_rate: self.transport.sample_rate,
-            ppq_pos: pos / self.transport.sample_rate * (self.transport.tempo / 60.0),
-            tempo: self.transport.tempo,
+            ppq_pos: ppq,
+            tempo,
+            // The bar this position is in, in quarter notes. VOLT is 4/4 throughout, so a bar is
+            // four beats — the one place that assumption is written down.
+            bar_start_pos: (ppq / 4.0).floor() * 4.0,
             time_sig_numerator: 4,
             time_sig_denominator: 4,
-            flags: (TimeInfoFlags::TRANSPORT_PLAYING
-                | TimeInfoFlags::TEMPO_VALID
-                | TimeInfoFlags::PPQ_POS_VALID
-                | TimeInfoFlags::TIME_SIG_VALID)
-                .bits(),
+            flags: flags.bits(),
             ..TimeInfo::default()
         })
     }
@@ -262,7 +308,10 @@ impl Vst2Module {
         let transport = Arc::new(Transport {
             sample_pos: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
             sample_rate,
-            tempo: 120.0,
+            // 120 until the engine says otherwise — see Vst2Plugin::set_tempo.
+            tempo: std::sync::atomic::AtomicU64::new(120f64.to_bits()),
+            ppq: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
+            playing: std::sync::atomic::AtomicBool::new(false),
         });
         let tag = crate::next_tag();
         let host = Arc::new(Mutex::new(VoltVst2Host {
@@ -332,7 +381,9 @@ fn load_and_instance(
         transport: Arc::new(Transport {
             sample_pos: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
             sample_rate: 44100.0,
-            tempo: 120.0,
+            tempo: std::sync::atomic::AtomicU64::new(120f64.to_bits()),
+            ppq: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
+            playing: std::sync::atomic::AtomicBool::new(false),
         }),
         block_size: max_block as isize,
         tag: 0, // scan path — touches from here have no address and are dropped
@@ -387,6 +438,28 @@ impl Vst2Plugin {
     /// the effect and takes the value immediately; there is no queue to ride.
     pub fn set_param(&mut self, id: u32, value: f64) {
         self.params.set_parameter(id as i32, value.clamp(0.0, 1.0) as f32);
+    }
+
+    /// Tell the plugin what tempo the song is at. Everything sync'd — delays, LFOs, arpeggiators,
+    /// gates — reads this through `audioMasterGetTime` and computes its own note divisions from
+    /// it. One atomic store; safe from the audio thread, and safe to call every block.
+    pub fn set_tempo(&self, bpm: f64) {
+        if bpm > 0.0 {
+            self.transport.tempo.store(bpm.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Where the song is, musically, and whether it is rolling. See [`Transport::ppq`].
+    pub fn set_transport(&self, playing: bool, ppq: f64) {
+        self.transport.ppq.store(ppq.max(0.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
+        self.transport.playing.store(playing, std::sync::atomic::Ordering::Relaxed);
+        // Keep the sample clock consistent with the musical one — some plugins read one, some the
+        // other, and two positions that disagree is worse than either.
+        let tempo = f64::from_bits(self.transport.tempo.load(std::sync::atomic::Ordering::Relaxed));
+        if tempo > 0.0 {
+            let samples = ppq.max(0.0) * 60.0 / tempo * self.transport.sample_rate;
+            self.transport.sample_pos.store(samples.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// Render one block. Same contract as the VST3 twin: `out` is resized and filled, notes come
@@ -457,11 +530,20 @@ impl Vst2Plugin {
             self.instance.process(&mut buffer);
         }
 
-        // Advance the transport this instance shows the world, exactly as the VST3 side advances
-        // its ProcessContext — a clock that never moves reads as a paused host.
+        // Advance the transport this instance shows the world — a clock that never moves reads as
+        // a paused host. This is the FALLBACK path only: when the engine is driving (`set_transport`
+        // every block, from its own clock) it overwrites both positions with the song's, which is
+        // what makes a synced gate land on the bar instead of wherever the plugin happened to
+        // start. Free-running still matters for anything holding a plugin outside the transport —
+        // fxprobe, the offline probes — where there is no song to follow.
         let t = &self.transport;
-        let pos = f64::from_bits(t.sample_pos.load(std::sync::atomic::Ordering::Relaxed));
-        t.sample_pos.store((pos + frames as f64).to_bits(), std::sync::atomic::Ordering::Relaxed);
+        if !t.playing.load(std::sync::atomic::Ordering::Relaxed) {
+            let pos = f64::from_bits(t.sample_pos.load(std::sync::atomic::Ordering::Relaxed));
+            t.sample_pos.store((pos + frames as f64).to_bits(), std::sync::atomic::Ordering::Relaxed);
+            let tempo = f64::from_bits(t.tempo.load(std::sync::atomic::Ordering::Relaxed));
+            let ppq = (pos + frames as f64) / t.sample_rate * (tempo / 60.0);
+            t.ppq.store(ppq.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        }
         Ok(())
     }
 
@@ -471,7 +553,14 @@ impl Vst2Plugin {
     /// `flush_state` is called from the RENDER thread, so for VST2 it deliberately does NOTHING:
     /// the caller's all-notes-off sweep ends the voices, and stale delay tails are a smaller sin
     /// than Maximus wedging the audio callback.
-    pub fn flush_state(&mut self) {}
+    pub fn flush_state(&mut self) {
+        // suspend/resume is VST2's "drop everything ringing" — mains off, mains on. This was a
+        // literal no-op for the format's whole life here, which meant panic's reset did NOTHING
+        // to a VST2 synth beyond the note-off sweep: anything with a long release (or a stuck
+        // voice, which is what panic is FOR) played straight through it.
+        self.instance.suspend();
+        self.instance.resume();
+    }
 
     /// The bank chunk — see [`crate::Plugin::state`].
     ///
@@ -505,6 +594,51 @@ impl Drop for Vst2Plugin {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    /// **What a tempo-synced plugin is told, and that it is the SONG's tempo.**
+    ///
+    /// `audioMasterGetTime` is the whole of a VST2's clock: a sync'd delay reads `tempo` and works
+    /// out its own 1/8 from it. VOLT answered a hardcoded 120 for this host's entire life, so at
+    /// 174 bpm every sync'd repeat landed between the beats — "the delays is not aligned with the
+    /// rhythm" (2026-08-15). The host object is testable without a plugin, so the answer is pinned
+    /// here rather than inferred from listening: what `set_tempo` stores is what the plugin hears,
+    /// and the musical position is derived from the same number.
+    #[test]
+    fn a_plugin_is_told_the_songs_tempo_not_a_default() {
+        let transport = Arc::new(Transport {
+            sample_pos: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
+            sample_rate: 48000.0,
+            tempo: std::sync::atomic::AtomicU64::new(120f64.to_bits()),
+            ppq: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
+            playing: std::sync::atomic::AtomicBool::new(false),
+        });
+        let host = VoltVst2Host { transport: Arc::clone(&transport), block_size: 128, tag: 0 };
+        let info = host.get_time_info(0).expect("a host must always answer with a transport");
+        assert_eq!(info.tempo, 120.0, "the default stands until the song says otherwise");
+        assert!(
+            info.flags & TimeInfoFlags::TEMPO_VALID.bits() != 0,
+            "a tempo nobody is told is valid is a tempo nobody uses"
+        );
+
+        // What `Vst2Plugin::set_tempo` does, from the audio thread.
+        transport.tempo.store(174f64.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        // …and one bar in. The position is SET by the host now rather than derived from a
+        // free-running sample count (see `Transport::ppq`): the engine knows where the song is,
+        // and a plugin counting for itself has no idea where the bar line went.
+        transport.ppq.store(4f64.to_bits(), std::sync::atomic::Ordering::Relaxed);
+
+        let info = host.get_time_info(0).unwrap();
+        assert_eq!(info.tempo, 174.0, "the plugin must hear the SONG's tempo");
+        assert!(
+            (info.ppq_pos - 4.0).abs() < 1e-6,
+            "one bar in, the musical position must read 4 quarter notes — got {}",
+            info.ppq_pos
+        );
+        assert!(
+            info.flags & TimeInfoFlags::PPQ_POS_VALID.bits() != 0,
+            "the position has to be flagged valid or a sync'd plugin ignores it"
+        );
+    }
 
     fn write_pe(path: &Path, machine: u16) {
         let mut f = std::fs::File::create(path).unwrap();
@@ -556,5 +690,67 @@ mod tests {
         assert_eq!(scan.dlls.len(), 2, "the x64 DLLs, nested included: {:?}", scan.dlls);
         assert_eq!(scan.skipped_32bit, 1, "the 32-bit one is counted, not silently dropped");
         assert!(scan.dlls.iter().all(|p| p.extension().unwrap() == "dll"));
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+
+    /// **Where the song is, not just how fast it goes.**
+    ///
+    /// Tempo alone gets a plugin the right rate; a synced gate or arpeggiator also needs the bar
+    /// line, and a host that free-runs from the plugin's creation gives it an arbitrary phase that
+    /// changes on every reload. This pins what a plugin is actually told: the position it is given,
+    /// the bar that position falls in, and an honest play/stop flag — which used to be permanently
+    /// "playing", so nothing could ever see a transport edge.
+    #[test]
+    fn a_plugin_is_told_where_the_bar_is() {
+        let t = Arc::new(Transport {
+            sample_pos: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
+            sample_rate: 48000.0,
+            tempo: std::sync::atomic::AtomicU64::new(174f64.to_bits()),
+            ppq: std::sync::atomic::AtomicU64::new(0f64.to_bits()),
+            playing: std::sync::atomic::AtomicBool::new(false),
+        });
+        let host = VoltVst2Host { transport: Arc::clone(&t), block_size: 128, tag: 0 };
+
+        // stopped: a plugin that gates on the transport must be able to tell
+        let info = host.get_time_info(0).unwrap();
+        assert!(
+            info.flags & TimeInfoFlags::TRANSPORT_PLAYING.bits() == 0,
+            "a stopped host must not claim to be playing"
+        );
+
+        // rolling, nine and a half beats in — bar 3 of 4/4 starts at beat 8
+        let set = |playing: bool, ppq: f64| {
+            t.ppq.store(ppq.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            t.playing.store(playing, std::sync::atomic::Ordering::Relaxed);
+        };
+        set(true, 9.5);
+        let info = host.get_time_info(0).unwrap();
+        assert!(info.flags & TimeInfoFlags::TRANSPORT_PLAYING.bits() != 0);
+        assert!((info.ppq_pos - 9.5).abs() < 1e-9, "position is {}", info.ppq_pos);
+        assert!(
+            (info.bar_start_pos - 8.0).abs() < 1e-9,
+            "beat 9.5 is in the bar that starts at 8, not {}",
+            info.bar_start_pos
+        );
+        assert!(info.flags & TimeInfoFlags::BARS_VALID.bits() != 0, "the bar must be flagged valid");
+        assert_eq!(info.tempo, 174.0, "and the tempo is still the song's");
+    }
+
+    /// The anchor arithmetic the render thread runs, checked here because it is the whole of
+    /// "does the gate land on the bar": beats = beat0 + elapsed x bpm/60.
+    #[test]
+    fn the_anchor_puts_every_block_at_the_right_beat() {
+        let (t0, beat0, bpm) = (10.0_f64, 4.0_f64, 174.0_f64);
+        let beat_at = |t: f64| beat0 + (t - t0) * bpm / 60.0;
+        // one beat later in seconds is exactly one beat later in music
+        assert!((beat_at(t0 + 60.0 / bpm) - 5.0).abs() < 1e-9);
+        // a full 4/4 bar
+        assert!((beat_at(t0 + 4.0 * 60.0 / bpm) - 8.0).abs() < 1e-9);
+        // and the anchor itself is exact, with no drift accumulated from repeated addition
+        assert!((beat_at(t0) - 4.0).abs() < 1e-12);
     }
 }

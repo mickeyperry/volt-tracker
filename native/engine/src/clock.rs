@@ -125,6 +125,54 @@ mod tests {
         }
     }
 
+    /// **A pattern change is one row wide, however late the message announcing it arrives.**
+    ///
+    /// The song-mode seam, in the arithmetic the audio thread performs (`engine.rs`, the queued
+    /// pattern): the outgoing pattern's rows are booked to its end, `tail_t` is the end of its
+    /// last row, and the incoming pattern is started at exactly that instant. What this pins is
+    /// that the join is a plain continuation of the grid — the next pattern's row 0 sits one row
+    /// after the last row of the previous one, and every row of the new pattern follows from
+    /// there. Aiming the seam with a wall clock instead (`ctx.current_time() + start_in`, which
+    /// is what this replaced) cannot do that: it lands wherever the message happened to arrive,
+    /// which is late by the IPC hop and different every time.
+    #[test]
+    fn a_pattern_change_lands_exactly_one_row_after_the_last() {
+        let dur = 0.125;                       // 120 bpm, 4 rows/beat
+        let mut a = Clock::new(120.0, 4.0, 8); // the outgoing pattern: 8 rows
+        a.start(1.0, 0);
+        // Book it out, as the audio thread does, counting rows off exactly as `left` does.
+        let mut left = 8usize;
+        let mut tail_t = 0.0;
+        let mut now = 1.0;
+        while left > 0 {
+            for d in a.due(now, 0.160) {
+                if left == 0 {
+                    break;
+                }
+                left -= 1;
+                tail_t = d.t + a.row_dur();
+            }
+            now += 0.030;
+        }
+        // The last row was row 7 at 1.0 + 7*dur, so the pattern ends one row later.
+        let want_seam = 1.0 + 8.0 * dur;
+        assert!((tail_t - want_seam).abs() < 1e-9, "the seam is at {tail_t}, not {want_seam}");
+
+        // The incoming pattern starts there — no wall clock involved, however late this happens.
+        let mut b = Clock::new(120.0, 4.0, 16);
+        b.start(tail_t, 0);
+        // A lookahead wide enough to return the first two rows, so the spacing is checkable.
+        let first = b.due(want_seam - 0.100, 0.300);
+        assert_eq!(first[0].row, 0, "the new pattern must start at its top");
+        assert!(
+            (first[0].t - want_seam).abs() < 1e-9,
+            "row 0 of the new pattern is at {}, not on the seam {want_seam}",
+            first[0].t
+        );
+        // …and the row after it is a normal row's distance away: no gap, no overlap.
+        assert!((first[1].t - (want_seam + dur)).abs() < 1e-9);
+    }
+
     #[test]
     fn a_late_tick_loses_nothing() {
         // The whole reason for scheduling ahead: the UI thread stalls, the tick arrives 200 ms

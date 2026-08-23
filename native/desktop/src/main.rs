@@ -20,16 +20,28 @@
 
 #[macro_use]
 mod log;
+mod cpu;
 mod engine;
 mod everything;
 mod http;
 mod plugins;
 mod store;
 
+/// The running app, for the threads that have something to tell the page but no handle to say it
+/// through. The plugin thread is the one: it is started lazily, from whichever command first needs
+/// a plugin, so it never receives an `AppHandle` the way a Tauri command does — and it is where a
+/// plugin window's Ctrl+Delete is noticed. Set once, immediately after `build`.
+pub static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
 /// The way out, once the webview has said its goodbyes. See the close-requested handler below.
 #[tauri::command]
 fn app_quit() {
     log::write("app_quit — the webview finished its save-on-close; ending the process");
+    // A DELIBERATE exit leaves its mark, so a plugin that merely happened to be loading at this
+    // moment is not blamed for "killing the session" at the next launch — that is how Sytrus and
+    // WaveShell ended up wrongly blacklisted on 2026-08-23 (the app was closed for a rebuild
+    // while the song's plugins were still coming up). See plugins::blame_last_load.
+    plugins::note_clean_exit();
     volt_vsthost::hard_exit(0);
 }
 
@@ -40,7 +52,14 @@ fn main() {
     // First thing, before anything can fail: a GUI process has no console, so without this every
     // error the native side produces is invisible and every fault has to be inferred. See log.rs.
     log::init();
-    tauri::Builder::default()
+    // The disposable scan worker — this same exe, re-run to open unknown plugin DLLs somewhere
+    // they cannot take the app with them. MUST be decided before the Tauri builder: the
+    // single-instance plugin would otherwise treat the worker as a second VOLT and neither
+    // process would do what it should. See `engine::scan_in_worker`.
+    if std::env::args().any(|a| a == "--scan-worker") {
+        engine::scan_worker_main();
+    }
+    let app = tauri::Builder::default()
         .manage(engine::Engine::default())
         // One VOLT at a time, and it must be registered FIRST — the plugin decides whether this
         // process lives at all, and everything after it is setup for a process that may be about to
@@ -76,6 +95,7 @@ fn main() {
                 if let Some(t) = *asked {
                     if t.elapsed() < std::time::Duration::from_secs(10) {
                         log::write("close: second ask within 10 s — closing without the question");
+                        plugins::note_clean_exit(); // deliberate, same as app_quit
                         return; // do not prevent: RunEvent::ExitRequested ends the process
                     }
                 }
@@ -90,8 +110,11 @@ fn main() {
             engine::eng_open,
             engine::eng_close,
             engine::eng_load_sample,
+            engine::eng_load_sample_raw,
             engine::eng_play,
             engine::eng_stop,
+            engine::eng_cells,
+            engine::eng_met,
             engine::eng_panic,
             engine::eng_meters,
             engine::eng_stats,
@@ -101,6 +124,8 @@ fn main() {
             engine::vst_load,
             engine::vst_unload,
             engine::eng_mix,
+            engine::eng_render_vst,
+            engine::eng_render_fx,
             engine::vst_editor_open,
             engine::vst_editor_close,
             engine::fxvst_load,
@@ -112,6 +137,10 @@ fn main() {
             engine::vst_param_set,
             engine::fxvst_param_set,
             engine::vst_touched,
+            engine::vst_patch_song,
+            engine::vst_patch_flush,
+            engine::fxvst_patch_removed,
+            engine::fxvst_patch_swapped,
             app_quit,
             everything::ev_status,
             everything::ev_get,
@@ -122,7 +151,10 @@ fn main() {
             store::file_read,
         ])
         .build(tauri::generate_context!())
-        .expect("VOLT failed to start")
+        .expect("VOLT failed to start");
+    // Before anything can ask for it: the plugin thread emits through this.
+    let _ = APP.set(app.handle().clone());
+    app
         // **Die the instant the last window closes, before Tauri tears anything down.**
         //
         // `.run()` used to be given the context directly and `hard_exit` called after it returned —

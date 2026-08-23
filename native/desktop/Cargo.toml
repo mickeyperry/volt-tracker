@@ -12,6 +12,9 @@ authors = ["Mickey Perry"]
 
 [patch.crates-io]
 web-audio-api = { path = "../vendor/web-audio-api" }
+# …and the `vst` fork: the legacy `main` entry point, so VST 2.3-era plugins are not invisible.
+# See native/vsthost/Cargo.toml for the whole story.
+vst = { path = "../vendor/vst" }
 
 [features]
 # Pass through to the engine; needs the Steinberg SDK and clang, see native/README.md.
@@ -69,6 +72,11 @@ web-audio-api = { version = "1.7", default-features = false, features = ["cpal"]
 # both halves agree.
 [target.'cfg(windows)'.dependencies]
 windows-core = "0.61"
+# The CPU meter (src/cpu.rs): process times + a toolhelp walk over our own child processes —
+# WebView2 renders in separate processes, so "the app's CPU" without them would be a lie.
+# winapi with hand-picked features, same reasoning as vsthost's Cargo.toml: windows-sys would be
+# a much bigger dependency for four kernel32 calls.
+winapi = { version = "0.3", features = ["processthreadsapi", "tlhelp32", "handleapi", "minwindef"] }
 
 [profile.release]
 opt-level = "s"

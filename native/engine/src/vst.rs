@@ -36,14 +36,43 @@ pub struct NoteMsg {
 
 /// One parameter change on its way to the render thread — automation's last hop.
 ///
-/// No timestamp, deliberately: parameter automation is block-rate (the browser's mix LFOs are
-/// too), and the change applies at the top of the block after the message lands — a few
-/// milliseconds, indistinguishable from the IPC hop it already took.
+/// LIVE sends carry `when: 0.0` and apply at the top of the next block, deliberately: parameter
+/// automation is block-rate (the browser's mix LFOs are too), and a few milliseconds is
+/// indistinguishable from the IPC hop it already took. An OFFLINE render has no "next block that
+/// means now" — its whole timeline is booked up front — so a render's lane values arrive with a
+/// real `when` and wait in the processor until their block comes round, like notes do.
 #[derive(Debug, Clone, Copy)]
 pub struct ParamMsg {
     pub id: u32,
     /// Normalised 0..1.
     pub value: f64,
+    /// Absolute context time; 0.0 (every live caller) means "next block".
+    pub when: f64,
+}
+
+/// Where the song is, as an ANCHOR rather than a position.
+///
+/// A position would be stale by the time it arrived and would have to be re-sent every block. An
+/// anchor — "at context time `t0` the song was at beat `beat0`, running at `bpm`" — lets the
+/// render thread work out the exact musical position of every block it renders, from the clock's
+/// own drift-free timeline, with one message per transport change. `playing:false` stops the
+/// plugin's pattern instead of leaving it rolling for ever.
+#[derive(Debug, Clone, Copy)]
+pub struct TransportMsg {
+    pub playing: bool,
+    pub t0: f64,
+    pub beat0: f64,
+    pub bpm: f64,
+}
+
+/// The song's tempo, on its way to the plugin's transport.
+///
+/// Sent on Play and whenever the BPM changes, never per block: it is one store on the far side,
+/// and everything tempo-synced inside a plugin (delays, LFOs, gates, arpeggiators) reads it from
+/// the transport the host presents every block anyway.
+#[derive(Debug, Clone, Copy)]
+pub struct TempoMsg {
+    pub bpm: f64,
 }
 
 /// The panic message: everything off, NOW.
@@ -126,12 +155,16 @@ pub struct VstProcessor {
     /// Notes posted but not yet due. Small and drained in order; a `Vec` beats anything cleverer at
     /// this size and never allocates on the audio thread once it has grown.
     pending: Vec<NoteMsg>,
+    /// Timed parameter changes (offline renders — see [`ParamMsg`]), waiting for their block.
+    pending_params: Vec<ParamMsg>,
     /// Set by [`AllOffMsg`]; the next block opens with a note-off for every MIDI pitch.
     all_off: bool,
     /// Scratch output buffers for the plugin, allocated once.
     out: Vec<Vec<f32>>,
     channels: usize,
     retire: Retire,
+    /// Where the song is, as an anchor — see [`TransportMsg`]. `None` until the engine says.
+    transport: Option<TransportMsg>,
 }
 
 impl Drop for VstProcessor {
@@ -155,10 +188,12 @@ impl AudioWorkletProcessor for VstProcessor {
             plugin: Some(opts.plugin),
             events: HostEvents::new(),
             pending: Vec::with_capacity(128),
+            pending_params: Vec::new(),
             all_off: false,
             out: (0..channels).map(|_| Vec::with_capacity(256)).collect(),
             channels,
             retire: opts.retire,
+            transport: None,
         }
     }
 
@@ -181,6 +216,16 @@ impl AudioWorkletProcessor for VstProcessor {
         let t0 = scope.current_time;
         let t1 = t0 + frames as f64 / scope.sample_rate as f64;
 
+        // **The musical position of THIS block**, worked out from the anchor the engine sent, on
+        // the clock's own timeline. This is what makes a tempo-synced gate or arpeggiator line up
+        // with the bar instead of running at the right speed from an arbitrary phase.
+        if let Some(tr) = self.transport {
+            if let Some(plugin) = self.plugin.as_mut() {
+                let beat = if tr.playing { tr.beat0 + (t0 - tr.t0) * tr.bpm / 60.0 } else { tr.beat0 };
+                plugin.0.set_transport(tr.playing, beat);
+            }
+        }
+
         self.events.clear();
         if self.all_off {
             self.all_off = false;
@@ -202,6 +247,20 @@ impl AudioWorkletProcessor for VstProcessor {
             }
             false
         });
+        // Timed lane values (offline renders) land at the top of the block that covers them —
+        // block-rate, exactly the precision the live path has always had.
+        if !self.pending_params.is_empty() {
+            let plugin = &mut self.plugin;
+            self.pending_params.retain(|m| {
+                if m.when >= t1 {
+                    return true;
+                }
+                if let Some(p) = plugin.as_mut() {
+                    p.0.set_param(m.id, m.value);
+                }
+                false
+            });
+        }
 
         // `None` only between `Drop` taking the plugin and the node going away — go silent rather
         // than reach into an empty slot.
@@ -244,10 +303,26 @@ impl AudioWorkletProcessor for VstProcessor {
         if let Some(note) = msg.downcast_ref::<NoteMsg>() {
             self.pending.push(*note);
         } else if let Some(p) = msg.downcast_ref::<ParamMsg>() {
+            if p.when > 0.0 {
+                // an offline render's lane value — parked until its block, like a note
+                self.pending_params.push(*p);
+                return;
+            }
             // Straight into the plugin's own queue (VST3) or effect (VST2): both formats' halves
             // of `set_param` are audio-thread safe by construction.
             if let Some(plugin) = self.plugin.as_mut() {
                 plugin.0.set_param(p.id, p.value);
+            }
+        } else if let Some(t) = msg.downcast_ref::<TempoMsg>() {
+            if let Some(plugin) = self.plugin.as_mut() {
+                plugin.0.set_tempo(t.bpm);
+            }
+        } else if let Some(t) = msg.downcast_ref::<TransportMsg>() {
+            self.transport = Some(*t);
+            // Apply it now as well as per block, so a plugin asked about the transport between
+            // blocks (VST2 plugins ask whenever they feel like it) hears the truth immediately.
+            if let Some(plugin) = self.plugin.as_mut() {
+                plugin.0.set_transport(t.playing, t.beat0);
             }
         } else if msg.downcast_ref::<AllOffMsg>().is_some() {
             // Notes booked for the future die with the panic too — a panic that lets the next
@@ -392,7 +467,24 @@ impl VstNode {
     }
 
     pub fn set_param(&self, id: u32, value: f64) {
-        self.node.port().post_message(ParamMsg { id, value });
+        self.node.port().post_message(ParamMsg { id, value, when: 0.0 });
+    }
+
+    /// A parameter change at a TIME — for offline renders, whose whole timeline is booked up
+    /// front. `when` is absolute context time, like a note's.
+    pub fn set_param_at(&self, id: u32, value: f64, when: f64) {
+        self.node.port().post_message(ParamMsg { id, value, when });
+    }
+
+    /// The song's tempo, so anything sync'd inside the plugin lands on the beat. See [`TempoMsg`].
+    pub fn set_tempo(&self, bpm: f64) {
+        self.node.port().post_message(TempoMsg { bpm });
+    }
+
+    /// Where the song is: at context time `t0` it was at beat `beat0`, running at `bpm`. See
+    /// [`TransportMsg`] for why this is an anchor rather than a position.
+    pub fn set_transport(&self, playing: bool, t0: f64, beat0: f64, bpm: f64) {
+        self.node.port().post_message(TransportMsg { playing, t0, beat0, bpm });
     }
 
     pub fn node(&self) -> &AudioWorkletNode {

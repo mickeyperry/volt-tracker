@@ -23,10 +23,12 @@ pub struct Entry {
     pub modified: u64,
 }
 
-/// Where songs live unless told otherwise: `Documents\VOLT`. Created on first use.
+/// Where songs live unless told otherwise: `Documents/VOLT` under the user's home — `USERPROFILE`
+/// on Windows, `HOME` everywhere else. Created on first use.
 #[tauri::command(async)]
 pub fn lib_default() -> String {
     let base = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     base.join("Documents").join("VOLT").to_string_lossy().into()

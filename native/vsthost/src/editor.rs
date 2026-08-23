@@ -37,6 +37,7 @@
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use vst3::Steinberg::{
     kInvalidArgument, kResultOk, IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewTrait,
@@ -122,13 +123,78 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -
 /// Returns how many messages were dispatched, which is only useful for proving the pump is alive.
 pub fn pump_messages() -> u32 {
     use winapi::um::winuser::{
-        DispatchMessageW, GetAncestor, GetClassNameW, PeekMessageW, TranslateMessage, GA_ROOT,
-        MSG, PM_REMOVE, VK_ESCAPE, WM_KEYDOWN,
+        DispatchMessageW, GetAncestor, GetAsyncKeyState, PeekMessageW, TranslateMessage, GA_ROOT,
+        MSG, PM_REMOVE, VK_CONTROL, VK_DELETE, VK_ESCAPE, VK_MENU, VK_OEM_4, VK_OEM_6, VK_SHIFT,
+        VK_SPACE, WM_KEYDOWN, WM_SYSKEYDOWN,
     };
     let mut n = 0;
     unsafe {
         let mut msg: MSG = std::mem::zeroed();
         while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+            // **Alt+] / Alt+[ walks the channel's plugin windows FROM INSIDE one of them.**
+            //
+            // The same chord already works in VOLT's window, and that was exactly the problem:
+            // once a plugin window has the keyboard, nothing typed into it reaches the page, so
+            // flipping to the next effect meant closing the window first and pressing the key
+            // again — "i need to close the window of vst and then to hit again" (2026-08-15).
+            //
+            // Note `WM_SYSKEYDOWN`: a keystroke with Alt held arrives as a SYSTEM key, not a plain
+            // one. Matching only `WM_KEYDOWN` here would have silently done nothing, which is a
+            // very easy hour to lose. As with Ctrl+Delete, this only IDENTIFIES the window — the
+            // host decides which plugin that is and what "next" means.
+            if (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
+                && (msg.wParam == VK_OEM_4 as usize || msg.wParam == VK_OEM_6 as usize)
+                && (GetAsyncKeyState(VK_MENU) as u16 & 0x8000) != 0
+            {
+                let root = GetAncestor(msg.hwnd, GA_ROOT);
+                if !root.is_null() && is_plugin_window(root) {
+                    let dir = if msg.wParam == VK_OEM_6 as usize { 1 } else { -1 };
+                    CYCLE_REQS
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push((root as usize, dir));
+                    continue; // swallowed: the host answers this one
+                }
+            }
+            // **Ctrl+Delete asks the host to remove the plugin whose window it was typed into.**
+            // Same interception as Esc below and for the same reason — the keystroke lands on one
+            // of the plugin's own child windows and never reaches our frame. The window is only
+            // IDENTIFIED here; deciding what it belongs to and taking it out of the song is the
+            // host's business, so the root handle is queued for `take_delete_request` and the
+            // owning thread (native/desktop/src/plugins.rs) matches it against its registry.
+            // Ctrl+Delete rather than Delete alone: plain Delete is a text key inside a plugin's
+            // preset browser, and a host must not eat it.
+            if msg.message == WM_KEYDOWN
+                && msg.wParam == VK_DELETE as usize
+                && (GetAsyncKeyState(VK_CONTROL) as u16 & 0x8000) != 0
+            {
+                let root = GetAncestor(msg.hwnd, GA_ROOT);
+                if !root.is_null() && is_plugin_window(root) {
+                    DELETE_REQS
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(root as usize);
+                    continue; // swallowed: the host answers this one
+                }
+            }
+            // **Space in a plugin window is the TRANSPORT** — play/stop, exactly as it is in
+            // VOLT's own window. The DAW convention (FL does this), and without it the flow is
+            // tweak → click back to VOLT → Space → click back to the plugin, for every audition.
+            // The trade is the same one Esc makes below: a plugin cannot receive a space in its
+            // own text fields while hosted here. Bare space only — space with Ctrl/Alt/Shift
+            // held is left alone, so a plugin's own space-chords still work.
+            if msg.message == WM_KEYDOWN
+                && msg.wParam == VK_SPACE as usize
+                && (GetAsyncKeyState(VK_CONTROL) as u16 & 0x8000) == 0
+                && (GetAsyncKeyState(VK_MENU) as u16 & 0x8000) == 0
+                && (GetAsyncKeyState(VK_SHIFT) as u16 & 0x8000) == 0
+            {
+                let root = GetAncestor(msg.hwnd, GA_ROOT);
+                if !root.is_null() && is_plugin_window(root) {
+                    SPACE_REQS.fetch_add(1, Ordering::Relaxed);
+                    continue; // swallowed: the transport answers this one
+                }
+            }
             // **Esc closes (hides) the plugin window it was typed into** — the DAW convention
             // (FL does exactly this), and the fix for "the plugin window has no keyboard way
             // out". Intercepted here, before dispatch, because the keystroke lands on whichever
@@ -138,14 +204,9 @@ pub fn pump_messages() -> u32 {
             // typing in its own text field) — is the same trade every host makes.
             if msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE as usize {
                 let root = GetAncestor(msg.hwnd, GA_ROOT);
-                if !root.is_null() {
-                    let mut buf = [0u16; 64];
-                    let len = GetClassNameW(root, buf.as_mut_ptr(), buf.len() as i32);
-                    let class = String::from_utf16_lossy(&buf[..len.max(0) as usize]);
-                    if class == CLASS_NAME {
-                        ShowWindow(root, SW_HIDE);
-                        continue; // swallowed: hidden is the whole answer
-                    }
+                if !root.is_null() && is_plugin_window(root) {
+                    ShowWindow(root, SW_HIDE);
+                    continue; // swallowed: hidden is the whole answer
                 }
             }
             TranslateMessage(&msg);
@@ -154,6 +215,49 @@ pub fn pump_messages() -> u32 {
         }
     }
     n
+}
+
+/// Is this top-level window one of ours? The class check is what keeps the key interceptions in
+/// `pump_messages` from touching a window this process did not create.
+fn is_plugin_window(root: HWND) -> bool {
+    use winapi::um::winuser::GetClassNameW;
+    unsafe {
+        let mut buf = [0u16; 64];
+        let len = GetClassNameW(root, buf.as_mut_ptr(), buf.len() as i32);
+        String::from_utf16_lossy(&buf[..len.max(0) as usize]) == CLASS_NAME
+    }
+}
+
+/// Plugin windows whose Ctrl+Delete has not been answered yet, as raw HWND values.
+///
+/// A queue rather than a callback because the pump runs deep inside the plugin thread's loop and
+/// must not call back into the host mid-message: the host may destroy the very window whose
+/// message is being handled.
+static DELETE_REQS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
+/// Take the windows that asked to be removed since the last call. Empty almost always.
+pub fn take_delete_requests() -> Vec<usize> {
+    let mut g = DELETE_REQS.lock().unwrap_or_else(|e| e.into_inner());
+    if g.is_empty() { Vec::new() } else { std::mem::take(&mut *g) }
+}
+
+/// Plugin windows that asked to hand over to the next (or previous) effect on their channel,
+/// as `(HWND, direction)`. Same queue-and-let-the-host-decide contract as `DELETE_REQS`.
+static CYCLE_REQS: Mutex<Vec<(usize, i32)>> = Mutex::new(Vec::new());
+
+/// Take the "walk to the next plugin window" requests since the last call.
+pub fn take_cycle_requests() -> Vec<(usize, i32)> {
+    let mut g = CYCLE_REQS.lock().unwrap_or_else(|e| e.into_inner());
+    if g.is_empty() { Vec::new() } else { std::mem::take(&mut *g) }
+}
+
+/// Space presses swallowed from plugin windows since the last call — a count, not a queue,
+/// because "toggle the transport twice" is the only meaning two of them can have.
+static SPACE_REQS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// How many transport toggles the plugin windows have asked for since last asked.
+pub fn take_space_requests() -> u32 {
+    SPACE_REQS.swap(0, Ordering::Relaxed)
 }
 
 /// OLE-initialise this thread, once. Public so a thread that will host plugin editors can do it
@@ -431,6 +535,12 @@ impl Editor {
 
     pub fn hide(&self) {
         unsafe { ShowWindow(self.hwnd, SW_HIDE) };
+    }
+
+    /// This window's handle as a plain number, for matching against `take_delete_requests`.
+    /// Deliberately not the `HWND` itself: the caller only ever compares it.
+    pub fn window_id(&self) -> usize {
+        self.hwnd as usize
     }
 
     /// Rename the title bar. The plugin's own name is known before its window is; this keeps them

@@ -5,8 +5,9 @@
 //! something fails on Mickey's machine the only evidence is whatever reached the status bar. That
 //! turned "the VST window will not open" into an afternoon of inference.
 //!
-//! `%LOCALAPPDATA%\VOLT\volt.log`, appended, one line per event, with a timestamp and the thread
-//! that wrote it. Truncated at startup past a megabyte so it cannot grow without bound.
+//! `<data dir>/volt.log` (`%LOCALAPPDATA%\VOLT\volt.log` on Windows — see [`volt_dir`]), appended,
+//! one line per event, with a timestamp and the thread that wrote it. Truncated at startup past a
+//! megabyte so it cannot grow without bound.
 //!
 //! Deliberately not a logging framework: this is thirty lines, has no dependencies, and never
 //! blocks the audio thread for long enough to matter (a line is a few hundred bytes to the OS
@@ -18,10 +19,18 @@ use std::sync::Mutex;
 
 static FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
 
+/// The one VOLT data folder, for EVERYTHING this crate writes: the log, the three journals, the
+/// scan cache, the tap. It is `volt_vsthost::volt_data_dir` re-exposed rather than a second
+/// implementation, because the blacklist that crate keeps lives in the same folder and two
+/// answers to "where is the VOLT folder" would eventually disagree. Per platform:
+/// `%LOCALAPPDATA%\VOLT`, `$XDG_DATA_HOME/VOLT` (or `~/.local/share/VOLT`),
+/// `~/Library/Application Support/VOLT`.
+pub fn volt_dir() -> Option<std::path::PathBuf> {
+    volt_vsthost::volt_data_dir()
+}
+
 fn path() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(std::path::PathBuf::from)
-        .map(|d| d.join("VOLT").join("volt.log"))
+    volt_dir().map(|d| d.join("volt.log"))
 }
 
 /// Open the log, rolling it if it has got large. Called once at startup.
@@ -61,6 +70,7 @@ pub fn write(msg: &str) {
 }
 
 /// The wall clock, as the person reading this log sees it.
+#[cfg(windows)]
 fn local_hms() -> (u16, u16, u16) {
     #[repr(C)]
     #[derive(Default)]
@@ -80,6 +90,42 @@ fn local_hms() -> (u16, u16, u16) {
     let mut t = SystemTime::default();
     unsafe { GetLocalTime(&mut t) };
     (t.hour, t.minute, t.second)
+}
+
+/// The same question to POSIX: `localtime_r`, declared by hand for the same reason the Windows
+/// branch declares `GetLocalTime` — Rust's std has no local time, and a whole `libc` dependency
+/// for one call is the crate this file promised never to add. Only the first three `tm` fields
+/// are read; the struct is declared in full (glibc and the BSDs agree on this layout) so the
+/// callee has the room it expects to write into.
+#[cfg(not(windows))]
+fn local_hms() -> (u16, u16, u16) {
+    #[repr(C)]
+    struct Tm {
+        tm_sec: i32,
+        tm_min: i32,
+        tm_hour: i32,
+        tm_mday: i32,
+        tm_mon: i32,
+        tm_year: i32,
+        tm_wday: i32,
+        tm_yday: i32,
+        tm_isdst: i32,
+        tm_gmtoff: i64,
+        tm_zone: *const std::ffi::c_char,
+    }
+    extern "C" {
+        fn localtime_r(t: *const i64, tm: *mut Tm) -> *mut Tm;
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    // Zeroed, not Default: a raw pointer has no Default, and all-zeroes is a valid Tm.
+    let mut tm: Tm = unsafe { std::mem::zeroed() };
+    if unsafe { localtime_r(&secs, &mut tm).is_null() } {
+        return (0, 0, 0);
+    }
+    (tm.tm_hour as u16, tm.tm_min as u16, tm.tm_sec as u16)
 }
 
 /// `log!("thing {} happened", x)` — same shape as `println!`.

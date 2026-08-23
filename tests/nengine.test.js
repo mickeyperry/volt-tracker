@@ -173,6 +173,17 @@ module.exports=async function(){
         {id:'a1',label:'ASIO4ALL v2 [ASIO]',host:'ASIO'}];
       if(cmd==='eng_open')return{label:'ASIO4ALL v2 [ASIO]',sample_rate:44100,latency_ms:5.8};
       if(cmd==='eng_load_sample')return (args.pcm||[]).length;
+      if(cmd==='eng_load_sample_raw'){
+        /* raw body: [u32 len][json {id,channels}][pad to 4][f32le interleaved] — unpack it so
+           the assertions below still read id/channels/pcm length off the call record */
+        const u8=args instanceof Uint8Array?args:new Uint8Array(args);
+        const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+        const jlen=dv.getUint32(0,true),off=(4+jlen+3)&~3;
+        const meta=JSON.parse(new TextDecoder().decode(u8.subarray(4,4+jlen)));
+        const n=(u8.byteLength-off)/4;
+        window.__calls[window.__calls.length-1]={cmd,args:{id:meta.id,channels:meta.channels,pcm:{length:n}}};
+        return n/(meta.channels||1);
+      }
       /* The scan's shape as of the VST2 work: plugins of both formats in one list, plus the
          count of 32-bit VST2s the scanner saw and cannot load — the UI must say so, not bury it. */
       if(cmd==='vst_scan')return{plugins:[
@@ -232,10 +243,17 @@ module.exports=async function(){
       song.instruments=[
         Object.assign(mkInst('sampler','S'),{buffer:b,_shaSrc:'hash-abc',s0:.1,s1:.9,pad:0}),
         mkInst('kick','K',{pitch:50,punch:.6,decay:.4,drive:.3}),
+        /* a SLICED instrument, because its PCM never crossed for the feature's whole life: the
+           upload filtered on instr==='sampler', the engine refused every slice note ("sliced has
+           no sample loaded"), and the channel went silent whenever the engine owned it — which
+           is what "i put an fx over the channel and audio is not processing" was (2026-08-15) */
+        Object.assign(mkInst('sliced','SL'),{buffer:b,_shaSrc:'hash-sliced',sliceBase:48,
+          slices:[{s0:0,s1:.5},{s0:.5,s1:1}]}),
       ];
       song.patterns[curPat].data[0][0]={n:60,i:0,v:127};
       song.patterns[curPat].data[0][2]={n:60,i:0,v:80,c:'S',x:128};
       song.patterns[curPat].data[1][4]={n:48,i:1,v:127};
+      song.patterns[curPat].data[2][6]={n:49,i:2,v:127};   /* note 49, base 48 → slice 1 */
       window.__calls=[];
       const dev=run('Native engine: choose output device…');
       await new Promise(r=>setTimeout(r,80));
@@ -264,32 +282,40 @@ module.exports=async function(){
            then play. */
         order:calls.map(c=>c.cmd).filter(c=>c!=='vst_scan'&&c!=='eng_mix'),
         opened:(calls.find(c=>c.cmd==='eng_open')||{}).args,
-        loads:calls.filter(c=>c.cmd==='eng_load_sample').length,
-        loadArgs:(calls.find(c=>c.cmd==='eng_load_sample')||{}).args&&
-                 (({id,channels})=>({id,channels}))(calls.find(c=>c.cmd==='eng_load_sample').args),
-        pcmLen:((calls.find(c=>c.cmd==='eng_load_sample')||{args:{}}).args.pcm||[]).length,
+        loads:calls.filter(c=>c.cmd==='eng_load_sample_raw').length,
+        loadArgs:(calls.find(c=>c.cmd==='eng_load_sample_raw')||{}).args&&
+                 (({id,channels})=>({id,channels}))(calls.find(c=>c.cmd==='eng_load_sample_raw').args),
+        pcmLen:((calls.find(c=>c.cmd==='eng_load_sample_raw')||{args:{}}).args.pcm||[]).length,
+        slicedLoad:calls.some(c=>c.cmd==='eng_load_sample_raw'&&c.args.id==='hash-sliced'),
         pattern:play.length?play[0].args.pattern:null,
       };
     });
     S2.ok('the desktop branch is live under a Tauri stub',r.tauri===true);
     S2.ok('the commands run in order',
-      r.order.join(',')==='eng_devices,eng_open,eng_load_sample,eng_play,eng_play,eng_stop',
+      r.order.join(',')==='eng_devices,eng_open,eng_load_sample_raw,eng_load_sample_raw,eng_play,eng_play,eng_stop',
       r.order.join(','));
     S2.ok('the no-setup "Windows default output" leads the list',
       /Windows default output/.test(r.topRow||''),r.topRow);
     S2.ok('  and one step down is ASIO — the sort holds',!!r.opened&&r.opened.deviceId==='a1',
       JSON.stringify(r.opened));
-    S2.ck('the sample is uploaded once, not per note and not per play',r.loads,1);
+    S2.ck('each sample is uploaded once, not per note and not per play',r.loads,2);
     S2.ok('  keyed by its hash, so shared audio is sent once',
       !!r.loadArgs&&r.loadArgs.id==='hash-abc',JSON.stringify(r.loadArgs));
     S2.ok('  as interleaved f32 frames',r.pcmLen===1000&&r.loadArgs.channels===1,
       r.pcmLen+' samples, '+(r.loadArgs||{}).channels+' ch');
     S2.ok('the pattern carries tempo and rows',
       !!r.pattern&&r.pattern.bpm>0&&r.pattern.rows>0,JSON.stringify(r.pattern&&{bpm:r.pattern.bpm,rows:r.pattern.rows}));
-    S2.ck('  three notes: two sampler, one kick',r.pattern?r.pattern.cells.length:0,3);
+    S2.ck('  four notes: two sampler, one kick, one slice',r.pattern?r.pattern.cells.length:0,4);
     S2.ok('  sampler notes name their sample',
       r.pattern&&r.pattern.cells.filter(c=>c.sample==='hash-abc').length===2,
       JSON.stringify(r.pattern&&r.pattern.cells.map(c=>c.sample)));
+    S2.ok('  the sliced instrument’s audio crosses too — the fx-over-slicer silence of 2026-08-15',
+      r.slicedLoad===true&&r.pattern&&r.pattern.cells.some(c=>c.sample==='hash-sliced'),
+      'load:'+r.slicedLoad+' cells:'+JSON.stringify(r.pattern&&r.pattern.cells.map(c=>c.sample)));
+    S2.ok('  and the slice this note picks travels flat',
+      (c=>!!c&&c.params.sliceCount===2&&c.params.sliceBase===48&&c.params.slice1s===0.5&&c.params.slice1e===1)
+      (r.pattern&&r.pattern.cells.find(c=>c.sample==='hash-sliced')),
+      JSON.stringify(r.pattern&&(r.pattern.cells.find(c=>c.sample==='hash-sliced')||{}).params));
     S2.ok('  trim travels as params, not as instrument fields',
       r.pattern&&r.pattern.cells[0].params.s0===0.1&&r.pattern.cells[0].params.s1===0.9,
       JSON.stringify(r.pattern&&r.pattern.cells[0].params));
@@ -1577,7 +1603,52 @@ module.exports=async function(){
        nengSongStep fires as the order turns over. If sample uploads or plugin syncs make it
        late: with the webview sounding, skipping is right (a late copy flams); in ASIO ONLY the
        engine is all there is, and skipping means a SILENT BAR with the transport running — so
-       it walks forward and joins rows late instead. Late by a row beats absent by a bar. */
+       it is sent regardless.
+       **It is sent FROM ROW 0, and that is the point of it since 2026-08-15.** A song step means
+       "here is the next pattern, from its top": the engine PARKS it and starts it on its own
+       timeline exactly one row after the outgoing pattern's last row (the seam — see the queued
+       pattern in native/desktop/src/engine.rs and `a_pattern_change_lands_exactly_one_row_after_
+       the_last` in clock.rs). It used to walk `from_row` forward to compensate for the send being
+       late, which is what made a transition audibly wander: it aimed with a wall clock AND
+       dropped rows off the front of the new pattern. `start_in` survives only as the fallback for
+       a send that lands when the engine is no longer playing — and starting late at the top beats
+       starting on time in the middle. */
+    /* ---- editing while it plays reaches the engine ----------------------------------------
+       The engine holds the cells it was handed at Play; the browser's scheduler re-reads the song
+       every row. So on an engine-owned channel, editing changed NOTHING until the next Play —
+       "the audio is not getting played at realtime … i need to stop playback and play again in
+       order to hear the updated pattern" (2026-08-15). `eng_cells` replaces the notes without
+       touching the clock, and the pattern is stamped so the engine can refuse an edit aimed at a
+       pattern it is not playing. The ARP is tested alongside because it is the case that first
+       showed the hole: it rewrites notes live and never calls saveSoon, which is where the hook
+       hangs — so it needed its own call and would silently regress without a test. */
+    S2.head('editing while the engine plays is heard without a restart');
+    r=await page.evaluate(async()=>{
+      await loadSong(blankSong());
+      song.instruments=[mkInst('sub','Bass',{harm:.15,rel:.06})];
+      song.patterns[curPat].data[0][0]={n:48,i:0,v:64};
+      audio();
+      NENG.open=true;NENG.transport=true;NENG.only=true;SEQ.playing=true;
+      window.__calls=[];
+      song.patterns[curPat].data[0][8]={n:55,i:0,v:64};   /* the edit */
+      saveSoon();
+      await new Promise(r=>setTimeout(r,400));
+      const cells=window.__calls.filter(c=>c.cmd==='eng_cells');
+      const sent=cells.length?cells[cells.length-1].args.pattern:null;
+      /* and no Play: a live edit must not restart the transport */
+      const plays=window.__calls.filter(c=>c.cmd==='eng_play').length;
+      NENG.only=false;NENG.transport=false;SEQ.playing=false;NENG.open=false;
+      return{sentCells:cells.length>0,plays,
+             pat:sent&&sent.pat,notes:sent?sent.cells.filter(c=>c.note>=0).length:0,
+             hasArpHook:/nengCellsSoon\(\)/.test(arpApply.toString())};
+    });
+    S2.ok('the edit is sent to the engine',r.sentCells);
+    S2.ck('  as the pattern it belongs to',r.pat,0);
+    S2.ck('  carrying both notes',r.notes,2);
+    S2.ck('  and WITHOUT restarting the transport',r.plays,0);
+    S2.ok('the arp’s live rewrite calls the same hook — it never goes through saveSoon',
+      r.hasArpHook);
+
     S2.head('a late song-mode send joins the bar instead of skipping it');
     r=await page.evaluate(async()=>{
       await loadSong(blankSong());
@@ -1595,8 +1666,11 @@ module.exports=async function(){
       return{skipped,sent:sent&&{from:sent.pattern.from_row,startIn:sent.pattern.start_in}};
     });
     S2.ck('with the webview sounding, a late send is skipped — it would flam',r.skipped,0);
-    S2.ok('in ASIO only it comes in rows late, never a silent bar',
-      !!r.sent&&r.sent.from>0&&r.sent.startIn>=0.05,JSON.stringify(r.sent));
+    S2.ok('in ASIO only it is still sent — never a silent bar',!!r.sent,JSON.stringify(r.sent));
+    S2.ok('  from the TOP of the pattern, so the engine can seam it',
+      !!r.sent&&r.sent.from===0,JSON.stringify(r.sent));
+    S2.ok('  with a startable fallback time for when the engine has already stopped',
+      !!r.sent&&r.sent.startIn>=0.05,JSON.stringify(r.sent));
 
     /* ---- the webview must not SYNTHESISE what the engine is playing ------------------------
        Muting spkOut hides the browser's copy; it does not stop it being computed. While trig()
@@ -1636,5 +1710,32 @@ module.exports=async function(){
   }finally{await o2.browser.close()}
 
   S.checks+=S2.checks;S.fails+=S2.fails;
+  /* ---- a render is the WHOLE mix now ----
+     Plugin instruments render through eng_render_vst (tests/vstrender.test.js) and plugin FX
+     chains through eng_render_fx (tests/fxrender.test.js), so renderMissing() has nothing left
+     to warn about — the "these will be missing" dialog is gone, and a chain that FAILS is named
+     in the status line instead of being announced in advance. */
+  {
+    const o3=await open({pre:PRE});
+    try{
+      const page=o3.page;
+      const r=await page.evaluate(async()=>{
+        await loadSong(blankSong());
+        song.instruments[0].vst={path:'C:/vst/Serum.dll',name:'Serum'};
+        song.instruments[0].name='Lead';
+        const pat=song.patterns[0];
+        pat.data[0][0]={n:48,i:0,v:48};
+        song.trackset[2].fxVsts=[{path:'C:/vst/Pro-Q.dll'}];
+        song.masterFxVsts=[{path:'C:/vst/L2.dll'}];
+        const withPlugins=renderMissing();
+        song.instruments[0].vst=null;song.trackset[2].fxVsts=[];song.masterFxVsts=[];
+        return{withPlugins,clean:renderMissing().length};
+      });
+      S.head('a render no longer has anything it cannot include');
+      S.ck('nothing is listed as missing, plugins and chains included',r.withPlugins.length,0);
+      S.ck('and with no plugins the answer is the same',r.clean,0);
+    }finally{await o3.browser.close()}
+  }
+
   return S;
 };

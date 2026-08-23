@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "VOLT",
-  "version": "0.1.0",
+  "productName": "voltDesktopBeta",
+  "version": "0.3.0",
   "identifier": "com.mickeyperry.volt",
   "build": {
     "frontendDist": "dist",
@@ -12,7 +12,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "VOLT",
+        "title": "voltDesktopBeta",
         "url": "index.html",
         "width": 1500,
         "height": 950,
@@ -33,7 +33,20 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
-    "shortDescription": "VOLT tracker",
-    "longDescription": "VOLT — a tracker and DAW that runs in one file."
+    "publisher": "Mickey Perry",
+    "copyright": "© Mickey Perry",
+    "category": "Music",
+    "shortDescription": "voltDesktopBeta — tracker / DAW",
+    "longDescription": "voltDesktopBeta — a tracker and DAW in one file, with a native audio engine (ASIO/WASAPI) and VST2/VST3 hosting.",
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/header.bmp",
+        "sidebarImage": "icons/sidebar.bmp",
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["English"]
+      }
+    }
   }
 }

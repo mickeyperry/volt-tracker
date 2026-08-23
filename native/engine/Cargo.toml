@@ -34,6 +34,9 @@ serde_json = "1"
 # an ASIO interface possible at all. Rebased on 1.7.0; every edit is marked `VOLT FORK`.
 [patch.crates-io]
 web-audio-api = { path = "../vendor/web-audio-api" }
+# …and the `vst` fork: the legacy `main` entry point, so VST 2.3-era plugins are not invisible.
+# See native/vsthost/Cargo.toml for the whole story.
+vst = { path = "../vendor/vst" }
 
 [features]
 # ASIO needs the Steinberg SDK on disk and clang, exactly as native/probe does:

@@ -55,6 +55,197 @@ anything — this is the priority order I believe in. The model to copy is the F
 ONE device list, ONE buffer knob, plugins that never vanish and never glitch. Everything below
 serves that.
 
+### Plugin effects in a render — DONE 2026-08-23 ("i need it to be a regular daw")
+
+Plugin INSTRUMENTS render since 2026-08-19 (`eng_render_vst`); effect CHAINS render now too
+(`eng_render_fx`), so a render is the whole mix and the "these will be missing" dialog is gone.
+The audio goes the other way, exactly as sketched: `renderWav` runs in PASSES —
+
+1. **Stems** (only when chains exist): the same song scheduled again on a `2*K`-channel offline
+   context; each chain channel's strip is cut at `fxOut` — post ported FX, pre drive, which is
+   where the live engine splices the chain (the design question above, settled by mirroring the
+   engine) — and tapped to its own channel pair. Plugin-instrument parts are rendered into the
+   stems too, and cached so they cross the engine once.
+2. Each stem crosses to `eng_render_fx` as the invoke's RAW BODY
+   (`[u32 len][json][pad][f32 stereo]` — a JSON array of 4M samples is minutes of serialize).
+   The engine builds fresh instances of the chain at the render's rate, with the session's
+   patches (`f{track}.{pos}`, flushed force:true first), DRIVEN — song tempo, beat-0 anchor —
+   and returns a WAV trimmed by the chain's summed latency, so the wet stem lands exactly where
+   the dry one was.
+3. **The render**: the dry tail is disconnected and the wet stem plays into the drive — REPLACE,
+   never sum (two copies is phasing; `fxrender.test.js` pins unity-wet == no-chain level). A
+   chain that fails ships that channel DRY and the status line names it.
+4. **The master chain** gets the SUMMED mix: the pass stops at the ported master chain's exit
+   (pre safety limiter, where the engine splices it live), the engine wets the mix, and a final
+   tiny pass runs it through the limiter (`masterFxChanged` honoured, so an own Limiter still
+   parks the safety net).
+
+Also fixed on the way: render-scheduled automation lanes no longer sweep the LIVE plugins' knobs
+(`applyVstAuto` bails while rendering — before, a render twiddled real parameters and the forced
+patch flush could save them). Still outside a render: `vf`/`vp` plugin-param automation lanes
+(the offline instances aren't fed lane values yet), and `renderBounce` (bounce-to-sample) still
+knows nothing about plugins — both are follow-ups, not regressions.
+
+**The leftovers, closed (2026-08-23, "fix all the stuff"):** the two follow-ups above are done.
+**`vp`/`vf` plugin automation lanes reach renders now** — a render's lane values are RECORDED at
+their row times (`VSTRAUTO`, armed by renderWav; `applyVstAuto` was already refusing to sweep the
+live knobs) and travel with the offline jobs; `ParamMsg` grew a `when` and the processor parks
+timed values until their block, exactly like notes (`set_param_at`). Block-rate, the same
+precision the live path has. And **a bounce carries plugins now** — `renderBounce` runs the same
+stems/parts machinery (a Sytrus channel used to bounce to SILENCE; a chain channel bounced dry):
+parts and chains bake into the sample like the ported FX always have, the master chain only for
+a mix bounce (a channel bounce keeps the master neutral, same as `masterFx`). A bounce that
+starts mid-pattern anchors the plugins' bar position at its first row (`beat0` in both job
+shapes) so synced LFOs phase-lock to the right place. FREEZE therefore stashes `ts.fxVsts` along
+with the strip — baked into the frozen sample AND still live would be double-processing — and
+puts it back on thaw, `nengFxSync` converging the engine both ways; the stash happens after
+freeze's level-check bounce, which must still carry the chain so both sides of the comparison
+match.
+
+**"The audio delays when moving from pattern to pattern while playing songs" (2026-08-23) —
+found and fixed.** The song-mode turnover send (`nengSongStep`) fires when pump BOOKS the
+boundary — ~160 ms of budget — and spent it on two slow things: `Array.from(pcm)` turned every
+first-time sample upload into a multi-megabyte JSON stringify on the main thread, and the
+uploads + `nengVstSync` were awaited BEFORE `eng_play`, so on a first pass through a
+sample-heavy song the engine's copy arrived after the seam and joined rows late — the delay is
+the engine "walking forward" (late by design beats absent, but late was every first pass). Two
+fixes, both structural: **samples cross as raw bytes now** (`eng_load_sample_raw`,
+`[u32 len][json][pad][f32le]` — the same body shape as eng_render_fx; the JSON command survives
+only for the contract test), and **each pattern's samples are PREFETCHED a whole pattern early**
+(`nengWarmPattern` — fired for order[n+1] right after order[n]'s handover send, and for
+order[1] right after Play's first send; NENG_SENT makes every warm after the first free). The
+boundary send is serialize + one invoke now, and the engine's parked-handover seam gets its
+pattern with a full pattern of margin instead of a starved 160 ms. Contract updated in
+`nengine.test.js` (raw body unpacked and asserted) and pinned in Rust
+(`the_raw_sample_body_parses_byte_for_byte`).
+
+**Review round, same night (asked for and done):** four findings from re-reading the code and
+Mickey's real render logs. (1) **A chord was four plugins** — `vstrTake` keyed parts per poly
+LANE, so full-on's 6 Sytrus chords became FOUR identical 22.7 s engine renders (the log showed
+them) and four instances where live has one: wrong for unison/mono/shared-LFO patches and 4x the
+load time. Parts key by `polyLead` now — one part per channel, like the live topology; distinct
+channels keep distinct instances on purpose. (2) The stems pass ran all chain channels in one
+context, and an OfflineAudioContext caps at 32 channels — 17+ chain channels would have thrown
+and killed the whole render; stems come out in batches of 16 now, the part cache keeping batches
+from re-rendering instruments. (3) Muted (or not-soloed) chain channels paid a full chain render
+for a silent stem — skipped now, same audibility fold schedRow uses. (4) The app stays
+interactive between the passes, so an edit mid-render puts wet audio under the wrong notes — a
+signature over everything scheduling reads is checked after the last pass, and the status line
+says "EDITED while this rendered — render again" when it moved (re-rendering automatically would
+loop forever under a live jam; saying so doesn't). `fxrender.test.js` grew the dnb8 shape as a
+check: a plugin instrument ON a chain channel reaches the stem, comes back wet at unity level
+(not doubled), crosses the engine once per render, and a muted chain channel asks nothing.
+
+This section shipped the same night as — and because of — **"the renders come out with phasing"
+(2026-08-23)**. The hunt, so the reasoning isn't re-argued: the browser's own render path
+measured CLEAN first (a lone-noise-hat render through `renderWav()` autocorrelates at the noise
+floor, 0.068, bare and with the Limiter L∞ and Soft Clip — no doubled copy, no dry-path leak;
+rendering full-on.volt headlessly showed nothing above tonal periodicity). The real causes were
+both at the plugin seam: **(1) `eng_render_vst`'s fresh instance was an UNDRIVEN PROBE** — the
+live path sends `set_tempo` + `set_transport` on every attach, the render path sent neither, so
+every rendered plugin part ran its synced LFOs/gates/arps/delays at the context default (120,
+stopped — `win.rs` ~347) against a 145 (full-on) or 174 (dnb8) bpm song, in the WAV and nowhere
+else; fixed by driving every offline instance (`bpm` + `start` in the job, negative-beat pre-roll
+trimmed), pinned in `tests/vstrender.test.js`. **(2) The missing effect chains themselves** —
+dnb8 2 2 carries nine across seven channels (apQualizr2 on the bass, IL Stereo Enhancer, Love
+Philter), full-on seven across three (RBass on the bass): every render shipped without its
+low-end chains and wideners, a different mix than the engine plays live. That is what the passes
+above fix.
+
+**What "phasing in a render" means AFTER all of the above (2026-08-23, measured on zaza.wav):**
+his own rendered file scans CLEAN — no doubled copy at any lag (the only autocorrelation peaks
+are the bass pitch periods), L/R aligned to the sample, levels sane. What remains audible is the
+STRUCTURAL difference: a render is made by the BROWSER engine while he listens to the NATIVE one,
+and on the saw-family (reese, supersaw, psybass) the two differ by the documented WAVEFORMS
+phase gap (-27 dB residual, "no port however correct can null that") plus Chrome's compressor
+quirks — same notes, same levels, a different interference texture, which on a reese-driven mix
+reads as "the render phases". Shipped tonight: renders and bounces run at the DEVICE'S sample
+rate (`SR=(TAURI&&NENG.rate)||44100`) so the render's plugin instances match the live ones
+exactly and playback doesn't resample; a browser tab keeps 44.1. **The real end of this class is
+the P3 flip's render half: the ENGINE renders the WAV** — it already has all 14 instruments, the
+strips, the buses, 13/15 fx and the plugins; a render made by the engine that plays IS the mix,
+by construction. That is the next big block of engine work, not an evening patch.
+
+**A picked device could lose to the self-heal (2026-08-23, "when i change the asio 4 all it gets
+back to wasapi") — fixed.** ASIO4ALL sat ~14 s inside `eng_open` while the old thread was already
+dead; that window looked exactly like "the engine stopped", `nengFailed` → `nengReopenSoon` fired
+`nengAutoOpen` with the REMEMBERED id, and the queued reopen landed right after the ASIO open and
+replaced it (log: `alive and pumping (ASIO#…)` and `closing the device` in the same second). Two
+belts now: `NENG.opening` holds the self-heal off while ANY hand-initiated open is in flight
+(picker, buffer reopen, assistant reopen), and the picker REMEMBERS the choice before opening —
+a race that still slips through reopens the device the user picked, not the old one (an open
+that fails puts the previous device back so the next launch doesn't chase a broken one).
+
+## EVERY PC — "make the program stable so it will work on every pc even the shitty ones"
+
+Asked for 2026-08-23. VOLT is fast on THIS machine (profiled: switch 3–9 ms, ~60 fps playing);
+"every PC" is a different discipline — assume a 2-core laptop with 4 GB, integrated graphics, no
+audio interface, Windows default output, and someone else's plugin folder. The plan, in the
+order it pays:
+
+1. **Low-spec mode, automatic.** The fps guard (perf.test's meter) and the engine's underrun
+   counter already measure the two things that hurt; when either degrades for more than a few
+   seconds, shed load in order of invisibility: meter/spectrum poll 30 Hz → 10 Hz, LUFS off,
+   playhead glow off, autosave debounce widened. A palette toggle forces it; the status bar says
+   it engaged. Everything shed is cosmetic — the transport and the mix are never degraded.
+2. **Underruns answer themselves.** The counter exists and the status line says "a bigger buffer
+   cures this" — make it a one-click: after N underruns in a minute, offer (or in low-spec mode,
+   just do) one buffer step up, said in the status bar. FL's exact move.
+3. **The 160 ms cushion scales to the machine.** pump()'s lookahead is sized for a steady main
+   thread; a shitty PC's main thread is never steady. Measure tick lateness (the scheduler
+   already knows when it ran vs when it meant to) and widen LOOK toward the hidden-tab 1.6 s as
+   jitter grows — the cost is only edit-to-ear latency, which beats gaps.
+4. **First-run honesty.** No interface, no plugins, unknown WebView2: the first launch should
+   say what it found (default output at N ms, no ASIO — fine; X plugins) instead of assuming
+   this machine. The device journal + worker scan already make the dangerous parts safe.
+5. **Memory ceilings audited** for 4 GB machines: the undo cap (24 MB) and sample store are
+   bounded; the render passes are the new heavy path (stems = full-length buffers per chain
+   batch) — cap concurrent stem buffers by total bytes, render in smaller batches when
+   `navigator.deviceMemory` is small.
+6. **A test that IMPERSONATES the shitty PC**: run the perf suite with CPU throttling
+   (puppeteer's `emulateCPUThrottling(4x)`) so "works on a weak machine" is a number in CI, not
+   a hope. This is the item that keeps the rest honest.
+
+None of this is speculative machinery: every item hangs off a measurement that already exists
+(fps guard, underrun counter, tick clock, profile.js). Next session's block, alongside the
+engine-render project above.
+
+**The generators (2026-08-23, "anything else we can add for the fun"):** two palette commands
+that WRITE NOTES, so they work identically in both engines and cannot touch audio code —
+**"Generate: build-up"** (the psytrance riser as tracker data: 8ths → 16ths → Rxx bursts
+doubling into the last row, velocity climbing 16→64, and a `fltF` cutoff lane rising under it;
+no selection means the LAST 16 rows, because a build-up leads into the next pattern) and
+**"Generate: acid line"** (a 303 pattern in phrygian off the channel's own most-played root —
+root-heavy with scale stabs, octave jumps, accents, `Gxx` slides, and rests; different every
+run). Both overwrite only the cursor channel's region, both undo with one Ctrl+Z, both reroll by
+running again. Shared scope logic in `genScope` (selection rows / channel's own instrument and
+root). Tested in `tests/randomize.test.js` — region bounds, climbing velocity and lane,
+scale-membership, the accented root on row one.
+
+**Four more, same night ("give me more of those"), same rules, all in Track → Generate and the
+palette:** **rolling bass** (the psy engine room — every 16th except the downbeat, which is left
+EMPTY for the kick; root throughout, a reach to the 3rd/5th at phrase ends), **drum fill** (last
+8 rows by default, pitches only from what the channel already plays — randomizeNotes' no-ghost
+rule — density and velocity climbing, Rxx stutters, always ends on a full hit), **groove stamp**
+(the one that shapes what is THERE: velocities only — accents on the beat, a push at the half,
+ghosts off it, human waver; poly lanes included), and **chord stamp** (asks the flavour — fifth,
+octave, power, minor, sus2 — then grows poly lanes as needed and stacks every note in the
+region; glides copied so the stack bends together, note-OFFs copied so it STOPS together). All
+tested in randomize.test.js (41 checks): kick-row emptiness, pool membership, untouched
+pitches, lane growth and the stack-wide OFF.
+
+**The CPU meter (2026-08-23, "can we see cpu usage of the program itself?"):** a readout beside
+the ASIO badge — `CPU 12% · DSP 6%`, green under half, amber under 80, red past it. CPU is the
+WHOLE app against the whole machine, Task-Manager style: `cpu.rs` walks the app's own process
+tree (toolhelp snapshot + parent links) because WebView2 renders the entire UI in separate
+processes — this process alone would show the engine and quietly omit the half the user looks
+at. DSP is the render callback's share of its block budget from the existing `eng_stats`, the
+number that turns into crackle past 100. Stamped at poll time so the CPU half ticks even with no
+device open; the eng_stats poll no longer gates on NENG.open for the same reason. Both feed the
+low-spec-mode plan above — the meter is its trigger measurement made visible. Unit-tested
+(`cpu::tests::the_meter_reads_its_own_burn`: first poll refuses to invent a number, a deliberate
+120 ms burn reads back as a sane percent).
+
 ## P1 — STOP THE HICCUPS (the distortion that follows the notes)
 
 - [x] **Zero allocations in the audio callback** (2026-08-13 — proven clean offline, deployed).
@@ -86,9 +277,27 @@ serves that.
       restart. Needs a size story first — a Kontakt state is megabytes and the autosave goes to
       localStorage, so patches want the sample store's treatment (OPFS by hash, hashes in the
       JSON, embedded only on export) and a cap. It must never be the thing that breaks saving.
-- [ ] **Scan and load in a DISPOSABLE WORKER PROCESS** (bible 07+15 both call this mandatory;
-      vstprobe already proves it works). A crashing/hanging plugin then costs a message, never
-      the app. Kills the whole blacklist-journal machinery's reason to exist.
+- [~] **Scan and load in a DISPOSABLE WORKER PROCESS** (bible 07+15 both call this mandatory).
+      **The SCAN half is DONE, 2026-08-23** — and it convicted a plugin on its very first run.
+      `vst_rescan` spawns this same exe with `--scan-worker` (decided before the Tauri builder,
+      or single-instance would treat the worker as a second VOLT); the child scans, writes the
+      cache, hard-exits. Three attempts with a 120 s deadline each: a dead or hung child is
+      killed, its own journal names the file it was inside, and the next child blacklists it
+      and walks past — the old self-healing, minus the part where the app died too. First real
+      run: attempt 1 WEDGED inside `mda Detune.64.dll` (0 CPU, parked — the exact Bionic-Delay
+      failure), attempt 2 blacklisted it and scanned 920 plugins in 36 s. In-process scanning
+      survives only as the fallback for "could not even spawn a worker". LOADING is still
+      in-process (that is full plugin sandboxing — audio streaming between processes, a
+      different project); its journal now tells a deliberate quit from a wedge, below.
+      **Also fixed, same session: a deliberate quit no longer blacklists innocent plugins.**
+      Closing VOLT while a song's plugins were still loading left `vst-loading.txt` behind, and
+      the next launch read it as "this plugin killed us" — that is how Sytrus and WaveShell got
+      banned mid-evening. Every intended exit (`app_quit`, the 10 s escape hatch) writes a
+      `clean-exit.txt` marker now; at the next launch, a journal from a cleanly-quit session
+      whose load was under 25 s old is an interrupted load, not a wedge (older than 25 s — past
+      the app's own 30 s patience — is still blamed, so a genuinely wedged plugin the user quit
+      around is still caught; a stale marker cannot acquit a newer journal — the mtime
+      arithmetic fails closed). `journal_blames` is unit-tested in plugins.rs.
 - [ ] Handle latency CHANGES live (VST3 kLatencyChanged) so PDC follows linear-phase toggles.
 
 ## P3 — ONE ENGINE (the FL model, and the end of every alignment/ownership trap)
@@ -139,6 +348,427 @@ Web Audio engine; only desktop stops using it for sound.
 - [ ] Assist channel: more ops as needed (it already reads state and edits the mix remotely).
 
 ---
+
+## 2026-08-16 — VOLT builds for Linux and macOS
+
+The whole porting surface is pushed DOWN into `volt-vsthost` so nothing upstream carries a `cfg`:
+`win.rs` is the real (Windows) implementation, `portable.rs` is its honest twin, and `lib.rs` is
+the shared root — plugin descriptions, the blacklist, the touch log, `SCAN_SKIP`, `hard_exit`,
+and a new `volt_data_dir()` (`%LOCALAPPDATA%\VOLT` / `$XDG_DATA_HOME` / `~/Library/Application
+Support`). The desktop crate's every journal, log, scan cache, patch file and tap goes through one
+helper; `log.rs` gets local time from `GetLocalTime` or `localtime_r` and stays dependency-free.
+`native/engine` needed NO changes — it compiles against either half.
+
+**Verified on the live tree, not just claimed:** Windows `cargo check --features asio` clean,
+vsthost 21/21, engine 31/31, desktop 18/18, JS 1077/1077, the installer rebuilt and VOLT relaunched
+with its data folder untouched. And the honest proof the facade is real:
+`cargo check --target x86_64-unknown-linux-gnu --all-targets` in vsthost **compiles on this
+Windows machine** — lib, vstprobe and every example, because off Windows the crate is std-only.
+
+**What a Linux/macOS user gets:** the native engine — all fourteen instruments, thirteen insert
+FX, mixer, sidechain, PDC — over ALSA/CoreAudio through the vendored cpal fork. **No VST hosting**
+(the pickers come back empty and a load says why) and **no Everything search**.
+
+**Build:** Linux `apt install libasound2-dev pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev`, then
+`node tools/mkdesktop.js && cd native/desktop && cargo tauri build --bundles deb,appimage`
+(no `--features asio` — that is Windows-only). macOS: Xcode CLT, then `--bundles app,dmg`.
+Both want an icon in their format (`icon.png` / `.icns`) or `--no-bundle` for a raw binary.
+The engine alone builds anywhere: `cargo build --release` in `native/engine`.
+
+**Not done:** neither OS can be compiled from this machine (alsa-sys wants ALSA headers, Tauri
+wants webkit2gtk / macOS frameworks), so the first real Linux/Mac binary needs one of those
+machines. `tauri.conf.json` still bundles NSIS only.
+
+## 2026-08-16 — Cool mode, with a switch for every part
+
+- **⚙ Settings has a Cool mode section**: a master switch plus one tick box per part — panels &
+  dialogs pop, buttons press, status messages rise, the tip on start-up — and an all/none link.
+  Asked for as "nice little animations for the fun of using the daw", then immediately, and
+  rightly, "make it togglable so we can turn off cool mode or parts out of it".
+- **Each part is a class on `<body>`** (`cool-pop`, `cool-press`…) and every animation rule
+  requires its class, so switching one off removes a class and nothing else happens: no
+  re-render, no animation left half-played. The two JS-side parts check their flag before doing
+  any work — the status pop skips its forced reflow entirely when off, and clears the class, so
+  turning it back on cannot replay a stale one (caught by the headless check, not by eye).
+- **`prefers-reduced-motion` still wins over all of it.** A system-wide accessibility choice is
+  not ours to override with an app setting.
+- Also in the palette ("Cool mode on / off") and F1. Settings persist in `volt.cool`, and the
+  per-part choices survive the master switch going off and on.
+
+## 2026-08-16 — the mouse selects in FIELDS, and the row-0 line was under the header
+
+- **Drag-selection snaps to whole fields now** — note | instrument | volume | fx — instead of
+  crawling across all eight sub-columns ("the snapping of the selection is delaying through all
+  the spaces between the actual values"). Each end of the drag opens outward to the edge of its
+  own field (`FIELD_SPAN`), so a drag from an instrument digit to a volume digit takes both
+  fields whole. The eight sub-columns still exist for the KEYBOARD — typing hex needs a digit
+  cursor, and Shift+arrows still move by single columns. Cross-channel drags snap to whole
+  channels as before. Verified headlessly: fields 1–4 from a c2→c3 drag, outward both ways,
+  channels unchanged.
+- **The row-0 selection line was hidden UNDER the sticky header**, not clipped at the top as
+  first assumed (fixing that assumption did nothing — his screenshot proved it). Measured: rows
+  start at offsetTop 60, the frame drew its top edge at 59, and the header paints over 0..60.
+  The frame no longer rises above the first row: at row 0 the line draws inside the row's top
+  pixel. The general lesson: verify a fix against the REPORTED symptom, not against the theory.
+
+## 2026-08-15 (night, round 14) — six of Mickey's findings
+
+1. **Piano roll Ctrl+A now selects every poly lane.** `prNotes()` walked all lanes but the
+   select-all dropped `t` from each entry, and `prIsSel` defaulted a missing lane to the cursor's
+   — so on an Alt+Y chord track it visibly selected only the lead lane and every operation after
+   missed the rest of the chord. One line: keep the lane.
+2. **Ctrl+S saves, on desktop, into the songs folder.** It used to fall into the browser-tab
+   download path (VAULT.proj is FS-access, a browser thing), which read as "is there a way to
+   save at all?" — it now flushes and writes via `nstoreWrite` and says exactly where.
+3. **Ctrl+Alt+M = the MASTER.** Track panel flips to the master (fader, EQ, master FX, plugin
+   chain), mixer opens if closed, press again to flip back. Also in the palette and F1.
+4. **Space works inside a plugin window** — swallowed by `pump_messages` (like Esc), forwarded as
+   `volt:vst-space`, and the page runs the exact armed-mode Space logic. The trade, documented:
+   a space cannot be typed into a plugin's own text fields.
+5. **A selection reaching row 0 keeps its top line.** The frame is drawn 1px outside the rows,
+   which at the top put it at -1 — above the scroll content, clipped. Clamped.
+6. **Panic now actually silences VST instruments.** The reset's `flush_state` was a LITERAL NO-OP
+   for VST2 (empty body — suspend/resume now) and only `setProcessing(0)/(1)` for VST3, which
+   most synths ignore as a voice-kill; the spec hangs buffer/voice flushing on DEactivation, so
+   it is the full `setProcessing(0) → setActive(0) → setActive(1) → setProcessing(1)` cycle now.
+   Watch: this also runs on a FRESH Play (same reset path) — if Play ever feels sluggish with a
+   giant sampler loaded, split the panic flush from the play flush.
+
+## 2026-08-15 (night, round 13) — plugins know where the bar is
+
+Asked whether VSTs need "wrapping" to follow the DAW's tempo. They do not — a host fills in the
+transport every block and the plugin does the rest — but checking ours turned up the other half of
+the job, and it was missing.
+
+- **Tempo was being sent (fixed earlier tonight); POSITION was not.** `projectTimeSamples` /
+  `sample_pos` started at zero when a plugin was *created* and counted up for ever: never reset on
+  Play, never told where the song is. So a synced delay was fine (its timing is relative to the
+  audio fed to it) but anything with a pattern of its own — Gross Beat, trance gates, synced LFOs,
+  arpeggiators — ran at the right speed with an arbitrary phase that changed on every reload.
+- **The engine sends an ANCHOR, not a position**: `TransportMsg { playing, t0, beat0, bpm }` — at
+  context time `t0` the song was at beat `beat0`. The render thread computes each block's exact
+  musical position from it, so there is one message per transport change instead of per block, and
+  no drift. Sent on Play, at a song seam (where the bar count CONTINUES — the song moved on, it
+  did not restart), on Stop, and to any plugin attached mid-session.
+- **`kPlaying` / `TRANSPORT_PLAYING` is honest now.** It was permanently on, so a plugin that
+  restarts its pattern on play never saw an edge to restart on. `barPositionMusic` /
+  `bar_start_pos` are sent too (VOLT is 4/4), which is what a gate actually locks to.
+- The old per-block free-run is kept for plugins nobody is driving — the offline probes, which
+  have no song to follow. Three tests: the flags and bar arithmetic a plugin is handed, and that
+  the anchor puts every block on the right beat.
+
+## 2026-08-15 (night, round 12) — `.volt` packs the samples
+
+- **Export writes a package now**: a zip holding `song.json`, `samples/NN_name.ext` and a one-line
+  README. Send it and the other person has your song exactly as you hear it — no missing samples,
+  nothing to relink. Ctrl+Shift+S saves one too (JSON is still offered in the picker, and in the
+  palette, for anything that wants a song as text).
+- **Written without a library**, per the no-dependencies rule: `zipPack`/`zipUnpack` are a local
+  header, the bytes, a central directory and an end record, with `CompressionStream('deflate-raw')`
+  doing the compression and STORE as the fallback. Base64-in-JSON cost a third more than the audio
+  it carried; the package is smaller than the file it replaces (asserted in the suite).
+- **The loader never learned a new format.** A package is turned back into the exact object the
+  JSON path produced, so `loadSong` is untouched and every old song opens by the same door —
+  opening sniffs `PK` and falls back to JSON. Every entry point (import, drag-drop, Open…, the
+  Projects panel) now reads BYTES through `songFromFile`, because reading a zip as text destroys
+  it. `tests/pack.test.js`: 12 checks, including the sample surviving byte for byte and a
+  truncated package being refused rather than half-loaded.
+- Still to do: the desktop folder mirror writes JSON with a `.volt` name, so both shapes live in
+  the songs folder. Harmless (the reader sniffs), but it should become a package too — it needs a
+  bytes-writing command next to `lib_write`.
+
+## 2026-08-15 (night, round 11) — an installer to hand to other people
+
+- **`voltDesktopBeta_0.2.0_x64-setup.exe`**, 3.1 MB, in
+  `native/desktop/target/release/bundle/nsis/`. Built with `cargo tauri build --features asio`
+  (NOT `volt_build desktop`, which stops at the exe) after `node tools/mkdesktop.js`.
+  Round-tripped before being called done: silent install to a temp dir (`/S /D=…`) → the exe and
+  its version resource are right → Start Menu shortcut created → silent uninstall → directory and
+  shortcut both gone. Per-user install, so it needs no admin.
+- **The installer art is generated, not drawn** — `tools/mkinstaller-art.ps1` renders
+  `header.bmp` (150×57) and `sidebar.bmp` (164×314) from VOLT's own palette with System.Drawing:
+  the icon's bolt, a faint tracker grid with lit notes, the wordmark, and the teal→magenta rule
+  the dialogs use. NSIS wants 24-bit BMPs at exactly those sizes — a PNG there is a blank panel,
+  which is why this is a script and not an export. Positions are MEASURED (`MeasureString`); the
+  first pass guessed and the two halves of the wordmark overlapped.
+- **The wordmark is `volt` + `Desktop` + a magenta `BETA` chip**, in the app, the window title,
+  the installer and the Start Menu — nobody should be unsure which build they are running.
+- Not signed, so Windows SmartScreen will warn on first run ("More info" → "Run anyway"). Signing
+  needs a certificate; worth it only if this goes further than friends.
+
+## 2026-08-15 (night, round 10) — the plugin list is finally honest
+
+- **926 plugins, down from 2179.** The dedupe landed: shell plugins were listed two and three
+  times (Waves installs WaveShell at two paths, and the shell offers some plugins at two adjacent
+  indexes). RBass now appears once, at the index that actually resolves — verified in the new
+  cache, `vst-scan-6.json`.
+- **Three plugins that had been invisible for months came back**, all VST 2.3-era files exporting
+  `main` rather than `VSTPluginMain`, i.e. the same fix as Sausage Fattener: `Endless Smile`
+  (Dada Life), `IL Wave Candy`, and `FL Studio VSTi`.
+- **`FL Studio VSTi` is then excluded on purpose** (`SCAN_SKIP` in vsthost) — Mickey: *"fl vsti
+  might do issues pleases exclude it"*, and he is right: it is an entire DAW wrapped as a plugin,
+  with its own audio device, windows and plugin host, which a scan would open just to read a
+  name. Skipped before the file is touched, and refused at LOAD too so a song that already names
+  it cannot boot one. One name covers both `FL Studio VSTi.dll` and `… (Multi).dll`; unit-tested
+  so it can never quietly widen to the other Image-Line plugins. Cache bumped to `-7`.
+- Answered while looking: **Fruity Reeverb cannot be hosted by anything but FL** — its DLL
+  exports `CreatePlugInstance`, Image-Line's own plugin API, not VST2 or VST3. The reverbs he
+  actually has are Eventide (Blackhole, 2016 Stereo Room), Waves (H-Reverb, Abbey Road Plates and
+  Chambers), kHs Reverb, and VOLT's own send/insert.
+
+## 2026-08-15 (night, round 9) — Alt+] from inside a plugin, RBass, and the patch-eating unload
+
+- **Alt+] / Alt+[ now work INSIDE a plugin's window.** Once a plugin has the keyboard nothing
+  typed into it reaches the page, so walking the chain meant closing the window first and pressing
+  the key again. Intercepted in `pump_messages` like Esc and Ctrl+Delete, and the walk carries on
+  from THAT plugin rather than from wherever the cursor is. Watch for `WM_SYSKEYDOWN`: a keystroke
+  with Alt held is a SYSTEM key, so matching only `WM_KEYDOWN` would have done nothing at all.
+  Cycling also hides the window it leaves, so it flips rather than piles up.
+- **"RBass Stereo: no class 864" — a shell plugin renumbered itself.** WaveShell holds the Waves
+  catalogue in one file, addressed by class index, and the same file enumerated 861 classes and
+  then 609. The name travels with every load now and resolves it when the index does not, and the
+  scan dedupes by (name, vendor, format) — his cache had RBass Stereo THREE times, at 864, 865 and
+  432, because Waves installs the shell at two paths and the shell offers some plugins twice.
+  Cache bumped to `vst-scan-6.json`; `openone` prints class indexes now.
+- **Moving a plugin up or down reset every plugin, and it was `vst_unload` doing it.** The unload
+  command dropped the slot's patch — reasonable if unload only meant "the user removed this", but
+  it is also how the reconciler re-keys a chain, so it deleted the very patches that had just been
+  moved to follow their plugins. It also silently defeated this morning's remove-a-link fix. The
+  patch stays now; only an explicit chain edit retires one.
+
+## 2026-08-15 (night, round 8) — the five ASIO-only gaps, all the same shape
+
+Every one of these was "the browser still owns something the engine is now responsible for".
+
+- **The master meter read NOTHING** while every channel moved (his screenshot, arrow included) —
+  which looks exactly like the channels not reaching the master. They were: `peaks` is indexed by
+  track and the master has no track number to sit at, so the master strip simply had no source
+  while the engine owned the sound. `MeterData.master` carries the mix peak now, and it folds into
+  the master meter, the dB readout and the clip LED the same way `nengPeak` folds into the channel
+  meters.
+- **Volume and Pan automation did nothing** on engine-owned channels: `AUTO_PARAMS.apply` writes
+  to `chans[tr]` — the browser's nodes — and nobody was listening to those. Lane values that map
+  onto a mixer field are now remembered (`NAUTO`) and laid over the trackset in `nengMix`, so a
+  sweep crosses like any other mix change. Cleared at every pattern start, which is the engine's
+  half of `applyBaseAt`. Deliberately not written into `song` — a sweep is not an edit.
+- **Editing while playing was inaudible until a restart** ("i need to stop playback and play again
+  in order to hear the updated pattern"): the engine holds the cells it was handed at Play. New
+  `eng_cells` replaces the notes of the pattern already playing — no clock, no re-aim, nothing
+  cut — so rows already booked play as they were and everything ahead of the playhead is the edit.
+  Debounced 120 ms off `saveSoon`.
+  **And then the ARP still wasn't live, because it does not go through saveSoon at all** — it
+  rewrites its notes on every slider move as a preview and only saves when the panel closes, which
+  is precisely the case he named. `arpApply` calls the hook itself now. The pattern also travels
+  STAMPED (`Pattern::pat`): during a song-mode handover the browser has already moved on to the
+  next slot while the previous one plays out, so it cannot know what is sounding — the engine
+  matches the stamp against what it is actually playing and ignores an edit meant for elsewhere.
+  Both pinned in nengine.test.js, including "a live edit must not restart the transport" and a
+  guard that fails if the arp's hook is ever removed again.
+- **The metronome now clicks IN THE ENGINE** (`met_click`), scheduled against the same row time as
+  the notes, straight to the device past the mixer. Two contexts on two devices cannot be aligned
+  by arithmetic — every attempt is an estimate of somebody's real output latency — which is why
+  this kept being "not aligned" however the delay was computed. The webview's click returns early
+  while the engine owns the sound, so there is exactly one.
+- **Ctrl+Alt+R randomizes the notes already on a channel** — same rows, same instruments, same
+  velocities, new pitches. It never invents a note: a melodic channel draws only from the pitches
+  that channel already plays, and a SLICER draws from its own slices so a shuffled break can never
+  land on a slice that does not exist ("so we dont have ghost notes"). New suite
+  `tests/randomize.test.js`, 14 checks, including that note-OFFs and disabled notes are untouched.
+
+## 2026-08-15 (night, round 7) — presets survive a chain edit, and FX automation from the main window
+
+- **Deleting a link no longer resets the plugins behind it.** Patches are filed by position, so
+  removing link 1 slid link 2 into a slot whose saved patch belonged to the plugin just deleted —
+  identity check fails, factory preset. Now every chain edit snapshots the live states first
+  (`vst_patch_flush {force:true}` — it collects mid-play too, because losing everyone's preset is
+  worse than one block's allocation) and then renumbers PATCHES and IDENTS together
+  (`fxvst_patch_removed` / `fxvst_patch_swapped`). The ▲▼ reorder gets the same treatment, and a
+  swap is the case a naive rename gets wrong — every entry comes out of the map before any goes
+  back. Two unit tests in plugins.rs.
+- **VST effect automation is on the main window's right-click now**: the track header in the grid
+  and the mixer strip both offer "⚡ <plugin> (automate…)" for that channel's plugin effects, and
+  name the knob you last touched inside the plugin when there is one. It leads to the same menu
+  the FX link opens — one menu, three ways in. (The instrument version already existed; what he
+  asked for was the EFFECT version, where he actually works.)
+- The engine now logs `tempo: <bpm> bpm -> N plugin(s)` whenever the tempo it sends changes, so
+  "are the plugins on the song's clock?" is answerable from volt.log instead of by ear.
+
+## 2026-08-15 (night, round 6) — the seam, and plugins that know what tempo it is
+
+- **Pattern changes in song mode are SEAMLESS now, because the engine stopped aiming them.**
+  A song step used to be applied on arrival: the browser computed `start_in`, and the engine
+  applied it against `ctx.current_time()` whenever the message reached it — one IPC hop and up to
+  a tick later, differently every time. On top of that, switching `cells` on arrival threw away
+  the outgoing pattern's rows between the booking horizon and the boundary, so each pattern lost
+  its tail. Both are gone: a turnover is **parked** (`queued`), the outgoing pattern plays every
+  row it owns, and the swap happens at `tail_t` — the end of its last row on the clock's own
+  drift-free timeline. No wall clock, no IPC, nothing cut: tails and delay repeats ring across
+  the join. `from_row` stays 0 (the walk-forward hack existed only to paper over the lateness);
+  `start_in` survives as the fallback for a send that lands after the engine has stopped.
+  Pinned by `a_pattern_change_lands_exactly_one_row_after_the_last` (clock.rs).
+  *"the transition between patterns is not seamless and not in time … there's some delay and its
+  preliminary"*.
+- **Plugins are told the song's tempo.** Both formats carry it in the transport they were already
+  being handed — VST3 `ProcessContext.tempo`, VST2 `audioMasterGetTime` — and VOLT filled in a
+  hardcoded **120** for the entire life of the host. So a tempo-synced delay (IL Delay) at 1/8
+  computed 1/8 of 120 bpm under a 174 bpm song and repeated off the grid. Now: sent on Play, to
+  any plugin added mid-session, at a song-mode seam, and on a BPM change while playing (which
+  also re-aims the engine's own clock — it kept the old tempo before). `Plugin::set_tempo` →
+  `TempoMsg` → the render thread. Tested in `a_plugin_is_told_the_songs_tempo_not_a_default`,
+  which also pins that the musical position (ppq) follows the same number.
+- **"Can VOLT automate the knob I just tweaked in a plugin?"** — it already can, and has since
+  2026-08-12; it was simply undocumented in F1. Turn the knob in the plugin's own window, then
+  right-click the plugin in VOLT (instrument row, or the VST FX link in the Track panel): the
+  menu leads with *⚡ Automate "that knob" (just tweaked)*. Now written down in the manual, along
+  with the tempo behaviour above.
+
+## 2026-08-15 (night, round 5) — "is channel 4 going through the master?"
+
+Investigated properly rather than guessed at, and the answer has two halves.
+
+- **The engine's routing is correct, and now PROVEN by rendering.**
+  `every_channel_goes_through_the_master_and_its_plugins` (native/engine/src/mixer.rs) injects a
+  signal into each channel in turn, with one *other* channel carrying a plugin chain (the shape of
+  a real session), and asserts that a muting node in the MASTER's plugin chain silences it —
+  every channel, every time. It also pushes a mix snapshot AFTER splicing the plugins, because
+  `nengMix` fires on every fader move: if `apply` ever dropped the splice, the master's plugins
+  would stop processing the moment anything was touched. They do not.
+- **The real gap is that there are TWO mixers, and nothing said so.** While the engine is open, a
+  channel sounds from the engine OR from the webview (`nengWantsTrack`), and only the engine's
+  channels pass through the engine's master — where every VST effect lives. So a webview-owned
+  channel genuinely cannot be touched by a plugin on the master, which is invisible and reads as
+  a bug. Now: **Ctrl+Space → "Signal path"** lists every channel with notes, says which side it
+  is on, and names the fix (ASIO-only, and bounce anything unported with Alt+R); and assigning a
+  plugin to the MASTER warns immediately if any channel would go round it.
+- Checked while diagnosing: ASIO-only and follow-transport were never overridden in his profile,
+  so both are at their defaults (ON) — i.e. every ported channel already goes through the master.
+  Also confirmed from the log that the Sausage Fattener fix works in his session: it loads and
+  runs, on channel 10 and on the master.
+
+## 2026-08-15 (night, round 4) — six things Mickey found in one message
+
+- **The grid drop never wrote its note, and the reason is worth keeping.** An OS drag is
+  synthesised by the webview, not by the page: the dragovers tracked the pointer correctly (the
+  cell lit up), and then the `drop` arrived at the DOCUMENT instead of the grid. The grid's
+  handler never ran, so the sample became an instrument and no note was written. Both handlers
+  place notes now, and neither trusts `e.target`: `dropCellAt` takes the pointer's hit-test
+  first, then the cell the last dragover LIT UP (evidence of intent when the webview gives us
+  nothing), and the highlight is dropped the moment the pointer leaves the grid so it can never
+  hijack a drop elsewhere. New suite `tests/drop.test.js` — 13 checks, including the
+  document-delivery case that was the actual bug.
+  **Dragging a hit out of the Sample Search panel onto the grid now lands a note too** (it did
+  nothing there before), reusing the instrument when that file is already in the song.
+- **The metronome was misaligned, twice over.** (1) `metOut` fed `spkOut`, so "ASIO only" — the
+  desktop default — muted the click along with the webview's mix. It goes straight to the output
+  now; it taps no meter and renders never schedule it. (2) Its delay exists to match the
+  browser's mix, which is late by two compressors plus the master chain. The engine's audio does
+  not take that path — it is aimed at the browser's SCHEDULING time — so the same delay pushed
+  the click 12 ms late bare, 40–60 ms with a Limiter. `metLatApply()`: the click lines up with
+  whoever is making the sound, on nengSpk's condition, never re-derived.
+- **VST FX links reorder** — ▲▼ on each link, automation lanes moving with them; the engine
+  re-splices from `(track,pos)` as it already does. `fxVstRemove`/`instVstRemove` are now one
+  implementation each, shared by the panel buttons, the hotkey and the plugin window.
+- **Ctrl+Delete removes a plugin, and works INSIDE the plugin's own window.** The pump
+  intercepts it (as it does Esc), queues the HWND, and the plugin thread matches it to a slot and
+  emits `volt:vst-del`; the page decodes instrument-vs-chain from the editor slot and edits the
+  song. Rust never touches the song — the song is the page's.
+- **Alt+T was never legal and was hiding from the scanner.** Alt+T is Firefox's Tools mnemonic,
+  and the check only looked for `e.altKey` and the letter on ONE line — the binding sat inside an
+  outer `if(e.altKey)` block, so it passed for months while doing nothing in Firefox. It is
+  **Ctrl+Alt+T** now (a chord Firefox does not claim), in the handler with no left-rail bail, so
+  it also works with the instrument list focused — which is why it "did nothing" on the desktop.
+  Both copies of the guard now allow ctrl-qualified Alt chords and stay strict for bare Alt.
+- **"Why don't I see Sausage Fattener?" was TWO bugs stacked, and both are fixed.**
+  1. `C:\Program Files (x86)\VstPlugins` was excluded because it "is 32-bit by definition" —
+     but installers drop both builds in it (`Sausage Fattener.dll` x86 beside
+     `Sausage Fattener x64.dll`, and the x64 one is fine). Architecture was always decided per
+     FILE from the PE header, so scanning those folders costs nothing and hides nothing.
+  2. With the folder scanned it STILL did not appear: `openone.rs` said "not a VST2 (no
+     VSTPluginMain)", and its export table has exactly one symbol — `main`, the VST 2.3 entry
+     point. `vst-0.4.0` looks up `VSTPluginMain` only; every real host tries both. Hence a
+     second vendored crate, `native/vendor/vst`, with one `VOLT FORK` line
+     (`VSTPluginMain` → `main` → `main_plugin`), patched in from all three workspace roots.
+     Verified: `[Vst2] SAUSAGE FATTENER — DADA LIFE (Fx)`, opened cleanly.
+  Scan cache bumped to `vst-scan-5.json` — a `-4` cache is missing both classes of plugin, and a
+  cache is trusted on sight. This very likely un-hides other old favourites too.
+
+## 2026-08-15 (night, round 3) — drops on the grid, the search that comes back, FX windows on keys
+
+- **Audio dragged from Explorer onto a GRID CELL drops a note there** — the cell lights up as
+  you hover, the drop makes (or finds — same dedupe) the instrument and writes a C-4 at that
+  exact track/row; several files stack down the rows. Off the cells (or a project file) it
+  falls through to the old behavior. Mirrors the recorder-drag path.
+- **The last Everything search survives a restart** (`volt.es.q`) — the panel comes back with
+  the query re-run, results and all, a beat after boot and only if the field is untouched.
+- **Alt+] / Alt+[ walk the channel's FX plugin windows** — first press reveals link 0 on the
+  cursor's channel (master view = master chain), then next/previous with wrap. In the palette
+  and F1 too.
+
+## 2026-08-15 (night, round 2) — the slicer-under-FX silence
+
+- **A SLICED instrument's audio never crossed to the engine.** All three sample-upload sites
+  filtered `instr==='sampler'`, while `nengPattern` marks sampler AND sliced cells with a
+  `sample` id — so the engine refused every slice note ("sliced has no sample loaded") and the
+  channel went silent the moment the engine owned it (an FX VST on the channel, or ASIO only).
+  Exactly *"slicer on channel 12, i put an fx over the channel, audio is not processing"*. The
+  browser played the same notes fine, which made it look like the FX ate them. Uploads now key
+  off `c.sample` — the sender's own marking, one source of truth. `trig()`'s early-out also now
+  mirrors the sender's sliced refusal (no audio / no markers ⇒ keep sounding in the browser).
+  Regression-tested in nengine.test.js: the sliced upload, its cell's sample id, and the flat
+  slice params all asserted.
+
+## 2026-08-15 (night) — VST presets survive a restart
+
+- **Plugin states persist per song on disk** — `%LOCALAPPDATA%\VOLT\patches\<song-id>.pat`,
+  written on every transport stop, every device close, and awaited on quit before the process
+  hard-exits. The in-memory PATCHES cache (reopen survival) now has a disk twin (restart
+  survival); `vst_load`'s patch-at-create path is unchanged, it just finds presets waiting.
+  Per-song files + replace-not-merge on song switch, so presets never bleed between songs.
+  A crash costs at most the tweaks since the last stop. Details in CLAUDE.md.
+- Not done: pruning `.pat` files of deleted songs (harmless orphans, a few MB each at worst).
+- Vault/phrases checked: `tests/vault.test.js` — 12 checks green.
+- Desktop rebuilt + relaunched with all of today's UI work (Sample Search above Instruments,
+  zoom, drops, spinners, middle-drag pan).
+
+## 2026-08-15 (evening, round 3) — zoom ×4, and the mouse does more
+
+- **Zoom ease τ 12 → 3 ms** ("accelerate it x4") — lands in 1-2 frames; just enough glide left
+  that it doesn't teleport.
+- **Middle-drag pans the grid** — FL's hand tool, no modifier. Capture-phase, because the cell
+  mousedown doesn't check the button and would have moved the cursor.
+- **Wheel over any toolbar field nudges it** — BPM (Shift = ±10), Oct, Step, Swing, Pattern,
+  Len, R/Beat, Trk. Selects walk their options. Everything goes through the field's own
+  'change' handler, so it cannot drift from typed input.
+- Both new gestures are in the F1 manual.
+
+## 2026-08-15 (evening, round 2) — zoom at 5 frames, samples flow in from anywhere
+
+- **Zoom ease τ 28 → 12 ms** — lands in 4-5 frames at 60 fps, per Mickey's spec ("up to 5 frames").
+- **Sample Search moved above Instruments** in the left rail — a hit drags one short hop onto a
+  row now. Fold state is class-keyed, so the move was free.
+- **Dropping a search hit on an instrument row asks Replace / Add new** (it used to replace
+  silently — every other drop-on-a-row already asked).
+- **Audio dragged from Explorer / other apps onto the window** already became an instrument;
+  now it DEDUPES: identical bytes (b64 string compare) select the existing instrument instead
+  of adding a copy. Same dedupe on the instrument-panel drop, with an honest count in the status.
+
+## 2026-08-15 (evening) — the zoom got fast, and the first motion pass
+
+- **The zoom glide was frame-based, and that was the slowness.** Every zoom frame re-lays the
+  grid out, so on a busy grid the frame rate drops — and the old per-frame easing constant
+  (`k=0.28` per rAF tick) stretched the animation exactly when frames got slow. The ease is
+  TIME-based now (τ = 28 ms in log space): the move lands in ~100 ms at any fps, and a slow
+  frame takes a proportionally bigger step instead of adding time.
+- **Motion polish, first pass** — transform/opacity only (compositor, never layout), all behind
+  `prefers-reduced-motion`: dialogs and the palette pop in with a small overshoot bounce, menu
+  dropdowns and the Vault/settings panels drop in, buttons compress on press, and a new status
+  message rises into the footer instead of teleporting.
+- **A tip on boot**: ~2 s after load, if the status bar is idle, one random entry from the F1
+  manual shows for a few seconds. The manual is full of tricks nobody presses F1 for.
+- Candidates for the next pass (not done): a subtle flash on the pattern chip when it changes,
+  a pop on newly added instrument rows / song slots, drag ghosts with tilt, a short shake on a
+  refused action (e.g. blacklisted plugin), playhead-row glow in the grid. All must stay
+  transform/opacity-cheap — the grid runs at 60 fps while playing.
 
 ## 2026-08-15 (later) — everything else that was broken, and the UI work
 

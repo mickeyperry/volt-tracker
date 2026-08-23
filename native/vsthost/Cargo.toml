@@ -15,7 +15,11 @@ description = "VOLT's VST3 host — scan, load, and play plugins"
 # `libloading` opens the plugin DLL. A VST3 plugin on Windows is a DLL with three exported
 # functions and one entry point that hands back a class factory; there is no more to it than that,
 # and windows-sys would be a much bigger dependency for the same LoadLibrary call.
-[dependencies]
+#
+# All four are Windows-only, because plugin hosting is (src/win.rs vs src/portable.rs — see
+# lib.rs). On Linux/macOS this crate compiles with NO dependencies at all: the facade is std only,
+# which is also what makes it cross-checkable from a Windows machine.
+[target.'cfg(windows)'.dependencies]
 vst3 = "0.3"
 libloading = "0.8"
 vst = "0.4"
@@ -26,6 +30,14 @@ winapi = { version = "0.3", features = ["winuser", "libloaderapi", "windef", "mi
 # The scanner and the "does it make a sound" test, before any of this is wired to the engine.
 # Deliberately a separate binary from the audio path: a plugin that crashes on load must not be
 # able to take the tracker down with it, and finding out which ones do is what this is for.
+# VOLT's fork of the `vst` crate. One edit, marked `VOLT FORK` in src/host.rs: fall back to the
+# legacy `main` entry point when a DLL has no `VSTPluginMain`. Upstream gives up, which makes every
+# VST 2.3-era plugin invisible — Sausage Fattener exports exactly one symbol and that symbol is
+# `main`. Every real host tries both. Declared in each of the three workspace roots that build this
+# crate (here, ../desktop, ../engine) because a `[patch]` only applies from the root being built.
+[patch.crates-io]
+vst = { path = "../vendor/vst" }
+
 [[bin]]
 name = "vstprobe"
 path = "src/bin/vstprobe.rs"

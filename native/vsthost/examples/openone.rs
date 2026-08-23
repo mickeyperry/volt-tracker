@@ -9,8 +9,16 @@ fn main() {
     match volt_vsthost::Module::open(std::path::Path::new(&path)) {
         Ok(m) => {
             for c in m.classes() {
-                println!("  [{:?}] {} — {} ({})", c.format, c.name, c.vendor, c.subcategories);
+                // The INDEX is printed because it is the thing that goes wrong: a shell plugin
+                // (WaveShell holds 861 classes) is addressed by index, the song stores that
+                // number, and "no class 864" is only diagnosable if you can see what the file
+                // actually offers today.
+                println!(
+                    "  [{:?}] #{} {} — {} ({})",
+                    c.format, c.index, c.name, c.vendor, c.subcategories
+                );
             }
+            println!("{} class(es).", m.classes().len());
             println!("opened cleanly.");
         }
         Err(e) => println!("  failed: {e}"),

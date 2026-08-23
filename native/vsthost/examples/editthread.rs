@@ -12,14 +12,27 @@
 //! Every step prints its elapsed time, so a hang is localised rather than merely observed. If the
 //! run stops printing, the last line names the call that hung — which is the whole point.
 
+// Windows only: this example pumps a raw Win32 message queue, which is the very thing it exists
+// to reproduce. Off Windows there is no threading to prove and no winapi to prove it with.
+#[cfg(not(windows))]
+fn main() {
+    eprintln!("editthread reproduces Win32 editor threading — Windows only");
+}
+
+#[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(windows)]
 use std::sync::mpsc::channel;
+#[cfg(windows)]
 use std::sync::Arc;
+#[cfg(windows)]
 use std::time::Instant;
 
+#[cfg(windows)]
 use volt_vsthost::{editor::Editor, hard_exit, read_blacklist, scan, scan_vst2, HostEvents, Module,
                    VST3_DIR};
 
+#[cfg(windows)]
 use winapi::um::winuser::{DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE};
 
 /// The proposed fix, end to end: **create the plugin here, on the main thread**, hand it to an
@@ -27,6 +40,7 @@ use winapi::um::winuser::{DispatchMessageW, PeekMessageW, TranslateMessage, MSG,
 ///
 /// This is what the desktop app should do. If a plugin passes this and hangs in the default mode,
 /// the difference is the creating thread and nothing else.
+#[cfg(windows)]
 fn main_thread_load(
     paths: &[std::path::PathBuf],
     step: &impl Fn(&str),
@@ -126,6 +140,7 @@ fn main_thread_load(
 }
 
 /// Run a message loop for `secs`, reporting that it stayed responsive.
+#[cfg(windows)]
 fn pump(secs: f64, step: &impl Fn(&str)) {
     let start = Instant::now();
     let mut ticks = 0u32;
@@ -143,6 +158,7 @@ fn pump(secs: f64, step: &impl Fn(&str)) {
     step(&format!("pumped {ticks} messages over {secs} s — the loop stayed responsive"));
 }
 
+#[cfg(windows)]
 fn main() {
     let want = std::env::args().nth(1).unwrap_or_default().to_lowercase();
     if want.is_empty() {

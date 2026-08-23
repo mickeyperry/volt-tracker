@@ -257,6 +257,8 @@ module.exports=async function(){
       src.split('\n').forEach(l=>{
         if(/^\s*\/\*/.test(l))return;
         if(!/(^|[^!])e\.altKey/.test(l))return;
+        /* Ctrl+Alt+letter is not a Firefox mnemonic — see bounce.test.js for the full rule */
+        if(/(^|[^!])e\.ctrlKey/.test(l))return;
         [...l.matchAll(/e\.code==='Key([FEVSTHB])'/g)].forEach(m=>bad.push(m[1]));
       });
       return[...new Set(bad)];

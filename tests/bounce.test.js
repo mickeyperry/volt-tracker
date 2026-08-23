@@ -349,13 +349,18 @@ module.exports=async function(){
     S.head('the hotkey');
     r=await page.evaluate(()=>{
       /* Firefox owns Alt+F/E/V/S/T/H/B for its menu bar and won't reliably let the page cancel
-         them, so none of VOLT's Alt bindings may use those letters. */
+         them, so none of VOLT's Alt bindings may use those letters.
+         CTRL+Alt+letter is a different chord and Firefox does not claim it — a mnemonic only
+         fires on Alt by itself — so a binding that REQUIRES ctrl is allowed (Ctrl+Alt+T is the
+         tuplet key). `!e.ctrlKey` on the line is not that: it is a plain-Alt binding taking
+         pains to exclude ctrl, and it stays banned. */
       const src=document.documentElement.innerHTML;
       const bad=[];
       src.split('\n').forEach(l=>{
         if(l.indexOf('//')===0||/^\s*\/\*/.test(l))return;
         const alt=/(^|[^!])e\.altKey/.test(l);           /* e.altKey, not !e.altKey */
         if(!alt)return;
+        if(/(^|[^!])e\.ctrlKey/.test(l))return;          /* ctrl is held too: not a menu mnemonic */
         /* direct bindings on this line, and the panel-jump lookup table */
         [...l.matchAll(/e\.code==='Key([FEVSTHB])'/g)].forEach(m=>bad.push(m[1]));
         [...l.matchAll(/\bKey([FEVSTHB])\s*:/g)].forEach(m=>bad.push(m[1]));

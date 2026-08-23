@@ -683,6 +683,11 @@ impl Mixer {
     /// sending the device something above full scale? A converter has nowhere to put 1.2, so it
     /// squares the top off — harsh distortion that arrives with the notes, sounds nothing like a
     /// dropout, and leaves no trace in any CPU number.
+    ///
+    /// It is also the mixer's MASTER METER while the engine owns the sound: `peaks` is indexed by
+    /// track and the master has no track number to sit at, so without reporting this the master
+    /// strip had no source at all and read a flat nothing while every channel moved — which looks
+    /// exactly like "the channels are not reaching the master" (2026-08-15). They were.
     pub fn master_peak(&mut self, scratch: &mut Vec<f32>) -> f32 {
         scratch.resize(self.master.an.fft_size(), 0.0);
         self.master.an.get_float_time_domain_data(scratch);
@@ -1170,5 +1175,69 @@ mod cost {
         // scheduler. Ten milliseconds is already the tick interval, so anything near it is a bug.
         assert!(per.as_millis() < 10, "a mixer update costs {per:?} — that is a stall, not an edit");
         assert!(build.as_millis() < 2000, "building the mixer costs {build:?}");
+    }
+
+    /// **EVERY channel reaches the master, and the master's plugins process every channel.**
+    ///
+    /// The property a mixing desk is expected to have and the one Mickey asked to have proven:
+    /// *"make sure that all the channels going through the master channel eventually like a
+    /// normal DAW"* (2026-08-15), after a channel with no plugins of its own looked like it was
+    /// bypassing the master's. Proven by RENDERING, per the house rule, not by reading the
+    /// wiring: a muting node in the MASTER's plugin chain must silence a signal injected into
+    /// any channel, one channel at a time, including channels whose own insert chain is empty
+    /// while a neighbour's is full.
+    #[test]
+    fn every_channel_goes_through_the_master_and_its_plugins() {
+        use web_audio_api::node::AudioScheduledSourceNode;
+        const N: usize = 6;
+        // `track` carries the signal; `mute_master` puts a plugin in the MASTER chain.
+        let render = |track: usize, mute_master: bool| -> f32 {
+            let ctx = OfflineAudioContext::new(1, 4096, 44100.0);
+            let mut mixer = Mixer::new(&ctx);
+            mixer.master.connect(&ctx.destination());
+            mixer.ensure(&ctx, N);
+            // Song defaults, so the strips' compressors cannot compress and bend the levels.
+            let state: MixState = serde_json::from_str(
+                r#"{"tracks":[{"vol":0.85},{"vol":0.85},{"vol":0.85},{"vol":0.85},{"vol":0.85},
+                              {"vol":0.85}],"master":0.75,"delayTime":0.3}"#,
+            )
+            .unwrap();
+            mixer.apply(&ctx, &state);
+            // ASYMMETRY, on purpose: one OTHER channel owns a plugin chain. This is the shape of
+            // the real session — a couple of channels with plugins, the rest bare — and it is
+            // what makes "the bare ones are being left out" a question worth asking.
+            let neighbour = ctx.create_gain();
+            mixer.set_plugin_chain(2, &[&neighbour]);
+            let mut src = ctx.create_buffer_source();
+            let mut buf = ctx.create_buffer(1, 1024, 44100.0);
+            buf.get_channel_data_mut(0).fill(0.5);
+            src.set_buffer(buf);
+            src.connect(mixer.input(track).expect("every channel must have a strip"));
+            src.start_at(0.0);
+            let killer = ctx.create_gain();
+            if mute_master {
+                killer.gain().set_value(0.0);
+                mixer.set_master_plugin_chain(&[&killer]);
+            }
+            // **The mix snapshot arrives AFTER the plugins are spliced, exactly as it does live**
+            // — nengMix fires on every fader move and every edit. If `apply` rebuilt the master
+            // FX in a way that dropped the plugin splice, the master's plugins would quietly
+            // stop processing the moment anything was touched, which is precisely the symptom
+            // this test exists to rule out.
+            mixer.apply(&ctx, &state);
+            let mut ctx = ctx;
+            let out = ctx.start_rendering_sync();
+            out.get_channel_data(0).iter().fold(0.0f32, |m, s| m.max(s.abs()))
+        };
+        for t in 0..N {
+            let dry = render(t, false);
+            let muted = render(t, true);
+            assert!(dry > 0.01, "channel {t} never reached the master (peak {dry})");
+            assert!(
+                muted < 1e-6,
+                "channel {t} BYPASSES the master's plugin chain — a muting plugin there left it \
+                 at peak {muted}. Every channel must pass through the master's inserts."
+            );
+        }
     }
 }

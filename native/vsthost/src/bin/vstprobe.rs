@@ -141,8 +141,10 @@ fn list(paths: &[PathBuf], v2: &volt_vsthost::Vst2Scan, banned: usize) {
                   bridge process — a separate project)", v2.skipped_32bit);
     }
     if banned > 0 {
-        println!("{banned} blacklisted (crashed or hung a scan before — see \
-                  %LOCALAPPDATA%\\VOLT\\vst-blacklist.txt)");
+        let file = volt_vsthost::blacklist_path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "the blacklist file".into());
+        println!("{banned} blacklisted (crashed or hung a scan before — see {file})");
     }
     if !broken.is_empty() {
         println!("\n{} would not load:", broken.len());

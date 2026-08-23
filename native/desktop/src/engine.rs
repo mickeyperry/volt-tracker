@@ -161,6 +161,20 @@ pub struct Pattern {
     /// the middle of playback, on a thread FL's VST2s resent. Absent means what it was: not fresh.
     #[serde(default)]
     pub fresh: bool,
+    /// WHICH pattern of the song this is, as the browser numbers them.
+    ///
+    /// The engine plays patterns, not pattern NUMBERS, and never needed to know — until edits
+    /// began arriving mid-playback (`Cmd::Cells`). Then it matters: in song mode the next pattern
+    /// is handed over up to a lookahead before the seam, so for a moment the browser's idea of
+    /// "the current pattern" is already the next one, and an edit aimed at the pattern actually
+    /// sounding would be applied to the wrong notes. So the identity travels with the pattern,
+    /// and `Cells` is applied only when it matches what is playing. -1 for "did not say".
+    #[serde(default = "minus_one")]
+    pub pat: i64,
+}
+
+fn minus_one() -> i64 {
+    -1
 }
 fn one() -> usize {
     1
@@ -191,9 +205,13 @@ pub struct EngStats {
     /// open: was it the PLUGIN, or was it everything else?
     pub vst_peak_us: u64,
     pub block_us: u64,
+    /// The whole app's CPU, percent of the machine — this process, its plugins, AND the WebView2
+    /// child processes the UI actually runs in (see cpu.rs). Negative = no reading yet.
+    #[serde(default)]
+    pub cpu: f64,
 }
 static ENG_STATS: Mutex<EngStats> =
-    Mutex::new(EngStats { avg_load: 0.0, peak_load: 0.0, underruns: 0, vst_peak_us: 0, block_us: 0 });
+    Mutex::new(EngStats { avg_load: 0.0, peak_load: 0.0, underruns: 0, vst_peak_us: 0, block_us: 0, cpu: -1.0 });
 /// Which audio thread ENG_STATS belongs to. A dead device's monitor must not keep writing over a
 /// live one's numbers — see `AUDIO_GEN`.
 static STATS_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -215,7 +233,11 @@ static PREV_CLOSED: Mutex<Option<std::sync::mpsc::Receiver<()>>> = Mutex::new(No
 /// Poll the engine's render health. Cheap and lock-tiny; the UI reads it on a timer.
 #[tauri::command(async)]
 pub fn eng_stats() -> EngStats {
-    *ENG_STATS.lock().unwrap_or_else(|e| e.into_inner())
+    let mut s = *ENG_STATS.lock().unwrap_or_else(|e| e.into_inner());
+    // stamped at poll time, not by the capacity monitor: the CPU meter must answer even while
+    // no device is open — the UI still burns cycles with the engine closed
+    s.cpu = crate::cpu::app_cpu_percent();
+    s
 }
 
 /// Is the diagnostic tap recording? Read by the tap node on the render thread (one relaxed
@@ -243,6 +265,11 @@ pub struct MeterData {
     /// that was asked about, or of the master. The same shape `getByteFrequencyData` fills, so
     /// the browser's spectrum panel can draw it with no translation.
     pub spec: Vec<u8>,
+    /// The MIX's peak. Not in `peaks`, which is indexed by track and has nowhere to put it —
+    /// and without it the mixer's master meter has no source at all while the engine owns the
+    /// sound. `#[serde(default)]` so an older page (a reload against a newer engine) still parses.
+    #[serde(default)]
+    pub master: f32,
 }
 
 enum Cmd {
@@ -293,8 +320,35 @@ enum Cmd {
     VstParam { slot: usize, id: u32, value: f64 },
     /// …or for a channel/master effect plugin, addressed by its place in the chain.
     FxVstParam { track: i64, pos: usize, id: u32, value: f64 },
+    /// **The pattern being played, edited in place.** Same pattern, same clock, new notes.
+    ///
+    /// Editing the grid while the transport runs used to change nothing until the next Play: the
+    /// engine holds the cells it was handed, and the browser's edits landed only in the browser's
+    /// copy of the song. So arranging an arp over a melody meant stop, play, listen, stop —
+    /// *"the audio is not getting played at realtime … i need to stop playback and play again in
+    /// order to hear the updated pattern"* (2026-08-15).
+    ///
+    /// Deliberately NOT a `Play`: the clock is not touched, nothing is cut, nothing is re-aimed.
+    /// Rows already scheduled are already in the graph and play as they were — only rows still to
+    /// come read the new cells, which is exactly what editing ahead of the playhead means.
+    Cells(Pattern),
+    /// The metronome: on/off and how loud. Clicks are scheduled with the rows — see `met_click`.
+    Met { on: bool, vol: f32 },
     /// A whole mixer snapshot. Wholesale rather than a delta — see `Mixer::apply`.
     Mix(Box<MixState>),
+    /// Collect every plugin's state into the patch cache and write it to disk. ANSWERED (with
+    /// whether states were actually collected), because the caller is usually about to quit or
+    /// switch songs and needs the write to be done, not merely requested. Collection is skipped
+    /// while the transport runs — reading state allocates on the render thread — but the cache
+    /// still flushes, so everything parked by earlier stops reaches disk regardless.
+    SavePatches {
+        /// Collect even while the transport runs. Reading a plugin's state allocates on the render
+        /// thread, which is why the answer is normally "not while playing" — but an edit to a
+        /// plugin CHAIN is a rare, deliberate, user-initiated act, and losing everybody's preset
+        /// is a far worse outcome than one block's worth of allocation.
+        force: bool,
+        reply: Sender<bool>,
+    },
 }
 
 /// The automatable parameters of every loaded plugin, captured at load time.
@@ -454,6 +508,88 @@ fn route_vsts(
     }
 }
 
+/// **The metronome, on the clock that is actually playing the notes.**
+///
+/// A click scheduled in the webview cannot be trusted to line up with music coming out of the
+/// engine: they are two contexts on two timelines, and everything about aligning them is an
+/// estimate of somebody's real output latency (`nengLatCorr`, and the browser's mix delay on top).
+/// Estimates are why the click kept sounding a hair off — Mickey twice: "the metronom is not
+/// aligned with playback". Scheduled HERE, against the same `d.t` the row's notes are scheduled
+/// at, on the same device, there is nothing left to estimate: it is sample-accurate by
+/// construction.
+///
+/// Straight to the destination, past the mixer, exactly as the browser's `metOut` bypasses the
+/// mix: a click must not be squashed by the master limiter, metered, or land in a render.
+/// Tell every plugin where the song is, as an anchor: at `t0` it was at beat `beat0`, at `bpm`.
+///
+/// The tempo tells a plugin how fast; this tells it WHERE. Anything with a pattern of its own —
+/// Gross Beat, a trance gate, a synced LFO, an arpeggiator — needs the bar line, and a plugin left
+/// to free-run from its own creation has an arbitrary phase that changes every time it is
+/// reloaded. Sent on Play, at a song seam and on Stop, not per block: the render thread carries it
+/// forward exactly (`TransportMsg`).
+fn tell_transport(
+    vsts: &std::collections::HashMap<usize, VstNode>,
+    fx_vsts: &std::collections::HashMap<(i64, usize), VstNode>,
+    playing: bool,
+    t0: f64,
+    beat0: f64,
+    bpm: f64,
+) {
+    for v in vsts.values() {
+        v.set_transport(playing, t0, beat0, bpm);
+    }
+    for v in fx_vsts.values() {
+        v.set_transport(playing, t0, beat0, bpm);
+    }
+}
+
+fn met_click(ctx: &AudioContext, t: f64, accent: bool, vol: f32) {
+    use web_audio_api::node::{AudioScheduledSourceNode, OscillatorType};
+    let mut osc = ctx.create_oscillator();
+    osc.set_type(OscillatorType::Square);
+    osc.frequency().set_value(if accent { 1800.0 } else { 1100.0 });
+    let g = ctx.create_gain();
+    // The browser's envelope, note for note (metClick): silent, up in a millisecond, gone in 35.
+    g.gain().set_value_at_time(0.0, t);
+    g.gain().linear_ramp_to_value_at_time(vol * if accent { 1.0 } else { 0.65 }, t + 0.001);
+    g.gain().exponential_ramp_to_value_at_time(0.0001, t + 0.035);
+    osc.connect(&g);
+    g.connect(&ctx.destination());
+    osc.start_at(t);
+    osc.stop_at(t + 0.05);
+}
+
+/// Ask every attached plugin for its state, park it in the patch cache, and write the cache to
+/// the current song's file on disk. The whole of "presets survive a restart" is this being
+/// called at the right moments: every transport stop, every device close, and the quit path.
+///
+/// Only ever called with the transport stopped or the device on its way down — reading state
+/// allocates on the render thread, which is forbidden while notes are being scheduled.
+fn keep_patches(
+    vsts: &std::collections::HashMap<usize, VstNode>,
+    fx_vsts: &std::collections::HashMap<(i64, usize), VstNode>,
+) {
+    for (slot, node) in vsts.iter() {
+        let key = format!("i{slot}");
+        if let Some(ident) = plugins::ident_for(&key) {
+            if let Some(bytes) = node.state(250) {
+                crate::log!("patch kept: {key} ({} bytes)", bytes.len());
+                plugins::remember_patch(key, ident, bytes);
+            }
+        }
+    }
+    for ((track, pos), node) in fx_vsts.iter() {
+        let key = format!("f{track}.{pos}");
+        if let Some(ident) = plugins::ident_for(&key) {
+            if let Some(bytes) = node.state(250) {
+                crate::log!("patch kept: {key} ({} bytes)", bytes.len());
+                plugins::remember_patch(key, ident, bytes);
+            }
+        }
+    }
+    plugins::flush_patches();
+}
+
 /// Re-splice one track's whole FX-VST chain from the map, in `pos` order.
 ///
 /// Called on every attach and unload rather than editing the wiring incrementally: a chain is at
@@ -572,9 +708,7 @@ impl AudioWorkletProcessor for TapProcessor {
 /// The tap's writer half: buffer up to 60 s, write a 16-bit WAV when the channel closes (device
 /// closed or app exit) — and rewrite the file every few seconds so a hard kill still leaves data.
 fn tap_writer(rx: std::sync::mpsc::Receiver<Vec<f32>>, sr: u32) {
-    let path = std::env::var_os("LOCALAPPDATA")
-        .map(std::path::PathBuf::from)
-        .map(|d| d.join("VOLT").join("tap.wav"));
+    let path = crate::log::volt_dir().map(|d| d.join("tap.wav"));
     let Some(path) = path else { return };
     let mut all: Vec<f32> = Vec::new();
     let cap = (sr as usize) * 2 * 60;
@@ -628,9 +762,7 @@ fn write_wav(path: &std::path::Path, interleaved: &[f32], sr: u32) {
 /// the next ones skip the ASIO host entirely (`VOLT_SKIP_ASIO`, honoured in the vendored fork)
 /// until the user explicitly retries from the picker.
 fn enum_journal() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(std::path::PathBuf::from)
-        .map(|d| d.join("VOLT").join("dev-enum.txt"))
+    crate::log::volt_dir().map(|d| d.join("dev-enum.txt"))
 }
 
 #[tauri::command(async)]
@@ -696,9 +828,7 @@ pub fn eng_devices(retry_asio: Option<bool>) -> Vec<Device> {
 /// device still in the file refuses with the story; choosing the device by hand in the picker
 /// always tries again.
 fn dev_journal() -> Option<std::path::PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(std::path::PathBuf::from)
-        .map(|d| d.join("VOLT").join("dev-opening.txt"))
+    crate::log::volt_dir().map(|d| d.join("dev-opening.txt"))
 }
 
 /// Open a device and leave an audio thread running on it.
@@ -967,6 +1097,10 @@ pub fn eng_open(
         // certainly silent, then dropped — which is what frees their nodes.
         let mut retired: Vec<(f64, Voice)> = Vec::new();
         let mut left = 0usize; // rows still to schedule; usize::MAX for "until stopped"
+        // The next pattern of the song, parked until the current one has played every row it
+        // owns. See `Cmd::Play`'s handover branch: this is what makes a pattern change seamless
+        // instead of aimed.
+        let mut queued: Option<Pattern> = None;
         // Rows booked but not yet audible, and the last row reported to the UI (-1 = none).
         // Rows are scheduled up to 160 ms early, so announcing one when it is *booked* would put
         // the cursor most of a row ahead of the sound. They wait here until their time arrives.
@@ -1015,6 +1149,22 @@ pub fn eng_open(
         // Which mixer channel each plugin is currently wired into, so a re-route only happens when
         // the track actually changes. See `route_vsts`.
         let mut vst_chan: std::collections::HashMap<usize, usize> = Default::default();
+        // The song's tempo, as last heard from a pattern. Kept because a plugin ATTACHED later
+        // (mid-session, or the whole chain after a device reopen) has to be told it too — one born
+        // at 120 and never corrected is exactly the out-of-time delay this exists to prevent.
+        let mut cur_bpm: f64 = 120.0;
+        // The metronome, when the engine is the thing making the sound. See `met_click`.
+        let mut met_on = false;
+        let mut met_vol = 0.45f32;
+        // Which pattern of the song is sounding, so a live edit can be matched to it. Set from
+        // whatever pattern the clock is actually started on — including at a seam, where the
+        // browser has long since moved on to talking about the next one.
+        let mut cur_pat: i64 = -1;
+        // The song's MUSICAL clock, as an anchor: at context time `beat_t0` the song was at
+        // `song_beat` quarter notes. Everything tempo-synced inside a plugin is positioned from
+        // this — see `tell_transport`.
+        let mut song_beat: f64 = 0.0;
+        let mut beat_t0: f64 = 0.0;
         // Where a finished plugin goes to be destroyed: the plugin thread, which created it. This
         // thread must never drop one — see `volt_engine::vst::Retire`.
         let retire_tx = plugins::retire_sender();
@@ -1024,8 +1174,9 @@ pub fn eng_open(
         // device, because it owns nodes and nodes belong to one context.
         let mut mixer = Mixer::new(&ctx);
         mixer.master.connect(&ctx.destination());
-        // **`VOLT_TAP=1` records exactly what the device is being sent, to %LOCALAPPDATA%\VOLT\
-        // tap.wav.** The 2026-08-14/15 distortion hunt exhausted every indirect measurement —
+        // **`VOLT_TAP=1` records exactly what the device is being sent, to `tap.wav` in VOLT's
+        // data folder** (`%LOCALAPPDATA%\VOLT` on Windows — see `log::volt_dir`).
+        // The 2026-08-14/15 distortion hunt exhausted every indirect measurement —
         // parity nulls, render load, plugin block times, offline strip renders, master peaks —
         // and every one came back clean while the speakers disagreed. A tap ends the argument:
         // a worklet rides the same post-limiter signal spk_out feeds the hardware, ships every
@@ -1121,12 +1272,61 @@ pub fn eng_open(
                     // killing the audio that is legitimately still ringing. `fresh` (the user
                     // pressing Play) keeps the hard reset it asks for.
                     let handover = clock.playing() && !p.fresh;
+                    let incoming_pat = p.pat;
+                    // **A QUEUED pattern, so the seam is on the engine's own timeline.**
+                    //
+                    // Aiming the new pattern with `start_in` cannot be seamless, however good the
+                    // arithmetic: the browser computes the offset, and the engine applies it
+                    // against `ctx.current_time()` whenever the message reaches it — one IPC hop
+                    // and up to a tick later. That difference is silent lateness at EVERY pattern
+                    // change, and it varies, so the seam wanders. Worse, switching `cells` on
+                    // arrival threw away the rows of the outgoing pattern that were not booked
+                    // yet — everything between the engine's booking horizon and the boundary —
+                    // so each pattern lost its tail as well ("the transition between patterns is
+                    // not seamless and not in time … there's some delay and its preliminary",
+                    // 2026-08-15, ASIO-only).
+                    //
+                    // So a song-order turnover is not applied on arrival at all. It is PARKED,
+                    // the outgoing pattern plays out every row it owns, and the swap happens the
+                    // instant its last row's time has passed — at `tail_t`, which is that row's
+                    // end on the clock's own drift-free timeline. No wall clock, no IPC, no
+                    // rounding: the next pattern's row 0 lands exactly one row after the last.
+                    // `from_row == 0` is what says "this is the next pattern from its top";
+                    // a mid-play re-send (an FX assignment, a follow toggle) aims itself and
+                    // keeps the old immediate path.
+                    if handover && p.from_row == 0 && left != usize::MAX && left > 0 {
+                        crate::log!("song step: pattern queued — {} rows left of the current one", left);
+                        queued = Some(p);
+                        continue;
+                    }
+                    queued = None;   // a real Play (or an aimed re-send) cancels anything parked
+                    cur_pat = incoming_pat;
                     clock = Clock::new(p.bpm.max(1.0), p.lpb.max(1.0), p.rows.max(1));
                     cells = p.cells;
                     ducks = p.ducks;
                     // The notes say which track each plugin belongs on, so this is the moment its
                     // mixer channel can be known. See `route_vsts`.
                     route_vsts(&ctx, &mut mixer, &vsts, &cells, &mut vst_chan);
+                    // **Every plugin is told the song's tempo**, instruments and effects alike.
+                    // A pattern always carries the BPM, so this is the one place that always
+                    // knows it and always runs — a Play, a mid-play re-send, every song step.
+                    // Without it they all ran on the hardcoded 120 they were born with, and a
+                    // tempo-synced delay (IL Delay, 2026-08-15) repeated in 120 bpm eighths under
+                    // a 174 bpm song: "the delays is not aligned with the rhythm".
+                    if (p.bpm - cur_bpm).abs() > 1e-9 {
+                        cur_bpm = p.bpm;
+                        crate::log!(
+                            "tempo: {:.3} bpm -> {} plugin(s)",
+                            cur_bpm,
+                            vsts.len() + fx_vsts.len()
+                        );
+                    }
+                    for v in vsts.values() {
+                        v.set_tempo(cur_bpm);
+                    }
+                    for v in fx_vsts.values() {
+                        v.set_tempo(cur_bpm);
+                    }
                     left = if p.repeats == 0 { usize::MAX } else { p.rows.max(1) * p.repeats };
                     if !handover {
                         cut_all(&mut live, &mut retired, ctx.current_time());
@@ -1160,10 +1360,28 @@ pub fn eng_open(
                     // Clamped low, not high: an alignment early enough to be unschedulable gets the
                     // minimum rather than an error, because a slightly-flammed take beats silence.
                     let start_in = if p.start_in > 0.0 { p.start_in.max(0.03) } else { 0.15 };
-                    clock.start(ctx.current_time() + start_in, p.from_row);
+                    let start_t = ctx.current_time() + start_in;
+                    clock.start(start_t, p.from_row);
+                    // The song's musical clock starts here too. A fresh Play restarts the bar
+                    // count; a mid-play re-send carries on from where the song already is, or
+                    // every FX change would jerk every synced plugin back to bar 1.
+                    song_beat = if p.fresh || !handover {
+                        p.from_row as f64 / p.lpb.max(1.0)
+                    } else {
+                        song_beat
+                    };
+                    beat_t0 = start_t;
+                    tell_transport(&vsts, &fx_vsts, true, beat_t0, song_beat, cur_bpm);
                 }
                 Some(Cmd::Stop) => {
                     clock.stop();
+                    queued = None;   // the song is not going anywhere next
+                    // …and the plugins are told the transport stopped, so anything running a
+                    // pattern of its own stops with it instead of rolling on for ever.
+                    let now = ctx.current_time();
+                    song_beat += (now - beat_t0).max(0.0) * cur_bpm / 60.0;
+                    beat_t0 = now;
+                    tell_transport(&vsts, &fx_vsts, false, beat_t0, song_beat, cur_bpm);
                     // `stopAllVoices()`, beta2.html:2012 — cut, not drop. Dropping a voice does not
                     // silence it: a source with a tail keeps rendering whether or not anyone holds
                     // a handle, so a held `sub` would have gone on humming after Stop.
@@ -1182,8 +1400,39 @@ pub fn eng_open(
                     }
                     pending.clear();
                     tail_t = 0.0; // stopped by hand: clear the cursor now, not after a row
+                    // Every stop is a save point. The transport just stopped, so reading plugin
+                    // state is legal — the patch file refreshes here, and a crash from now on
+                    // costs nothing that was audible before the stop.
+                    keep_patches(&vsts, &fx_vsts);
+                }
+                Some(Cmd::Met { on, vol }) => {
+                    met_on = on;
+                    met_vol = vol;
+                }
+                Some(Cmd::Cells(p)) => {
+                    // Live editing. The clock, `left`, the queued pattern and everything already
+                    // scheduled are all untouched — this swaps the notes future rows will read.
+                    // Ignored when the transport is not running: a Play is coming anyway and it
+                    // carries its own cells, and applying these would leave the engine holding a
+                    // pattern nobody asked it to play. Ignored too when it is an edit to some
+                    // OTHER pattern of the song — see `Pattern::pat`.
+                    if clock.playing() && (p.pat < 0 || cur_pat < 0 || p.pat == cur_pat) {
+                        cells = p.cells;
+                        ducks = p.ducks;
+                        route_vsts(&ctx, &mut mixer, &vsts, &cells, &mut vst_chan);
+                    }
+                }
+                Some(Cmd::SavePatches { force, reply }) => {
+                    let collected = force || !clock.playing();
+                    if collected {
+                        keep_patches(&vsts, &fx_vsts);
+                    } else {
+                        plugins::flush_patches();
+                    }
+                    let _ = reply.send(collected);
                 }
                 Some(Cmd::Panic { reply }) => {
+                    queued = None;   // nothing parked survives a panic
                     // Stop, and then some. The book of held notes (`vst_held`) can be WRONG by the
                     // time anyone reaches for panic — that is what panic is for — so on top of the
                     // bookkept note-offs, every plugin gets the all-notes-off sweep: 128 note-offs
@@ -1210,9 +1459,10 @@ pub fn eng_open(
                 }
                 Some(Cmd::Meters { chan, reply }) => {
                     let peaks = mixer.peaks(&mut meter_scratch);
+                    let master = mixer.master_peak(&mut meter_scratch);
                     let mut spec = Vec::new();
                     mixer.spectrum(chan, &mut spec);
-                    let _ = reply.send(MeterData { peaks, spec });
+                    let _ = reply.send(MeterData { peaks, spec, master });
                 }
                 Some(Cmd::Sample { id, pcm, channels }) => {
                     // The webview sends interleaved frames at the *context's* rate — it resamples
@@ -1257,6 +1507,11 @@ pub fn eng_open(
                             // and so is whatever channel it was routed to.
                             vst_held.retain(|_, (s, _)| *s != slot);
                             vst_chan.remove(&slot);
+                            // Born knowing the tempo AND where the song is — a plugin added
+                            // mid-session is never told again until the next Play, and one that
+                            // syncs would otherwise sit at bar 1 while the song is at bar 33.
+                            node.set_tempo(cur_bpm);
+                            node.set_transport(clock.playing(), beat_t0, song_beat, cur_bpm);
                             vsts.insert(slot, node);
                             node_name(&vsts, slot)
                         });
@@ -1288,6 +1543,8 @@ pub fn eng_open(
                             }
                             let name = node.name.clone();
                             let lat = node.latency;
+                            node.set_tempo(cur_bpm);   // sync'd delays land on the beat at once
+                            node.set_transport(clock.playing(), beat_t0, song_beat, cur_bpm);
                             fx_vsts.insert((track, pos), node);
                             resplice_fx_chain(&ctx, &mut mixer, &fx_vsts, track);
                             max_shift = recompute_latency(&fx_vsts, &vsts, sr as f64, &mut fx_lat);
@@ -1346,6 +1603,48 @@ pub fn eng_open(
                 let now = ctx.current_time();
                 for d in clock.due(now, LOOKAHEAD + max_shift) {
                     if left == 0 {
+                        // **The seam.** The outgoing pattern has just booked its last row, and
+                        // `tail_t` is exactly where that row ends — the instant the next
+                        // pattern's row 0 belongs at, carried on the same drift-free timeline
+                        // that the rows themselves were carried on. Nothing here reads the wall
+                        // clock, so the join is as exact as the rows either side of it.
+                        if let Some(np) = queued.take() {
+                            let seam = tail_t;
+                            clock = Clock::new(np.bpm.max(1.0), np.lpb.max(1.0), np.rows.max(1));
+                            cur_pat = np.pat;   // the seam is where the song actually moves on
+                            cells = np.cells;
+                            ducks = np.ducks;
+                            left = if np.repeats == 0 {
+                                usize::MAX
+                            } else {
+                                np.rows.max(1) * np.repeats
+                            };
+                            // The new pattern may play its plugins on different tracks, and may
+                            // be at a different tempo (a song can change it between patterns).
+                            route_vsts(&ctx, &mut mixer, &vsts, &cells, &mut vst_chan);
+                            if (np.bpm - cur_bpm).abs() > 1e-9 {
+                                cur_bpm = np.bpm;
+                                for v in vsts.values() {
+                                    v.set_tempo(cur_bpm);
+                                }
+                                for v in fx_vsts.values() {
+                                    v.set_tempo(cur_bpm);
+                                }
+                            }
+                            said.clear();
+                            // The bar count CONTINUES across the join — the song did not restart,
+                            // it moved on — so the anchor is re-based at the seam with the beats
+                            // already played, which also lets the new pattern have its own tempo.
+                            song_beat += (seam - beat_t0) * cur_bpm / 60.0;
+                            beat_t0 = seam;
+                            tell_transport(&vsts, &fx_vsts, true, beat_t0, song_beat, cur_bpm);
+                            // Nothing is cut and nothing is note-off'd: the previous pattern's
+                            // tails, delay repeats and held notes ring on across the join, which
+                            // is what "seamless" means and what every DAW does.
+                            clock.start(seam, 0);
+                            crate::log!("song step: seam at {seam:.4} — the next pattern starts on the row");
+                            break;   // the next tick books it, a whole lookahead early
+                        }
                         clock.stop();
                         break;
                     }
@@ -1354,6 +1653,13 @@ pub fn eng_open(
                     }
                     pending.push_back((d.row, d.t));
                     tail_t = d.t + clock.row_dur();
+                    // The click, on the beat, accented on the downbeat — same rule as schedRow's.
+                    if met_on {
+                        let lpb = clock.lpb.max(1.0) as usize;
+                        if d.row % lpb == 0 {
+                            met_click(&ctx, d.t, d.row % (lpb * 4) == 0, met_vol);
+                        }
+                    }
                     // Sidechain triggers first, so a note and the dip it causes on other channels
                     // are scheduled against the same instant. `Mixer::duck` decides who dips.
                     for dk in ducks.iter().filter(|k| k.row == d.row) {
@@ -1606,24 +1912,7 @@ pub fn eng_open(
         // the message round-trip has someone to answer it — is what makes a reopen invisible.
         // Timed out per plugin rather than in total: one sulking plugin costs its own patch, not
         // everybody else's.
-        for (slot, node) in vsts.iter() {
-            let key = format!("i{slot}");
-            if let Some(ident) = plugins::ident_for(&key) {
-                if let Some(bytes) = node.state(250) {
-                    crate::log!("patch kept: {key} ({} bytes)", bytes.len());
-                    plugins::remember_patch(key, ident, bytes);
-                }
-            }
-        }
-        for ((track, pos), node) in fx_vsts.iter() {
-            let key = format!("f{track}.{pos}");
-            if let Some(ident) = plugins::ident_for(&key) {
-                if let Some(bytes) = node.state(250) {
-                    crate::log!("patch kept: {key} ({} bytes)", bytes.len());
-                    plugins::remember_patch(key, ident, bytes);
-                }
-            }
-        }
+        keep_patches(&vsts, &fx_vsts);
 
         // **Close the context. Do not merely drop it.**
         //
@@ -1692,6 +1981,57 @@ pub fn eng_load_sample(
     Ok(frames)
 }
 
+/// `eng_load_sample`, but the audio crosses as the invoke's RAW BODY:
+/// `[u32 json length][json {id,channels}][pad to 4][interleaved f32le]`.
+///
+/// The JSON path serialized `Array.from(pcm)` — a multi-megabyte array of number literals for
+/// any real sample, stringified on the webview's MAIN thread. That stall sat exactly where the
+/// song-step budget lives, which is how a first pass through a sample-heavy song joined late at
+/// every pattern turnover ("the audio delays when moving from pattern to pattern"). Bytes cross
+/// as bytes now; the old command stays for nothing but the contract test.
+#[derive(Deserialize)]
+pub struct SampleMeta {
+    pub id: String,
+    pub channels: usize,
+}
+
+/// The body layout, shared with the webview's `nengSendSample` — pinned by a test below.
+fn parse_sample_body(body: &[u8]) -> Result<(String, usize, Vec<f32>), String> {
+    if body.len() < 4 {
+        return Err("empty sample body".into());
+    }
+    let jlen = u32::from_le_bytes(body[0..4].try_into().unwrap()) as usize;
+    let off = (4 + jlen + 3) & !3;
+    if body.len() < off {
+        return Err("truncated sample body".into());
+    }
+    let meta: SampleMeta =
+        serde_json::from_slice(&body[4..4 + jlen]).map_err(|e| format!("bad sample meta: {e}"))?;
+    let n = (body.len() - off) / 4;
+    let mut pcm = Vec::with_capacity(n);
+    for i in 0..n {
+        pcm.push(f32::from_le_bytes(body[off + i * 4..off + i * 4 + 4].try_into().unwrap()));
+    }
+    Ok((meta.id, meta.channels.max(1), pcm))
+}
+
+#[tauri::command(async)]
+pub fn eng_load_sample_raw(
+    state: tauri::State<'_, Engine>,
+    request: tauri::ipc::Request,
+) -> Result<usize, String> {
+    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+        return Err("eng_load_sample_raw wants a raw body".into());
+    };
+    let (id, channels, pcm) = parse_sample_body(body)?;
+    let frames = pcm.len() / channels;
+    let slot = state.0.lock().map_err(|_| "engine lock poisoned")?;
+    let tx = slot.as_ref().ok_or("no audio device open — call eng_open first")?;
+    tx.send(Cmd::Sample { id, pcm, channels })
+        .map_err(|_| "the audio thread has stopped".to_string())?;
+    Ok(frames)
+}
+
 #[tauri::command(async)]
 pub fn eng_play(state: tauri::State<'_, Engine>, pattern: Pattern) -> Result<(), String> {
     let slot = state.0.lock().map_err(|_| "engine lock poisoned")?;
@@ -1750,6 +2090,40 @@ mod tests {
         // A non-sampler note sends `null`, which must land as None rather than failing.
         assert!(p.cells[3].sample.is_none());
         assert_eq!(p.cells[3].track, 1, "the kick is on its own lane");
+        // A payload from before live editing carries no `pat`, and must still parse — the default
+        // is "did not say", which `Cmd::Cells` treats as "apply it" rather than refusing.
+        assert_eq!(p.pat, -1, "an unstamped pattern must default, not fail");
+    }
+
+    /// The raw sample body — `[u32 len][json][pad to 4][f32le]` — exactly as the webview's
+    /// `nengSendSample` writes it, unaligned-meta case included.
+    #[test]
+    fn the_raw_sample_body_parses_byte_for_byte() {
+        let meta = br#"{"id":"hash-abc","channels":2}"#; // 30 bytes -> pad lands at 36
+        let mut body = Vec::new();
+        body.extend_from_slice(&(meta.len() as u32).to_le_bytes());
+        body.extend_from_slice(meta);
+        while (body.len() & 3) != 0 {
+            body.push(0);
+        }
+        for v in [0.25f32, -0.5, 1.0, -1.0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        let (id, channels, pcm) = parse_sample_body(&body).expect("the JS layout was refused");
+        assert_eq!(id, "hash-abc");
+        assert_eq!(channels, 2);
+        assert_eq!(pcm, vec![0.25, -0.5, 1.0, -1.0]);
+        assert!(parse_sample_body(&body[..3]).is_err(), "a truncated body must refuse, not panic");
+    }
+
+    /// The live-edit stamp: an edit is only applied to the pattern it belongs to.
+    #[test]
+    fn a_stamped_pattern_carries_its_number() {
+        let p: Pattern = serde_json::from_str(
+            r#"{"bpm":174,"lpb":4,"rows":64,"cells":[],"pat":7}"#,
+        )
+        .expect("a stamped pattern must deserialise");
+        assert_eq!(p.pat, 7);
     }
 
     #[test]
@@ -1862,6 +2236,29 @@ mod tests {
     }
 }
 
+/// The metronome, in the engine. The UI sends this whenever the click is switched on or off, or
+/// whenever ownership of the sound changes — and mutes its own click while the engine has it, or
+/// there would be two. See `met_click` for why it cannot be left in the webview.
+#[tauri::command(async)]
+pub fn eng_met(state: tauri::State<'_, Engine>, on: bool, vol: f32) -> Result<(), String> {
+    let slot = state.0.lock().map_err(|_| "engine lock poisoned")?;
+    if let Some(tx) = slot.as_ref() {
+        let _ = tx.send(Cmd::Met { on, vol });
+    }
+    Ok(())
+}
+
+/// Replace the notes of the pattern already playing, without touching the clock. See `Cmd::Cells`
+/// — this is what makes editing audible while the transport runs.
+#[tauri::command(async)]
+pub fn eng_cells(state: tauri::State<'_, Engine>, pattern: Pattern) -> Result<(), String> {
+    let slot = state.0.lock().map_err(|_| "engine lock poisoned")?;
+    if let Some(tx) = slot.as_ref() {
+        let _ = tx.send(Cmd::Cells(pattern));
+    }
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn eng_stop(state: tauri::State<'_, Engine>) -> Result<(), String> {
     let slot = state.0.lock().map_err(|_| "engine lock poisoned")?;
@@ -1869,6 +2266,57 @@ pub fn eng_stop(state: tauri::State<'_, Engine>) -> Result<(), String> {
         let _ = tx.send(Cmd::Stop);
     }
     Ok(())
+}
+
+/// Name the song whose plugin patches are being kept. The UI calls this before a song's plugins
+/// load; the store flushes the outgoing song's patches to its own file and reads this one's in,
+/// so `vst_load` finds the right presets waiting. See `plugins::set_song`.
+#[tauri::command(async)]
+pub fn vst_patch_song(id: String) {
+    plugins::set_song(id);
+}
+
+/// A link was removed from a channel's plugin chain: move everybody's patch down with them.
+///
+/// Call `vst_patch_flush { force: true }` first so the patches being moved are the LIVE ones, then
+/// this, then let the reconciler rebuild the chain. See `plugins::patches_after_remove` for what
+/// goes wrong without it — every plugin behind the removed one comes back at its factory preset.
+#[tauri::command(async)]
+pub fn fxvst_patch_removed(track: i64, pos: usize) {
+    plugins::patches_after_remove(track, pos);
+}
+
+/// Two links changed places (▲▼) — same story, same fix.
+#[tauri::command(async)]
+pub fn fxvst_patch_swapped(track: i64, a: usize, b: usize) {
+    plugins::patches_after_swap(track, a, b);
+}
+
+/// Snapshot every loaded plugin's state to the per-song patch file, and WAIT for it — the caller
+/// is quitting or switching songs, and a write that is merely queued dies with the process.
+/// Returns whether states were freshly collected (false = transport was running without `force`,
+/// or no engine — the cache still flushed either way, so nothing already parked is ever lost).
+///
+/// `force` collects even mid-playback. Reserved for chain edits, where the alternative is losing
+/// every preset behind the plugin being moved; see `Cmd::SavePatches`.
+#[tauri::command(async)]
+pub fn vst_patch_flush(state: tauri::State<'_, Engine>, force: Option<bool>) -> Result<bool, String> {
+    let (reply, ack) = channel();
+    let sent = {
+        let slot = state.0.lock().map_err(|_| "engine lock poisoned")?;
+        match slot.as_ref() {
+            Some(tx) => tx.send(Cmd::SavePatches { force: force.unwrap_or(false), reply }).is_ok(),
+            None => false,
+        }
+    };
+    if !sent {
+        plugins::flush_patches();
+        return Ok(false);
+    }
+    // room for a handful of plugins at 250 ms each, plus the disk write — and if a Stop is
+    // queued ahead of us it collects too, which is fine: the second pass finds warm answers
+    ack.recv_timeout(std::time::Duration::from_secs(5))
+        .map_err(|_| "the audio thread is not answering".to_string())
 }
 
 /// The panic, engine half: stop the clock, cut every voice, all-notes-off into every plugin —
@@ -1944,10 +2392,15 @@ static SCAN_CACHE: Mutex<Option<VstScan>> = Mutex::new(None);
 /// skipped count (2026-08-10). `-3`: the duplicate-class fix (2026-08-11) — every `-2` cache on
 /// disk lists each VST3 twice, and half of those entries cannot be loaded. `-4`: effects joined
 /// the list with a `kind` field (2026-08-12) — a `-3` cache holds instruments only, so the FX
-/// picker would read it as "you own no effects".
+/// picker would read it as "you own no effects". `-5`: `Program Files (x86)` joined the VST2
+/// folders AND the loader learned the legacy `main` entry point (2026-08-15) — every `-4` cache
+/// is missing both the 64-bit plugins living in those folders and every VST 2.3-era plugin
+/// anywhere, and a cache is trusted on sight, so it has to be thrown away rather than aged out.
+/// `-6`: one entry per plugin (2026-08-15) — a `-5` cache lists shell plugins two and three times
+/// over, at indexes that may not resolve. `-7`: `FL Studio VSTi` is excluded by decision
+/// (`SCAN_SKIP`), and a `-6` cache still offers it.
 fn scan_cache_path() -> Option<std::path::PathBuf> {
-    let dir = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from)?;
-    Some(dir.join("VOLT").join("vst-scan-4.json"))
+    Some(crate::log::volt_dir()?.join("vst-scan-7.json"))
 }
 
 /// The journal of the scan in progress: each file's path is written (and flushed) BEFORE that file
@@ -1960,8 +2413,7 @@ fn scan_cache_path() -> Option<std::path::PathBuf> {
 /// curated VST3s to every DLL in three VST2 folders. (The blacklist itself lives in
 /// `volt_vsthost`, shared with `vstprobe` — see `blacklist_path` there.)
 fn scan_journal_path() -> Option<std::path::PathBuf> {
-    let dir = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from)?;
-    Some(dir.join("VOLT").join("vst-scan-journal.txt"))
+    Some(crate::log::volt_dir()?.join("vst-scan-journal.txt"))
 }
 
 /// Every VST instrument on this machine — VST3 and 64-bit VST2 in one list.
@@ -1994,21 +2446,106 @@ pub fn vst_scan() -> VstScan {
 
 /// Scan for real, ignoring every cache, and write the result to disk. This is what runs at startup
 /// in the background, and what "rescan" would call after installing a plugin.
+///
+/// **The scan runs in a DISPOSABLE WORKER PROCESS now** (bible 07+15 both call this mandatory,
+/// and `vstprobe` proved the shape years of DLLs ago): opening three hundred unknown binaries is
+/// the most dangerous thing this app does, and doing it in-process meant one bad plugin could
+/// hang or kill VOLT itself — the whole blacklist-journal machinery exists because it DID. The
+/// worker is this same exe re-run with `--scan-worker`: it scans, writes the cache file, exits;
+/// a crash or hang costs a child process, its own journal names the culprit, and the next
+/// attempt blacklists it and continues past. The app never has an unknown DLL in its space.
 #[tauri::command(async)]
 pub fn vst_rescan() -> VstScan {
-    let out = vst_scan_now();
+    let out = scan_in_worker();
     if let Ok(mut c) = SCAN_CACHE.lock() {
         *c = Some(out.clone());
     }
+    out
+}
+
+fn write_scan_cache(out: &VstScan) {
     if let Some(path) = scan_cache_path() {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        if let Ok(txt) = serde_json::to_string(&out) {
+        if let Ok(txt) = serde_json::to_string(out) {
             let _ = std::fs::write(&path, txt);
         }
     }
-    out
+}
+
+fn read_scan_cache() -> Option<VstScan> {
+    let txt = std::fs::read_to_string(scan_cache_path()?).ok()?;
+    serde_json::from_str::<VstScan>(&txt).ok()
+}
+
+/// The child's whole life: scan (consuming the journal a dead sibling left, exactly as the
+/// in-process scan always did), write the cache, end hard. Never returns.
+pub fn scan_worker_main() -> ! {
+    crate::log!("scan worker: scanning in a disposable process (pid {})", std::process::id());
+    let out = vst_scan_now();
+    write_scan_cache(&out);
+    crate::log!("scan worker: {} plugins, {} 32-bit skipped — done", out.plugins.len(), out.skipped32);
+    volt_vsthost::hard_exit(0)
+}
+
+/// Run the scan in child processes until one survives it. Three attempts: each dead child's
+/// journal blacklists the file that killed it, so the next child walks past the corpse — the
+/// same self-healing the in-process scan had, minus the part where the app died too.
+fn scan_in_worker() -> VstScan {
+    let Ok(exe) = std::env::current_exe() else {
+        crate::log!("vst scan: no current_exe — scanning in-process as before");
+        let out = vst_scan_now();
+        write_scan_cache(&out);
+        return out;
+    };
+    for attempt in 1..=3 {
+        crate::log!("vst scan: worker attempt {attempt}");
+        let child = std::process::Command::new(&exe).arg("--scan-worker").spawn();
+        let mut child = match child {
+            Ok(c) => c,
+            Err(e) => {
+                crate::log!("vst scan: could not spawn a worker ({e}) — scanning in-process as before");
+                let out = vst_scan_now();
+                write_scan_cache(&out);
+                return out;
+            }
+        };
+        // A hung child (Bionic Delay hangs LoadLibrary forever) is killed at the deadline; its
+        // journal already names the file it was inside, and the next attempt blacklists it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(st)) => break Some(st),
+                Ok(None) => {
+                    if std::time::Instant::now() > deadline {
+                        crate::log!("vst scan: the worker hung — killing it; its journal names the culprit");
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break None;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                Err(_) => break None,
+            }
+        };
+        match status {
+            Some(st) if st.success() => {
+                if let Some(scan) = read_scan_cache() {
+                    return scan;
+                }
+                crate::log!("vst scan: the worker exited clean but wrote no cache — stopping");
+                break;
+            }
+            Some(st) => {
+                crate::log!("vst scan: the worker died ({st}) — its journal names the culprit; retrying");
+            }
+            None => {}
+        }
+    }
+    // three corpses in a row: hand back the best cache on disk rather than nothing at all
+    crate::log!("vst scan: giving up on workers this session — using the last cache");
+    read_scan_cache().unwrap_or_default()
 }
 
 fn vst_scan_now() -> VstScan {
@@ -2045,7 +2582,7 @@ fn vst_scan_now() -> VstScan {
 
     let mut plugins = Vec::new();
     for path in volt_vsthost::scan(std::path::Path::new(volt_vsthost::VST3_DIR)) {
-        if banned(&path) {
+        if banned(&path) || volt_vsthost::skip_in_scan(&path) {
             continue;
         }
         about_to_open(&path);
@@ -2096,6 +2633,17 @@ fn vst_scan_now() -> VstScan {
         }
     }
 
+    // **One entry per plugin.** Two things put the same plugin in this list more than once, and
+    // both are real on this machine: a shell file that exists at two paths (Waves installs
+    // WaveShell in `VST3\` AND `VST3\Waves\`, and the folder walk finds both), and a shell that
+    // offers the same plugin under two adjacent class indexes. Mickey's cache held RBass Stereo
+    // three times, at indexes 864, 865 and 432 — and picking one of them got "no class 864",
+    // because that index no longer existed. Deduped BEFORE the sort, so the entry kept is the
+    // first the walk found, which is the shallowest path and the lowest index.
+    {
+        let mut seen = std::collections::HashSet::new();
+        plugins.retain(|p| seen.insert((p.name.clone(), p.vendor.clone(), p.fmt.clone())));
+    }
     plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     // The scan survived every file it touched; the journal has nothing left to say.
@@ -2147,6 +2695,9 @@ pub fn vst_load(
     slot: usize,
     path: String,
     index: i32,
+    // What the user picked, so a shell that renumbered its classes can still be found by name.
+    // Optional: an older page does not send it, and then only the index is tried.
+    name: Option<String>,
 ) -> Result<String, String> {
     let sample_rate = {
         let guard = state.0.lock().map_err(|_| "engine lock poisoned")?;
@@ -2166,7 +2717,7 @@ pub fn vst_load(
     // on the plugin thread — see `plugins::create`. Doing it here, on a Tauri worker, crashed
     // apQualizr2 inside ntdll (2026-08-15). Wrong-plugin states can't arrive: keyed by identity.
     let patch = plugins::patch_for(&format!("i{slot}"), &format!("{path}|{index}"));
-    let (plugin, editor) = plugins::create_plugin(sample_rate, path.clone(), index, patch)
+    let (plugin, editor) = plugins::create_plugin(sample_rate, path.clone(), index, name.clone().unwrap_or_default(), patch)
         .inspect_err(|e| crate::log!("vst_load: slot {slot} create failed: {e}"))?;
     // The parameter surface, captured while the plugin is still reachable from this thread —
     // the automation picker reads it from the registry, never from the plugin.
@@ -2278,9 +2829,15 @@ pub fn vst_unload(state: tauri::State<'_, Engine>, slot: usize) -> Result<(), St
     // tearing the plugin down first would leave a window whose contents belong to a released
     // object — and closing it later would call into it.
     plugins::forget(slot);
-    // Taking a plugin off a slot is a decision, not an accident — its patch goes with it, so
-    // putting the same plugin back later starts clean rather than in someone's forgotten state.
-    plugins::drop_patch(&format!("i{slot}"));
+    // **The patch is NOT dropped here, and that is the fix, not an oversight.**
+    // Unload is not only "the user took this plugin off": it is also how the reconciler re-keys a
+    // slot — every reorder and every removal unloads and reloads the links around it. Dropping the
+    // patch here therefore deleted the very state that had just been carefully moved to follow its
+    // plugin, so moving one effect up the chain reset all of them ("when moving vsts up or down
+    // its resets all vsts", 2026-08-15). A patch left behind is harmless: it is identity-checked
+    // (`patch_for`), it lives in this song's file only, and if the same plugin comes back to the
+    // same slot, handing it its own state back is what anyone would want. The one place a patch
+    // is genuinely retired is a chain edit, which says so explicitly — `patches_after_remove`.
 
     let guard = state.0.lock().map_err(|_| "engine lock poisoned")?;
     if let Some(tx) = guard.as_ref() {
@@ -2327,6 +2884,8 @@ pub fn fxvst_load(
     pos: Option<usize>,
     path: String,
     index: i32,
+    // See `vst_load` — the name survives a shell renumbering, the index does not.
+    name: Option<String>,
 ) -> Result<String, String> {
     // `pos` places the plugin in the channel's CHAIN (0 first). Optional so an older payload
     // means what it always meant: the only slot.
@@ -2346,7 +2905,7 @@ pub fn fxvst_load(
     crate::log!("fxvst_load: track {track} pos {pos} <- {path}");
     // Same rule as `vst_load`: the patch is applied on the plugin thread, not here.
     let patch = plugins::patch_for(&format!("f{track}.{pos}"), &format!("{path}|{index}"));
-    let (plugin, editor) = plugins::create_plugin(sample_rate, path.clone(), index, patch)
+    let (plugin, editor) = plugins::create_plugin(sample_rate, path.clone(), index, name.clone().unwrap_or_default(), patch)
         .inspect_err(|e| crate::log!("fxvst_load: track {track} pos {pos} create failed: {e}"))?;
     if plugin.in_channels == 0 {
         // An instrument in an insert would mute the whole channel: with no input bus it cannot
@@ -2399,8 +2958,8 @@ pub fn fxvst_load(
 pub fn fxvst_unload(state: tauri::State<'_, Engine>, track: i64, pos: Option<usize>) -> Result<(), String> {
     let pos = pos.unwrap_or(0);
     // Window first, plugin second — same order and same reason as `vst_unload`.
+    // The patch stays; see `vst_unload` for why keeping it is the whole point.
     plugins::forget(fx_editor_slot(track, pos));
-    plugins::drop_patch(&format!("f{track}.{pos}"));
     let guard = state.0.lock().map_err(|_| "engine lock poisoned")?;
     if let Some(tx) = guard.as_ref() {
         let _ = tx.send(Cmd::FxVstUnload { track, pos });
@@ -2463,4 +3022,359 @@ pub fn fxvst_param_set(
         let _ = tx.send(Cmd::FxVstParam { track, pos: pos.unwrap_or(0), id, value });
     }
     Ok(())
+}
+
+/* ================= offline render of a plugin's part =================
+   A WAV render in the browser is an OfflineAudioContext of VOLT's own graph, and a plugin is not
+   in that graph: it lives here, on the audio thread, behind a worklet node. So a plugin
+   instrument's notes came out of the render SILENT, and nothing said so — you got a master back
+   that was quietly missing its lead.
+
+   The fix rests on the same bet as `vst.rs`: a plugin is an ordinary `AudioWorkletNode`, and the
+   crate renders an `OfflineAudioContext` through the very same node graph, faster than real time.
+   So the plugin's part can be rendered here and handed back as a WAV, which the browser drops
+   into ITS render on the channel the notes came from — through that channel's strip, its sends
+   and the master chain, exactly like every other instrument. Nothing else about the render
+   changes: this adds the missing part rather than replacing the renderer.
+
+   Three details that are not optional:
+     * **A FRESH instance, at the render's sample rate, carrying the session's patch.** The live
+       instance belongs to the audio thread's context and cannot be in two graphs; it may also be
+       running at 48 kHz while the render is 44.1. `plugins::create_plugin` is the same call
+       `vst_load` makes, with the same patch key, so the render sounds like what you were playing.
+     * **The plugin thread makes it, not this one.** A VST2 treats its creating thread as its UI
+       thread — created on a Tauri worker, `effEditOpen` hangs for ever. Same rule as everywhere.
+     * **Delay compensation.** A plugin that reports latency answers late by exactly that much;
+       the live path schedules notes early to match, and here the head of the render is trimmed
+       instead, so what comes back is already on the browser's timeline. */
+
+/// One note-on or note-off, at an absolute time on the browser's offline timeline.
+#[derive(Deserialize)]
+pub struct RenderNote {
+    pub note: f32,
+    #[serde(default)]
+    pub vel: f32,
+    pub when: f64,
+    pub on: bool,
+}
+
+/// One automation-lane value, timed like a note — the offline copy of `vst_param_set`.
+#[derive(Deserialize)]
+pub struct RenderParam {
+    pub id: u32,
+    /// Normalised 0..1, exactly what the live lane sends.
+    pub value: f64,
+    pub when: f64,
+}
+
+#[derive(Deserialize)]
+pub struct VstRenderJob {
+    /// The render's sample rate — the browser renders at 44100.
+    pub sr: f32,
+    /// How long the browser's render is, in seconds. The plugin's tail is allowed to run past the
+    /// last note and is cut here, at the same place the browser cuts.
+    pub dur: f64,
+    /// The instrument slot, so the saved patch is found under the same key `vst_load` uses.
+    pub slot: usize,
+    pub path: String,
+    pub index: i32,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The song's tempo. Absent (old callers) means the plugin free-runs at the context default.
+    #[serde(default)]
+    pub bpm: f64,
+    /// Where the transport anchor sits on the browser's render timeline — the first row after
+    /// the pre-roll, i.e. renderWav's `startT` (a bounce passes its own first row's time).
+    #[serde(default)]
+    pub start: f64,
+    /// The BEAT at that anchor. 0 for a whole-song render; a bounce of rows 4..12 starts at
+    /// beat 1, and a synced plugin phase-locks to the bar only if told so.
+    #[serde(default)]
+    pub beat0: f64,
+    pub notes: Vec<RenderNote>,
+    /// The pattern's `vp` automation lanes for this slot, timed on the same timeline.
+    #[serde(default)]
+    pub params: Vec<RenderParam>,
+}
+
+/// Render one plugin instrument's notes to a 16-bit WAV. Returns the bytes, not a path: the
+/// webview needs an AudioBuffer, and `ev_get` already proved a 30 MB WAV crosses as bytes fine.
+#[tauri::command(async)]
+pub fn eng_render_vst(job: VstRenderJob) -> Result<tauri::ipc::Response, String> {
+    if !(job.sr > 0.0) || !(job.dur > 0.0) {
+        return Err("render job has no length".into());
+    }
+    if job.notes.is_empty() {
+        return Err("nothing to render on this channel".into());
+    }
+    let sr = job.sr;
+    crate::log!(
+        "render: slot {} <- {} ({} notes, {:.1}s)",
+        job.slot,
+        job.path,
+        job.notes.len(),
+        job.dur
+    );
+
+    let patch = plugins::patch_for(&format!("i{}", job.slot), &format!("{}|{}", job.path, job.index));
+    let (plugin, editor) = plugins::create_plugin(
+        sr as f64,
+        job.path.clone(),
+        job.index,
+        job.name.clone().unwrap_or_default(),
+        patch,
+    )?;
+    /* The editor half must be destroyed by the thread that made it — dropping it here would run a
+       window's destructor on a Tauri worker. A slot number no live instrument can hold keeps it
+       clear of the session's own windows. */
+    let scratch = 900_000 + job.slot;
+    match editor {
+        Some(h) => {
+            plugins::adopt_editor(scratch, h);
+        }
+        None => {}
+    }
+
+    let latency = plugin.latency as f64 / sr as f64;
+    let total = job.dur + latency;
+    let mut ctx = web_audio_api::context::OfflineAudioContext::new(
+        2,
+        (total * sr as f64).ceil() as usize,
+        sr,
+    );
+    let out = (|| -> Result<Vec<u8>, String> {
+        let (node, _) = VstNode::from_plugin(&ctx, plugin, plugins::retire_sender())?;
+        node.node().connect(&ctx.destination());
+        /* A fresh instance is an undriven probe unless told otherwise: it reports the context
+           default — 120, stopped — and every tempo-synced LFO, gate, arp and delay inside the
+           plugin renders at the wrong rhythm, in the render and nowhere else (heard as the WAV
+           "phasing" against the song). Drive it exactly like the live path does. Song beat 0
+           sits at `start`; the notes were all pushed `latency` later, so the anchor moves with
+           them. The pre-roll lands at negative beats, which is trimmed off with the rest. */
+        if job.bpm > 0.0 {
+            node.set_tempo(job.bpm);
+            node.set_transport(true, job.start + latency, job.beat0, job.bpm);
+        }
+        for n in &job.notes {
+            /* every note is pushed `latency` later, so trimming that much off the front lands the
+               plugin's answer exactly where the browser scheduled the note */
+            let when = n.when + latency;
+            if n.on {
+                node.note_on(n.note, if n.vel > 0.0 { n.vel } else { 1.0 }, when);
+            } else {
+                node.note_off(n.note, when);
+            }
+        }
+        // the pattern's lane values, on the same shifted timeline as the notes
+        for p in &job.params {
+            node.set_param_at(p.id, p.value, p.when + latency);
+        }
+        let buf = ctx.start_rendering_sync();
+        let skip = (latency * sr as f64).round() as usize;
+        Ok(volt_engine::wav::encode_from(&buf, skip))
+    })();
+    plugins::forget(scratch);
+    let bytes = out?;
+    crate::log!("render: slot {} produced {} bytes", job.slot, bytes.len());
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/* ================= offline render of a channel's plugin FX CHAIN =================
+   The other half of the render story: `eng_render_vst` above puts plugin INSTRUMENTS in a WAV;
+   this puts plugin EFFECTS in it. The audio goes the other way — the browser renders the
+   channel's strip dry up to the point the live engine splices the chain in (after the ported FX,
+   before the drive), sends that stem here, and this runs it through fresh instances of the
+   chain, in order, carrying the session's patches. What goes back is the wet copy, which the
+   browser plays into the rest of the strip (drive → comp → pan → fader → sends → master), so
+   everything downstream — including the master — hears exactly what it hears live.
+
+   The stem crosses as the invoke's RAW BODY, because a JSON array of four million samples is
+   minutes of serialize and an HTTP header must stay ASCII. Layout, all little-endian:
+     [u32 json length][json job][pad to a 4-byte boundary][stereo interleaved f32 samples]
+   The reply is a WAV, exactly like `eng_render_vst` — the head is trimmed by the chain's summed
+   latency so the wet stem sits back on the timeline the dry one came from. */
+
+#[derive(Deserialize)]
+pub struct FxRenderLink {
+    pub path: String,
+    pub index: i32,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The link's position in the channel's chain — the PATCH key (`f{track}.{pos}`), so holes
+    /// left by disabled links keep every patch with its plugin.
+    pub pos: usize,
+    /// This link's `vf` automation lanes, timed on the stem's timeline.
+    #[serde(default)]
+    pub params: Vec<RenderParam>,
+}
+
+#[derive(Deserialize)]
+pub struct FxChainRenderJob {
+    pub sr: f32,
+    /// The mixer track the chain lives on; -1 is the master. Only used to find the patches.
+    pub track: i64,
+    pub bpm: f64,
+    /// Where the transport anchor sits on the stem's timeline (renderWav's `startT`).
+    pub start: f64,
+    /// The beat at that anchor — see `VstRenderJob::beat0`.
+    #[serde(default)]
+    pub beat0: f64,
+    /// Frames in the stem — the body must carry exactly `frames * 2` f32s.
+    pub frames: usize,
+    pub links: Vec<FxRenderLink>,
+}
+
+#[tauri::command(async)]
+pub fn eng_render_fx(request: tauri::ipc::Request) -> Result<tauri::ipc::Response, String> {
+    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+        return Err("eng_render_fx wants a raw body (the dry stem)".into());
+    };
+    if body.len() < 4 {
+        return Err("empty render body".into());
+    }
+    let jlen = u32::from_le_bytes(body[0..4].try_into().unwrap()) as usize;
+    let off = (4 + jlen + 3) & !3;
+    if body.len() < off {
+        return Err("truncated render body".into());
+    }
+    let job: FxChainRenderJob =
+        serde_json::from_slice(&body[4..4 + jlen]).map_err(|e| format!("bad render job: {e}"))?;
+    if !(job.sr > 0.0) || job.frames == 0 {
+        return Err("render job has no length".into());
+    }
+    if job.links.is_empty() {
+        return Err("no plugins in the chain".into());
+    }
+    let need = job.frames * 2 * 4;
+    if body.len() < off + need {
+        return Err(format!(
+            "the body holds {} bytes of audio, the job needs {}",
+            body.len() - off,
+            need
+        ));
+    }
+    let sr = job.sr;
+    crate::log!(
+        "render: fx chain for track {} ({} links, {:.1}s)",
+        job.track,
+        job.links.len(),
+        job.frames as f64 / sr as f64
+    );
+
+    /* Fresh instances at the render's rate, carrying the session's patches — the same three
+       rules as eng_render_vst above, times the chain. A `Plugin` must NEVER be dropped on this
+       thread (FL plugins punish wrong-thread destruction), so every error path hands what was
+       already created back to the plugin thread through the retire channel. */
+    let mut links = job.links;
+    links.sort_by_key(|l| l.pos);
+    let retire_all = |plugs: Vec<volt_vsthost::Plugin>, scratches: &[usize]| {
+        let tx = plugins::retire_sender();
+        for p in plugs {
+            let _ = tx.send(p);
+        }
+        for s in scratches {
+            plugins::forget(*s);
+        }
+    };
+    let mut plugs: Vec<volt_vsthost::Plugin> = Vec::new();
+    let mut scratches: Vec<usize> = Vec::new();
+    for l in &links {
+        let patch =
+            plugins::patch_for(&format!("f{}.{}", job.track, l.pos), &format!("{}|{}", l.path, l.index));
+        let label = l.name.clone().unwrap_or_else(|| l.path.clone());
+        match plugins::create_plugin(sr as f64, l.path.clone(), l.index, l.name.clone().unwrap_or_default(), patch) {
+            Ok((plugin, editor)) => {
+                /* same scratch-slot trick as eng_render_vst: the editor half must be destroyed
+                   by the thread that made it, at a slot no live window can hold */
+                let scratch = 920_000 + l.pos;
+                if let Some(h) = editor {
+                    plugins::adopt_editor(scratch, h);
+                }
+                scratches.push(scratch);
+                if plugin.in_channels == 0 {
+                    let name = plugin.name.clone();
+                    plugs.push(plugin);
+                    retire_all(plugs, &scratches);
+                    return Err(format!("{name} has no audio input — it is an instrument, not an effect"));
+                }
+                plugs.push(plugin);
+            }
+            Err(e) => {
+                retire_all(plugs, &scratches);
+                return Err(format!("{label}: {e}"));
+            }
+        }
+    }
+
+    /* The chain's summed latency: the context runs that much longer, and the head is trimmed by
+       the same amount, so the wet stem lands where the dry one was. */
+    let lat_frames: usize = plugs.iter().map(|p| p.latency as usize).sum();
+    let total_latency = lat_frames as f64 / sr as f64;
+    let mut ctx =
+        web_audio_api::context::OfflineAudioContext::new(2, job.frames + lat_frames, sr);
+    let out = (|| -> Result<Vec<u8>, String> {
+        use web_audio_api::node::{AudioNode, AudioScheduledSourceNode};
+        let mut buf = ctx.create_buffer(2, job.frames, sr);
+        /* de-interleave the stem; read via from_le_bytes because `off` keeps alignment but the
+           borrow is byte-typed either way */
+        let mut l = vec![0.0f32; job.frames];
+        let mut r = vec![0.0f32; job.frames];
+        for i in 0..job.frames {
+            let p = off + i * 8;
+            l[i] = f32::from_le_bytes(body[p..p + 4].try_into().unwrap());
+            r[i] = f32::from_le_bytes(body[p + 4..p + 8].try_into().unwrap());
+        }
+        buf.copy_to_channel(&l, 0);
+        buf.copy_to_channel(&r, 1);
+        let mut src = ctx.create_buffer_source();
+        src.set_buffer(buf);
+
+        let mut nodes = Vec::new();
+        let mut lat_so_far = 0.0f64;
+        for (li, plugin) in plugs.drain(..).enumerate() {
+            let lat = plugin.latency as f64 / sr as f64;
+            let (node, _) = VstNode::from_plugin(&ctx, plugin, plugins::retire_sender())?;
+            /* driven, like every other render instance — a synced delay or LFO in the chain
+               must run at the song's tempo, anchored where the song's beat 0 sits. Each link's
+               input arrives later by the latency of the links before it, so its anchor slides
+               with the audio it is fed. */
+            if job.bpm > 0.0 {
+                node.set_tempo(job.bpm);
+                node.set_transport(true, job.start + lat_so_far, job.beat0, job.bpm);
+            }
+            // the link's lane values, anchored the same way as its transport
+            for p in &links[li].params {
+                node.set_param_at(p.id, p.value, p.when + lat_so_far);
+            }
+            lat_so_far += lat;
+            nodes.push(node);
+        }
+        src.connect(nodes[0].node());
+        for w in nodes.windows(2) {
+            w[0].node().connect(w[1].node());
+        }
+        nodes.last().unwrap().node().connect(&ctx.destination());
+        src.start();
+        let buf = ctx.start_rendering_sync();
+        Ok(volt_engine::wav::encode_from(&buf, lat_frames))
+    })();
+    for s in &scratches {
+        plugins::forget(*s);
+    }
+    /* a from_plugin failure mid-chain leaves the rest un-wrapped — they too go home to the
+       plugin thread rather than dropping here */
+    if !plugs.is_empty() {
+        let tx = plugins::retire_sender();
+        for p in plugs.drain(..) {
+            let _ = tx.send(p);
+        }
+    }
+    let bytes = out?;
+    crate::log!(
+        "render: track {} fx chain produced {} bytes (pdc {:.1} ms)",
+        job.track,
+        bytes.len(),
+        total_latency * 1000.0
+    );
+    Ok(tauri::ipc::Response::new(bytes))
 }
